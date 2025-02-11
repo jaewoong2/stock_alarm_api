@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  stock_alarm:
+    platform: linux/amd64
+    image: 849441246713.dkr.ecr.ap-northeast-2.amazonaws.com/stock_alarm:latest
+    build:
+      dockerfile: Dockerfile.lambda
+      no_cache: true
+      args:
+        PROJECT_NAME: stock_alarm
+    environment:
+      - NODE_ENV=production
+      - PROJECT_NAME=stock_alarm
+
