@@ -154,9 +154,31 @@ class TradingService:
 
         trading_information = self.get_trading_information()
         market_data = self.backdata_service.get_market_data(symbol)
-        decision = self.ai_service.analyze_market(market_data)
-        action = decision.action.upper()
 
+
+        candle_5m = self.backdata_service.get_coinone_candles(interval="1m", size=200)  # 5분봉
+        candle_15m = self.backdata_service.get_coinone_candles(interval="5m", size=200)  # 15분봉
+        candle_1h = self.backdata_service.get_coinone_candles(interval="1h", size=200)  # 1시간봉
+
+
+        common_trade_data = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+            "symbol": symbol.upper(),
+            "openai_prompt": json.dumps(market_data),
+        }
+
+
+        common_trade_data["candles_information"] = f"5분봉: {candle_5m}, 15분봉: {candle_15m}, 1시간봉: {candle_1h}"
+
+
+        decision = self.ai_service.analyze_market(
+                information_summary=trading_information.summary,
+                trade_data=common_trade_data,
+                market_data=market_data,
+                decision_reason=None,
+            )
+
+        action = decision.action.upper()
         # 아래에서 사용될 trade 기록에 공통으로 들어갈 항목
         common_trade_data = {
             "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
@@ -189,6 +211,8 @@ class TradingService:
             common_trade_data["action_string"] = (
                 f"{str(used_amount)}원 으로 [{symbol}가격]: {market_data['price']}원에 구매 하였습니다."
             )
+
+            common_trade_data["candles_information"] = f"5분봉: {candle_5m}, 15분봉: {candle_15m}, 1시간봉: {candle_1h}"
 
             status_enum = (
                 ExecutionStatus.SUCCESS

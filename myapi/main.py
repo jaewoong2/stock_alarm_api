@@ -9,7 +9,7 @@ from starlette.middleware.cors import CORSMiddleware
 from myapi import containers
 from myapi.routers import kakao_router, trading_router
 
-from .routers import tqqq_router
+from .routers import tqqq_router    
 
 
 app = FastAPI()

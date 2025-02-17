@@ -5,19 +5,39 @@ import requests
 class BackDataService:
     BASE_URL = "https://api.coinone.co.kr/public/v2"
 
-    # 📌 코인원 API에서 1m, 5m, 15m, 1h 데이터 수집
-    def get_coinone_candles(self, market="btc", interval="minute1", count=200):
-        url = f"{self.BASE_URL}/candles/{interval}/{market}"
-        params = {"count": count}
+
+    # 📌 코인원 API에서 1분봉 캔들 데이터 가져오기
+    def get_coinone_candles(self, quote_currency="KRW", target_currency="BTC", interval="1m", size=200):
+        url = f"https://api.coinone.co.kr/public/v2/chart/{quote_currency}/{target_currency}"
+        params = {"interval": interval, "size": size}
         response = requests.get(url, params=params)
+        
+        if response.status_code != 200:
+            print(f"Error: {response.status_code}")
+            return None
+
         data = response.json()
 
-        # 데이터프레임으로 변환
-        df = pd.DataFrame(data["candles"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-        df.set_index("timestamp", inplace=True)
-        df = df[["open", "high", "low", "close", "volume"]].astype(float)
+        # 응답 구조 확인
+        if data.get("result") != "success":
+            print(f"API Error: {data.get('error_code')}")
+            return None
 
+        # 데이터프레임 변환
+        df = pd.DataFrame(data["chart"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
+        
+        # 컬럼 이름 변경 및 숫자로 변환
+        df.rename(columns={
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "target_volume": "volume"
+        }, inplace=True)
+
+        df = df[["open", "high", "low", "close", "volume"]].astype(float)
         return df
 
     def get_market_data(self, symbol: str = "BTC"):

@@ -46,9 +46,6 @@ class AIService:
             [시장 데이터]
             {json.dumps(market_data, ensure_ascii=False, indent=2)}
             
-            [투자 결정 이유]
-            {decision_reason}
-            
             [거래요약]
             {information_summary}
             
@@ -78,7 +75,12 @@ class AIService:
 
         return ""
 
-    def analyze_market(self, market_data: dict):
+    def analyze_market(self,
+            information_summary: str | None,
+            trade_data: dict,
+            market_data: dict,
+            decision_reason: str
+        ):
         """
         OpenAI API(Deepseek R1 모델)를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
@@ -89,17 +91,33 @@ class AIService:
             }
         """
         prompt = f"""
-        다음 시장 데이터를 기반으로 {market_data['symbol'].upper()} 매매 결정을 내려주세요.
+        당신은 투자 전문가입니다.
+        아래 정보를 바탕으로 이번 투자에 대한 종합적인 요약 보고서를 작성하세요.
         
-        - 현재 가격: {market_data['price']}
-        - 24시간 최고가: {market_data['high']}
-        - 24시간 최저가: {market_data['low']}
-        - 거래량: {market_data['volume']}
+        [투자 데이터]
+        {json.dumps(trade_data, ensure_ascii=False, indent=2)}
         
-        위 데이터를 종합하여, 매수(BUY), 매도(SELL) 중 하나를 추천하고 그 이유를 간단히 설명해주세요.
+        [시장 데이터]
+        {json.dumps(market_data, ensure_ascii=False, indent=2)}
+        
+        [투자 결정 이유]
+        {decision_reason}
+        
+        [거래요약]
+        {information_summary}
+        
+        보고서에는 반드시 다음 항목들이 포함되어야 합니다:
+        1. 투자 결정의 근거 (어떤 데이터를 근거로 했는지)
+        2. 왜 해당 투자를 진행했는지에 대한 설명
+        3. 앞으로의 투자 전략 및 방향
+        4. 투자 과정에서의 반성과 회고를 통한 개선 방안
+        {market_data['symbol'].upper()} 매매 결정을 내려주세요.
+        
+        
+        위 데이터를 종합하여, 매수(BUY), 매도(SELL), HOLD 중 하나를 추천하고 그 이유를 간단히 설명해주세요.
         
         {{
-            "action": "<BUY/SELL>",
+            "action": "<BUY/SELL/HOLD>",
             "reason": "<설명>"
         }}
         """
