@@ -1,7 +1,13 @@
 from dependency_injector import containers, providers
 
+from myapi.database import get_db
+from myapi.services.ai_service import AIService
+from myapi.services.aws_service import AwsService
 from myapi.services.kakao_service import KakaoService
+from myapi.services.backdata_service import BackDataService
 from myapi.services.tqqq_service import TqqqService
+from myapi.services.trading_service import TradingService
+from myapi.utils.config import Settings
 
 
 class Container(containers.DeclarativeContainer):
@@ -9,8 +15,28 @@ class Container(containers.DeclarativeContainer):
         modules=[
             "myapi.routers.kakao_router",
             "myapi.routers.tqqq_router",
+            "myapi.routers.trading_router",
         ],
     )
 
-    kakao_service = providers.Factory(KakaoService)
-    tqqq_service = providers.Factory(TqqqService)
+    # DB 딕셔너리 리소스 제공자
+    db = providers.Resource(get_db)
+
+    config = providers.Singleton(Settings)
+    aws_service = providers.Factory(AwsService, settings=config)
+    kakao_service = providers.Factory(
+        KakaoService, settings=config, aws_service=aws_service
+    )
+    backdata_service = providers.Factory(BackDataService)
+    tqqq_service = providers.Factory(TqqqService, settings=config)
+
+    ai_service = providers.Factory(AIService, settings=config)
+    # log_service = providers.Singleton(LogService)
+
+    trading_service = providers.Factory(
+        TradingService,
+        settings=config,
+        backdata_service=backdata_service,
+        ai_service=ai_service,
+        db_session=db,
+    )

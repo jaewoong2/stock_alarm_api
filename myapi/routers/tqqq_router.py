@@ -1,12 +1,9 @@
 """Function printing python version."""
 
-import datetime
-import math
 from fastapi import APIRouter, Depends, HTTPException, status
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.domain.tqqq import tqqq_schema
 from myapi.services.tqqq_service import TqqqService
 
 

@@ -3,6 +3,8 @@ from fastapi import HTTPException
 import boto3
 import json
 
+from myapi.utils.config import Settings
+
 # AWS Secrets Manager 설정 (여러분의 환경에 맞게 수정)
 SECRET_NAME = "kakao/tokens"  # 예: "kakao/tokens"
 REGION_NAME = "ap-northeast-2"  # 예: "ap-northeast-2"
@@ -10,20 +12,21 @@ REGION_NAME = "ap-northeast-2"  # 예: "ap-northeast-2"
 
 
 class AwsService:
-    @classmethod
-    def get_secret(cls) -> dict:
+    def __init__(self, settings: Settings):
+        self.aws_access_key_id = settings.AWS_ACCESS_KEY_ID
+        self.aws_secret_access_key = settings.AWS_S3_SECRET_ACCESS_KEY
+
+    def get_secret(self) -> dict:
         """
         AWS Secrets Manager에서 secret 값을 읽어와 dict 형태로 반환합니다.
         """
-        aws_access_key_id = os.getenv("AWS_S3_ACCESS_KEY_ID")
-        aws_secret_access_key = os.getenv("AWS_S3_SECRET_ACCESS_KEY")
 
-        if aws_access_key_id and aws_secret_access_key:
+        if self.aws_access_key_id and self.aws_secret_access_key:
             client = boto3.client(
                 "secretsmanager",
                 region_name=REGION_NAME,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
             )
         else:
             client = boto3.client(
@@ -46,21 +49,18 @@ class AwsService:
                 status_code=500, detail=f"Error retrieving secret: {str(e)}"
             )
 
-    @classmethod
-    def update_secret(cls, updated_data: dict) -> dict:
+    def update_secret(self, updated_data: dict) -> dict:
         """
         AWS Secrets Manager의 secret 값을 수정(업데이트)합니다.
         """
         try:
-            aws_access_key_id = os.getenv("AWS_S3_ACCESS_KEY_ID")
-            aws_secret_access_key = os.getenv("AWS_S3_SECRET_ACCESS_KEY")
 
-            if aws_access_key_id and aws_secret_access_key:
+            if self.aws_access_key_id and self.aws_secret_access_key:
                 client = boto3.client(
                     "secretsmanager",
                     region_name=REGION_NAME,
-                    aws_access_key_id=aws_access_key_id,
-                    aws_secret_access_key=aws_secret_access_key,
+                    aws_access_key_id=self.aws_access_key_id,
+                    aws_secret_access_key=self.aws_secret_access_key,
                 )
             else:
                 client = boto3.client(

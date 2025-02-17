@@ -1,15 +1,17 @@
+import datetime
 import math
 import numpy as np
 import requests
 import yfinance as yf
-import datetime
+
+from myapi.utils.config import Settings
 
 DATA_RANGE_DAYS = 400
 
 
 class TqqqService:
-    def __init__(self):
-        pass
+    def __init__(self, settings: Settings):
+        self.settings = settings
 
     def fetch_data(self):
         """
@@ -19,6 +21,9 @@ class TqqqService:
         ticker = "TQQQ"
         # 400일간의 데이터를 받아 200일 SMA 계산에 충분한 데이터를 확보합니다.
         data = yf.download(ticker, period="400d", interval="1d")
+
+        if data is None:
+            raise ValueError("데이터를 불러올 수 없습니다.")
 
         if data.empty:
             raise ValueError("데이터를 불러올 수 없습니다.")
