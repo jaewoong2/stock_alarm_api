@@ -1,6 +1,6 @@
 import datetime
-from typing import List, Optional
-from pydantic import BaseModel, field_validator
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class CoinoneOrderResponse(BaseModel):
@@ -44,6 +44,9 @@ class PlaceOrderResponse(BaseModel):
     krw_balance: str
     btc_balance: str
 
+    class Config:
+        extra = "allow"
+
 
 class GetTradingInformationResponseModel(BaseModel):
     """
@@ -71,3 +74,67 @@ class GetTradingInformationResponseModel(BaseModel):
             return float(value)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid float value: {value}")
+
+
+# -----------------------
+# Pydantic Response Models
+# -----------------------
+
+
+class Candlestick(BaseModel):
+    open: str
+    close: str
+    high: str
+    low: str
+    volume: str
+    timestamp: int
+
+
+class CandlestickResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    candles: List[Dict[str, Any]] = Field(..., description="List of candlestick data")
+
+
+class TickerResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    tickers: Dict[str, Any]
+
+
+class OrderBookEntry(BaseModel):
+    price: str
+    qty: str
+
+
+class OrderBookResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    bids: List[OrderBookEntry]
+    asks: List[OrderBookEntry]
+
+
+class TradesResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    quote_currency: str
+    target_currency: str
+    transactions: List[Dict[str, Any]]
+
+
+class MarketResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    markets: List[Dict[str, Any]]
+
+
+class BalanceResponse(BaseModel):
+    result: str
+    error_code: str
+    server_time: int
+    balances: Dict[str, Any]

@@ -51,9 +51,6 @@ class AIService:
             
             보고서에는 반드시 다음 항목들이 포함되어야 합니다:
             1. 투자 결정의 근거 (어떤 데이터를 근거로 했는지)
-            2. 왜 해당 투자를 진행했는지에 대한 설명
-            3. 앞으로의 투자 전략 및 방향
-            4. 투자 과정에서의 반성과 회고를 통한 개선 방안
             
             종합적이고 명확한 보고서를 작성해주세요.
         """
@@ -75,7 +72,9 @@ class AIService:
 
         return ""
 
-    def analyze_market(self, market_data: dict, technical_indicators: dict):
+    def analyze_market(
+        self, market_data: dict, technical_indicators: dict, previous_trade_info: str
+    ):
         """
         OpenAI API(Deepseek R1 모델)를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
@@ -86,36 +85,52 @@ class AIService:
             }
         """
         prompt = f"""
-            You are an AI financial assistant specialized in cryptocurrency.
-            Analyze the following market data and technical indicators, then provide
-            a suggested trading plan in JSON format only, with the fields:
-            - "action": one of ["BUY", "SELL", "HOLD"]
-            - "stop_loss": number
-            - "take_profit": number
-            - "position_size_ratio": ratio of capital to allocate (0~1)
-            - "reason": short explanation
+        You are an AI financial assistant specialized in short-term (5-minute timeframe) cryptocurrency trading (Spot).
+        Each day, you will be called approximately 7 times to automatically provide a single trading plan based on the latest data.
+        You also personally benefit from the trading profits, so focus on maximizing short-term gains while minimizing risk.
 
-            Only return valid JSON. No additional text.
+        Analyze the following data, then provide a suggested trading plan in JSON format only:
+        1) Market Data (5-minute candles)
+        2) Technical Indicators
+        3) Previous Trade Information (current position, entry price, realized/unrealized PnL, etc.)
+        4) Order Book Summary (top bids/asks, notable liquidity walls)
+        5) Fee Info (maker/taker fees)
 
-            Market Data:
-            {json.dumps(market_data, indent=2)}
+        Your output must include, at minimum:
+        - "action": one of ["BUY", "SELL", "HOLD"]
+        - "reason": explanation focusing on key signals and risk considerations
 
-            Technical Indicators:
-            {json.dumps(technical_indicators, indent=2)}
+        Constraints:
+        - The trade must be suitable for a spot, short-term scalping strategy.
+        - Recommend tight stops and short take-profit distances.
+        - If you recommend a LIMIT order and it's not filled, the system may switch to a MARKET order depending on time and liquidity.
+        - Take into account maker/taker fees.
+        - Only return valid JSON. Do not include additional text.
+
+        Market Data:
+        {json.dumps(market_data, indent=2)}
+
+        Technical Indicators:
+        {json.dumps(technical_indicators, indent=2)}
+
+        Previous Trade Info:
+        {previous_trade_info}
         """
         client = openai.OpenAI(
             api_key=self.open_api_key  # This is the default and can be omitted
         )
 
         try:
-
             response = client.beta.chat.completions.parse(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
                 response_format=AnalyzeResponseModel,
+                temperature=0.6,  # 창의성과 응답의 다양성 조절 (0~1)
+                max_tokens=600,  # 응답의 최대 토큰 수
+                top_p=0.95,  # nucleus sampling 조절
+                frequency_penalty=0.0,  # 반복 억제 정도
+                presence_penalty=0.0,  # 새로운 주제 도입 억제
             )
-
             # response.choices[0].message.content
             result = response.choices[0].message.parsed
 

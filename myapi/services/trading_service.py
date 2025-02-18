@@ -82,6 +82,11 @@ class TradingService:
             "currencies": ["KRW", "BTC", "ETH"],
         }
 
+        if isinstance(currency, str):
+            payload["currencies"] = [currency]
+        else:
+            payload["currencies"] = currency
+
         encoded_payload = self._get_encoded_payload(payload)
         headers = self._create_headers(encoded_payload)
 
@@ -125,10 +130,10 @@ class TradingService:
             Dict[str, Any]: 주문 결과 또는 HOLD 상태 등의 처리 결과를 반환합니다.
         """
 
-        # 1. 시장 데이터 조회
+        # 0. 이전 거래 정보 조회
         trading_information = self.trading_repository.get_trading_information()
+        # 1. 시장 데이터 조회
         market_data = self.backdata_service.get_market_data(symbol)
-
         # 2. 캔들 데이터 조회
         candles_info = self._fetch_candle_data()
 
@@ -145,6 +150,7 @@ class TradingService:
         decision = self.ai_service.analyze_market(
             market_data=market_data,
             technical_indicators=technical_indicators,
+            previous_trade_info=trading_information.action,
         )
         action = decision.action.upper()
 
@@ -222,7 +228,12 @@ class TradingService:
         # 요약 및 기록
         buy_trade_data = {
             **base_trade_data,
-            "action_string": f"{used_amount}원으로 [{symbol}]을(를) {market_data['price']}원에 매수하였습니다.",
+            "action_string": (
+                f"[현재 총자산 {float(krw_balance.available)}원] ->"
+                f"{used_amount}원으로"
+                f"[{symbol}]을(를) "
+                f"{market_data['price']}원에 매수하였습니다."
+            ),
         }
 
         summary = self.ai_service.generate_trade_summary(
@@ -293,7 +304,10 @@ class TradingService:
 
         sell_trade_data = {
             **base_trade_data,
-            "action_string": f"{sell_amount}개의 [{symbol}]을(를) {market_data['price']}원에 매도하였습니다.",
+            "action_string": f"[현재 총자산 {coin_balance.available}개] ->"
+            f"{sell_amount}개의"
+            f"[{symbol}]을(를) "
+            f"{market_data['price']}원에 매도하였습니다.",
         }
 
         summary = self.ai_service.generate_trade_summary(
@@ -353,7 +367,7 @@ class TradingService:
             status=ExecutionStatus.SUCCESS,
             timestamp=base_trade_data["timestamp"],
             symbol=base_trade_data["symbol"],
-            action_string="",
+            action_string=f"{base_trade_data["symbol"]} 구매 및 판매를 하지 않았습니다. 지켜보는중",
             reason=base_trade_data["reason"],
             openai_prompt=base_trade_data["openai_prompt"],
         )
@@ -370,9 +384,9 @@ class TradingService:
         다양한 간격(1m, 5m, 1h)의 캔들 데이터를 Fetch하여 Dict 형태로 반환
         """
         return {
-            "5m": self.backdata_service.get_coinone_candles(interval="1m", size=size),
-            "15m": self.backdata_service.get_coinone_candles(interval="5m", size=size),
-            "1h": self.backdata_service.get_coinone_candles(interval="1h", size=size),
+            "5m": self.backdata_service.get_coinone_candles(interval="5m", size=size),
+            # "15m": self.backdata_service.get_coinone_candles(interval="15m", size=size),
+            # "1h": self.backdata_service.get_coinone_candles(interval="1h", size=size),
         }
 
     def _record_trade(self, trade: Trade) -> None:
@@ -427,7 +441,7 @@ class TradingService:
                 error_code=order_response.error_code,
             )
 
-        balances = self.get_balance_coinone(["KRW", "BTC"])
+        balances = self.get_balance_coinone(["KRW", "BTC", symbol.upper()])
 
         if not isinstance(balances, list):
             return PlaceOrderResponse(
@@ -444,4 +458,5 @@ class TradingService:
             error_code=order_response.error_code,
             krw_balance=balance_object["KRW"].available,
             btc_balance=balance_object["BTC"].available,
+            **balance_object,
         )
