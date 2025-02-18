@@ -13,9 +13,7 @@ class KakaoMessageRequest(BaseModel):
 
 
 class KakaoTokenResponse(BaseModel):
-    token_type: str = Field(
-        ..., example="bearer", description="토큰 타입, bearer로 고정"
-    )
+    token_type: str = Field(..., description="토큰 타입, bearer로 고정")
     access_token: str = Field(..., description="갱신된 사용자 액세스 토큰 값")
     id_token: Optional[str] = Field(
         None,

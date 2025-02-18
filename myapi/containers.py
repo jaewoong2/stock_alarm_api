@@ -1,6 +1,7 @@
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
+from myapi.repositories.trading_repository import TradingRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.kakao_service import KakaoService
@@ -23,6 +24,9 @@ class Container(containers.DeclarativeContainer):
     db = providers.Resource(get_db)
 
     config = providers.Singleton(Settings)
+
+    trading_repository = providers.Singleton(TradingRepository, db_session=db)
+
     aws_service = providers.Factory(AwsService, settings=config)
     kakao_service = providers.Factory(
         KakaoService, settings=config, aws_service=aws_service
@@ -38,5 +42,5 @@ class Container(containers.DeclarativeContainer):
         settings=config,
         backdata_service=backdata_service,
         ai_service=ai_service,
-        db_session=db,
+        trading_repository=trading_repository,
     )

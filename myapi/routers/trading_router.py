@@ -20,7 +20,7 @@ def get_trading_information(
     return trading_info
 
 
-@router.post("/trade/{symbol}/{amount}")
+@router.post("/trade/{symbol}")
 @inject
 def trade(
     symbol: str,

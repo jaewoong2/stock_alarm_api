@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, Dict, List, Union
 import requests
 import hmac
 import hashlib
@@ -13,13 +13,14 @@ from myapi.domain.trading.coinone_schema import (
     Balance,
     CoinoneBalanceResponse,
     CoinoneOrderResponse,
-    GetTradingInformationResponseModel,
     PlaceOrderResponse,
 )
+from myapi.repositories.trading_repository import TradingRepository
 from myapi.services.backdata_service import BackDataService
 from myapi.services.ai_service import AIService
-from myapi.utils.config import Settings, row_to_dict
-from sqlalchemy.orm import Session
+from myapi.utils.config import Settings
+
+from myapi.utils.indicators import get_technical_indicators
 
 logger = logging.getLogger(__name__)
 
@@ -32,48 +33,16 @@ class TradingService:
         settings: Settings,
         backdata_service: BackDataService,
         ai_service: AIService,
-        db_session: Session,
+        trading_repository: TradingRepository,
     ):
         self.access_token = settings.COIN_ACCESS_TOKEN
         self.secret_key = settings.COIN_SECRET_KEY
         self.backdata_service = backdata_service
         self.ai_service = ai_service
-        self.db_session = db_session
+        self.trading_repository = trading_repository
 
-    def insert_trading_information(self, trading: Trade) -> Trade:
-        """
-        거래 정보를 DB에 추가합니다.
-        """
-        try:
-            with self.db_session.begin():
-                self.db_session.add(trading)
-                self.db_session.flush()  # Flush if you need to assign an ID or similar
-            return trading
-        except Exception as e:
-            logger.error("Error inserting trading information: %s", e)
-            self.db_session.rollback()
-            raise
-        finally:
-            self.db_session.close()
-
-    def get_trading_information(
-        self,
-    ):
-        """
-        DB에서 모든 거래 정보를 조회합니다.
-        """
-        try:
-            trade = (
-                self.db_session.query(Trade).order_by(Trade.timestamp.desc()).first()
-            )
-
-            return GetTradingInformationResponseModel(**row_to_dict(trade))
-        except Exception as e:
-            logger.error("Error inserting trading information: %s", e)
-            self.db_session.rollback()
-            raise
-        finally:
-            self.db_session.close()
+    def get_trading_information(self):
+        return self.trading_repository.get_trading_information()
 
     def _get_encoded_payload(self, payload: dict) -> bytes:
         """
@@ -143,190 +112,277 @@ class TradingService:
 
         return Balance(available="0", limit="0", average_price="0", currency="KRW")
 
-    def execute_trade(self, symbol: str, percentage: int | float):
+    def execute_trade(self, symbol: str, percentage: Union[int, float]):
         """
-        1. 시장 데이터를 조회하고 AI 분석을 수행합니다.
-        2. AI 분석 결과에 따라 주문을 실행합니다.
-           - BUY의 경우, 계좌의 KRW 잔고의 일정 비율(percentage)을 주문 총액(amount)으로 사용합니다.
-           - SELL의 경우, 해당 코인의 잔고 전체를 주문 수량(qty)으로 사용합니다.
+        1. 시장 데이터를 조회하고 AI 분석을 수행합니다. (ai_service 로 전달되는 파라미터는 스크립트로 전송됨)
+        2. AI 분석 결과(BUY, SELL, HOLD)에 따라 주문을 실행합니다.
+           - BUY  : 계좌 KRW 잔고의 percentage 비율만큼 사용
+           - SELL : 해당 코인 잔고 전체(또는 percentage 비율)만큼 판매
+           - HOLD : 아무런 주문 없이 DB에 기록만 남김
         3. 주문 결과와 관련 정보를 Trade 모델을 통해 DB에 기록합니다.
+
+        Returns:
+            Dict[str, Any]: 주문 결과 또는 HOLD 상태 등의 처리 결과를 반환합니다.
         """
 
-        trading_information = self.get_trading_information()
+        # 1. 시장 데이터 조회
+        trading_information = self.trading_repository.get_trading_information()
         market_data = self.backdata_service.get_market_data(symbol)
 
+        # 2. 캔들 데이터 조회
+        candles_info = self._fetch_candle_data()
 
-        candle_5m = self.backdata_service.get_coinone_candles(interval="1m", size=200)  # 5분봉
-        candle_15m = self.backdata_service.get_coinone_candles(interval="5m", size=200)  # 15분봉
-        candle_1h = self.backdata_service.get_coinone_candles(interval="1h", size=200)  # 1시간봉
-
-
-        common_trade_data = {
+        # 3. AI 분석을 위한 공통 데이터 구성
+        #    - ai_service로 보내는 스크립트형 데이터(여기서는 market_data, 캔들 정보 등)
+        common_ai_data = {
             "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
             "symbol": symbol.upper(),
-            "openai_prompt": json.dumps(market_data),
+            "openai_prompt": json.dumps(market_data),  # AI 모델에 전달될 스크립트
         }
 
-
-        common_trade_data["candles_information"] = f"5분봉: {candle_5m}, 15분봉: {candle_15m}, 1시간봉: {candle_1h}"
-
-
+        technical_indicators = get_technical_indicators(candles_info["5m"])
+        # AI로부터 매매 의사결정 결과 받기
         decision = self.ai_service.analyze_market(
-                information_summary=trading_information.summary,
-                trade_data=common_trade_data,
-                market_data=market_data,
-                decision_reason=None,
-            )
-
+            market_data=market_data,
+            technical_indicators=technical_indicators,
+        )
         action = decision.action.upper()
-        # 아래에서 사용될 trade 기록에 공통으로 들어갈 항목
-        common_trade_data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+
+        # 4. 공통적으로 DB에 기록할 기본 정보
+        base_trade_data = {
+            "timestamp": common_ai_data["timestamp"],
             "symbol": symbol.upper(),
             "reason": getattr(decision, "reason", None),
-            "openai_prompt": json.dumps(market_data),
+            "openai_prompt": common_ai_data["openai_prompt"],
         }
 
+        # 5. 액션 유형별 처리
         if action == "BUY":
-            try:
-                krw_balance = self.get_balance_coinone("KRW")
-            except Exception as e:
-                logger.error("Error fetching KRW balance: %s", e)
-                return {"status": "ERROR", "message": f"잔고 조회 실패: {e}"}
-
-            if not krw_balance or isinstance(krw_balance, list):
-                return {"status": "ERROR", "message": f"잔고 조회 실패"}
-
-            if float(krw_balance.available) < 5000:
-                return {
-                    "status": "ERROR",
-                    "message": "주문 금액이 최소 주문 금액에 미달합니다.",
-                }
-
-            used_amount = float(krw_balance.available) * percentage
-            order_result = self.place_order(
-                symbol=symbol, amount=used_amount, side="BUY"
+            return self._handle_buy(
+                symbol,
+                percentage,
+                market_data,
+                trading_information,
+                base_trade_data,
+                decision,
             )
-
-            common_trade_data["action_string"] = (
-                f"{str(used_amount)}원 으로 [{symbol}가격]: {market_data['price']}원에 구매 하였습니다."
-            )
-
-            common_trade_data["candles_information"] = f"5분봉: {candle_5m}, 15분봉: {candle_15m}, 1시간봉: {candle_1h}"
-
-            status_enum = (
-                ExecutionStatus.SUCCESS
-                if order_result.result == "success"
-                else ExecutionStatus.FAILURE
-            )
-
-            summary = self.ai_service.generate_trade_summary(
-                information_summary=trading_information.summary,
-                trade_data=common_trade_data,
-                market_data=market_data,
-                decision_reason=decision.reason,
-            )
-
-            trade = Trade(
-                **common_trade_data,
-                action=ActionEnum.BUY,
-                amount=used_amount,
-                summary=summary,
-                execution_krw=order_result.krw_balance,  # 실제 체결 KRW 가격 정보가 있다면 수정 필요
-                execution_crypto=order_result.btc_balance,  # 예시 키
-                status=status_enum,
-            )
-            try:
-                self.insert_trading_information(trade)
-            except Exception as e:
-                logger.error("Error inserting trade record: %s", e)
-
-            return order_result
-
         elif action == "SELL":
-            try:
-                coin_balance = self.get_balance_coinone(symbol.upper())
-            except Exception as e:
-                logger.error("Error fetching %s balance: %s", symbol.upper(), e)
-                return {"status": "ERROR", "message": f"잔고 조회 실패: {e}"}
-
-            if not coin_balance or isinstance(coin_balance, list):
-                return {
-                    "status": "ERROR",
-                    "message": f"{symbol.upper()} 잔고가 부족합니다.",
-                }
-
-            if float(coin_balance.average_price) <= 0:
-                return {
-                    "status": "ERROR",
-                    "message": f"{symbol.upper()} 잔고가 부족합니다.",
-                }
-
-            order_result = self.place_order(
-                symbol=symbol,
-                amount=float(coin_balance.available) * percentage,
-                side="SELL",
+            return self._handle_sell(
+                symbol,
+                percentage,
+                market_data,
+                trading_information,
+                base_trade_data,
+                decision,
+            )
+        else:  # HOLD 등 그 외
+            return self._handle_hold(
+                market_data, trading_information, base_trade_data, decision
             )
 
-            status_enum = (
-                ExecutionStatus.SUCCESS
-                if order_result.result == "success"
-                else ExecutionStatus.FAILURE
-            )
+    def _handle_buy(
+        self,
+        symbol: str,
+        percentage: float,
+        market_data: Dict[str, Any],
+        trading_information: Any,
+        base_trade_data: Dict[str, Any],
+        decision: Any,
+    ):
+        """
+        BUY 액션 처리 로직
+        """
+        try:
+            krw_balance = self.get_balance_coinone("KRW")
+        except Exception as e:
+            logger.error("Error fetching KRW balance: %s", e)
+            return {"status": "ERROR", "message": f"잔고 조회 실패: {e}"}
 
-            common_trade_data["action_string"] = (
-                f"{str(float(coin_balance.available) * percentage)}개의 [{symbol}가격]: {market_data['price']}원에 판매 하였습니다."
-            )
+        if not krw_balance or isinstance(krw_balance, list):
+            return {"status": "ERROR", "message": "잔고 조회 실패"}
 
-            summary = self.ai_service.generate_trade_summary(
-                information_summary=trading_information.summary,
-                trade_data=common_trade_data,
-                market_data=market_data,
-                decision_reason=decision.reason,
-            )
+        if float(krw_balance.available) < 5000:
+            return {
+                "status": "ERROR",
+                "message": "주문 금액이 최소 주문 금액에 미달합니다.",
+            }
 
-            trade = Trade(
-                **common_trade_data,
-                action=ActionEnum.SELL,
-                amount=float(coin_balance.average_price)
-                * float(coin_balance.available)
-                * percentage,
-                summary=summary,
-                execution_krw=order_result.krw_balance,
-                execution_crypto=order_result.btc_balance,
-                status=status_enum,
-            )
+        used_amount = float(krw_balance.available) * percentage
 
-            try:
-                self.insert_trading_information(trade)
-            except Exception as e:
-                logger.error("Error inserting trade record: %s", e)
+        # 실제 매수 주문 실행
+        order_result = self.place_order(symbol=symbol, amount=used_amount, side="BUY")
 
-            return order_result
+        # 주문 실행 결과에 따른 상태 설정
+        status_enum = (
+            ExecutionStatus.SUCCESS
+            if order_result.result == "success"
+            else ExecutionStatus.FAILURE
+        )
 
-        else:
-            # HOLD 또는 그 외의 경우에도 DB 기록을 남깁니다.
+        # 요약 및 기록
+        buy_trade_data = {
+            **base_trade_data,
+            "action_string": f"{used_amount}원으로 [{symbol}]을(를) {market_data['price']}원에 매수하였습니다.",
+        }
 
-            summary = self.ai_service.generate_trade_summary(
-                information_summary=trading_information.summary,
-                trade_data=common_trade_data,
-                market_data=market_data,
-                decision_reason=decision.reason,
-            )
-            trade = Trade(
-                **common_trade_data,
-                action=ActionEnum.HOLD,
-                amount=0.0,
-                summary=summary,
-                execution_krw=None,
-                execution_crypto=None,
-                status=ExecutionStatus.SUCCESS,
-            )
-            try:
-                self.insert_trading_information(trade)
-            except Exception as e:
-                logger.error("Error inserting trade record: %s", e)
-            return {"status": "HOLD", "message": "No action taken"}
+        summary = self.ai_service.generate_trade_summary(
+            information_summary=trading_information.summary,
+            trade_data=buy_trade_data,  # 스크립트로 전송
+            market_data=market_data,
+            decision_reason=decision.reason,
+        )
+
+        trade = Trade(
+            action=ActionEnum.BUY,
+            amount=used_amount,
+            summary=summary,
+            execution_krw=order_result.krw_balance,  # 실제 체결 KRW 데이터
+            execution_crypto=order_result.btc_balance,  # 실제 체결 코인 데이터
+            status=status_enum,
+            timestamp=buy_trade_data["timestamp"],
+            symbol=buy_trade_data["symbol"],
+            action_string=buy_trade_data["action_string"],
+            reason=buy_trade_data["reason"],
+            openai_prompt=buy_trade_data["openai_prompt"],
+        )
+
+        # DB 저장
+        self._record_trade(trade)
+        return order_result
+
+    def _handle_sell(
+        self,
+        symbol: str,
+        percentage: float,
+        market_data: Dict[str, Any],
+        trading_information: Any,
+        base_trade_data: Dict[str, Any],
+        decision: Any,
+    ):
+        """
+        SELL 액션 처리 로직
+        """
+        try:
+            coin_balance = self.get_balance_coinone(symbol.upper())
+        except Exception as e:
+            logger.error("Error fetching %s balance: %s", symbol.upper(), e)
+            return {"status": "ERROR", "message": f"잔고 조회 실패: {e}"}
+
+        if not coin_balance or isinstance(coin_balance, list):
+            return {
+                "status": "ERROR",
+                "message": f"{symbol.upper()} 잔고가 부족합니다.",
+            }
+
+        if float(coin_balance.average_price) <= 0:
+            return {
+                "status": "ERROR",
+                "message": f"{symbol.upper()} 잔고가 부족합니다.",
+            }
+
+        sell_amount = float(coin_balance.available)
+
+        # 실제 매도 주문 실행
+        order_result = self.place_order(symbol=symbol, amount=sell_amount, side="SELL")
+
+        status_enum = (
+            ExecutionStatus.SUCCESS
+            if order_result.result == "success"
+            else ExecutionStatus.FAILURE
+        )
+
+        sell_trade_data = {
+            **base_trade_data,
+            "action_string": f"{sell_amount}개의 [{symbol}]을(를) {market_data['price']}원에 매도하였습니다.",
+        }
+
+        summary = self.ai_service.generate_trade_summary(
+            information_summary=trading_information.summary,
+            trade_data=sell_trade_data,  # 스크립트로 전송
+            market_data=market_data,
+            decision_reason=decision.reason,
+        )
+
+        # 금액 환산 (예: 코인 보유수량 * 평균 단가)
+        approximate_amount_krw = (
+            float(coin_balance.average_price)
+            * float(coin_balance.available)
+            * percentage
+        )
+
+        trade = Trade(
+            action=ActionEnum.SELL,
+            amount=approximate_amount_krw,
+            summary=summary,
+            execution_krw=order_result.krw_balance,
+            execution_crypto=order_result.btc_balance,
+            status=status_enum,
+            timestamp=sell_trade_data["timestamp"],
+            symbol=sell_trade_data["symbol"],
+            action_string=sell_trade_data["action_string"],
+            reason=sell_trade_data["reason"],
+            openai_prompt=sell_trade_data["openai_prompt"],
+        )
+
+        self._record_trade(trade)
+        return order_result
+
+    def _handle_hold(
+        self,
+        market_data: Dict[str, Any],
+        trading_information: Any,
+        base_trade_data: Dict[str, Any],
+        decision: Any,
+    ) -> Dict[str, Any]:
+        """
+        HOLD 액션 처리 로직
+        """
+        summary = self.ai_service.generate_trade_summary(
+            information_summary=trading_information.summary,
+            trade_data=base_trade_data,  # 스크립트로 전송
+            market_data=market_data,
+            decision_reason=decision.reason,
+        )
+
+        trade = Trade(
+            action=ActionEnum.HOLD,
+            amount=0.0,
+            summary=summary,
+            execution_krw=None,
+            execution_crypto=None,
+            status=ExecutionStatus.SUCCESS,
+            timestamp=base_trade_data["timestamp"],
+            symbol=base_trade_data["symbol"],
+            action_string="",
+            reason=base_trade_data["reason"],
+            openai_prompt=base_trade_data["openai_prompt"],
+        )
+
+        self._record_trade(trade)
+        return {"status": "HOLD", "message": "No action taken"}
+
+    # -----------------------------------------------------------------------
+    # 헬퍼 함수들
+    # -----------------------------------------------------------------------
+
+    def _fetch_candle_data(self, size: int = 200) -> Dict[str, Any]:
+        """
+        다양한 간격(1m, 5m, 1h)의 캔들 데이터를 Fetch하여 Dict 형태로 반환
+        """
+        return {
+            "5m": self.backdata_service.get_coinone_candles(interval="1m", size=size),
+            "15m": self.backdata_service.get_coinone_candles(interval="5m", size=size),
+            "1h": self.backdata_service.get_coinone_candles(interval="1h", size=size),
+        }
+
+    def _record_trade(self, trade: Trade) -> None:
+        """
+        Trade 정보를 DB에 기록하는 기능.
+        """
+        try:
+            self.trading_repository.insert_trading_information(trade)
+        except Exception as e:
+            logger.error("Error inserting trade record: %s", e)
 
     def place_order(self, symbol: str, amount: int | float, side: str):
         """

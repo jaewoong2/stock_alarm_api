@@ -1,6 +1,6 @@
 import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class CoinoneOrderResponse(BaseModel):
@@ -61,3 +61,13 @@ class GetTradingInformationResponseModel(BaseModel):
     execution_krw: float
     execution_crypto: float
     status: str
+
+    @field_validator("amount", "execution_krw", "execution_crypto", mode="before")
+    @classmethod
+    def convert_to_float(cls, value):
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid float value: {value}")
