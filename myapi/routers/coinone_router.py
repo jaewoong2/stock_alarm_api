@@ -6,6 +6,7 @@ from myapi.domain.trading.coinone_schema import (
     MarketResponse,
     OrderBookEntry,
     OrderBookResponse,
+    OrderRequest,
     TickerResponse,
     TradesResponse,
 )
@@ -110,14 +111,17 @@ def trades_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/markets/{quote_currency}", response_model=MarketResponse)
+@router.get(
+    "/markets/{quote_currency}/{target_currency}", response_model=MarketResponse
+)
 @inject
 def markets_endpoint(
-    quote_currency: str,
+    quote_currency: str = "KRW",
+    target_currency: str = "BTC",
     coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
 ):
     try:
-        data = coinone_service.get_markets(quote_currency)
+        data = coinone_service.get_markets(quote_currency, target_currency)
         return MarketResponse(
             result=data.get("result", "error"),
             error_code=data.get("error_code", ""),
@@ -128,19 +132,28 @@ def markets_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/balances", response_model=BalanceResponse)
+@router.get("/balances")
 @inject
 def balances_endpoint(
     coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
 ):
     try:
-        # Private API 호출 시에는 적절한 인증 값이 필요합니다.
-        data = coinone_service.get_balances()
-        return BalanceResponse(
-            result=data.get("result", "error"),
-            error_code=data.get("error_code", ""),
-            server_time=data.get("server_time", 0),
-            balances=data.get("balances", {}),
-        )
+        data = coinone_service.get_balance(["BTC", "KRW"])
+
+        return data["balances"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/order")
+@inject
+def order(
+    order: OrderRequest,
+    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+):
+    try:
+        data = coinone_service.place_order(order)
+
+        return data["balances"]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

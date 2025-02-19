@@ -18,6 +18,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.kakao_router",
             "myapi.routers.tqqq_router",
             "myapi.routers.trading_router",
+            "myapi.routers.coinone_router",
         ],
     )
 

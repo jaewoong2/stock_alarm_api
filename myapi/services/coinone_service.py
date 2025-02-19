@@ -1,12 +1,16 @@
+import base64
 import hashlib
 import hmac
+import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
+import uuid
 
 import requests
 
-from myapi.utils.config import Settings
+from myapi.domain.trading.coinone_schema import OrderRequest
+from myapi.utils.config import Settings, row_to_dict
 
 
 class CoinoneService:
@@ -55,8 +59,8 @@ class CoinoneService:
         response = self.session.get(url, params=params)
         return response.json()
 
-    def get_markets(self, quote_currency: str) -> Dict[str, Any]:
-        url = f"{self.base_url}/public/v2/markets/{quote_currency}"
+    def get_markets(self, quote_currency: str, target_currency: str) -> Dict[str, Any]:
+        url = f"{self.base_url}/public/v2/markets/{quote_currency}/{target_currency}"
         response = self.session.get(url)
         return response.json()
 
@@ -64,39 +68,54 @@ class CoinoneService:
     def _get_nonce(self) -> str:
         return str(int(time.time() * 1000))
 
-    def _sign_request(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        data["nonce"] = self._get_nonce()
-        encoded = urlencode(data)
+    def _get_signature(self, encoded_payload: bytes) -> str:
+        """
+        인코딩된 페이로드로 HMAC-SHA512 서명을 생성합니다.
+        """
         signature = hmac.new(
-            self.secret_key.encode("utf-8"), encoded.encode("utf-8"), hashlib.sha512
-        ).hexdigest()
-        data["signature"] = signature
-        return data
+            self.secret_key.encode("utf-8"), encoded_payload, hashlib.sha512
+        )
+        return signature.hexdigest()
+
+    def _create_headers(self, encoded_payload: bytes) -> dict:
+        """
+        API 호출에 필요한 헤더를 생성합니다.
+        """
+        return {
+            "Content-type": "application/json",
+            "X-COINONE-PAYLOAD": encoded_payload,
+            "X-COINONE-SIGNATURE": self._get_signature(encoded_payload),
+        }
+
+    def _sign_request(self, payload: dict):
+        """
+        페이로드에 nonce를 추가하고 base64로 인코딩합니다.
+        """
+        payload["nonce"] = str(uuid.uuid4())
+        dumped_json = json.dumps(payload)
+        return base64.b64encode(dumped_json.encode("utf-8"))
 
     def _private_post(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         data["access_token"] = self.api_key
-        data = self._sign_request(data)
-        response = self.session.post(url, data=data)
+
+        encoded_payload = self._sign_request(payload=data)
+        headers = self._create_headers(encoded_payload)
+
+        response = self.session.post(url, headers=headers)
+
         return response.json()
 
     def get_balances(self) -> Dict[str, Any]:
-        return self._private_post("/v2.1/balances/", {})
+        return self._private_post("/v2.1/account/balance", {})
 
-    def get_balance(self, currency: str) -> Dict[str, Any]:
-        return self._private_post("/v2.1/balance/", {"currency": currency})
+    def get_balance(self, currency: List[str]) -> Dict[str, Any]:
+        return self._private_post("/v2.1/account/balance", {"currencies": currency})
 
-    def place_order(
-        self, market: str, side: str, price: str, qty: str, ord_type: str = "limit"
-    ) -> Dict[str, Any]:
-        data = {
-            "market": market,
-            "side": side,
-            "price": price,
-            "qty": qty,
-            "ord_type": ord_type,
-        }
-        return self._private_post("/v2.1/orders/", data)
+    def place_order(self, payload: OrderRequest) -> Dict[str, Any]:
+        data = row_to_dict(payload)
+
+        return self._private_post("/v2.1/order", data)
 
     def cancel_order(self, order_id: str) -> Dict[str, Any]:
         return self._private_post("/v2.1/orders/cancel", {"order_id": order_id})
