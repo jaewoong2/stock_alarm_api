@@ -166,9 +166,6 @@ class OrderRequest(BaseModel):
     trigger_price: Optional[str] = Field(
         None, description="예약가 주문이 실행되는 가격 (감시가, 예약가에서 필수)"
     )
-    user_order_id: Optional[str] = Field(
-        None, description="사용자 지정 주문 ID (최대 150자)"
-    )
 
     @model_validator(mode="after")
     def check_required_fields(self) -> "OrderRequest":

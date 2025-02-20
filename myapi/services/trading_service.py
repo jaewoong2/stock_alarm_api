@@ -8,11 +8,13 @@ import base64
 import logging
 from datetime import datetime
 
+from myapi.domain.ai.ai_schema import AnalyzeResponseModel
 from myapi.domain.trading.trading_model import ActionEnum, ExecutionStatus, Trade
 from myapi.domain.trading.coinone_schema import (
     Balance,
     CoinoneBalanceResponse,
     CoinoneOrderResponse,
+    OrderRequest,
     PlaceOrderResponse,
 )
 from myapi.repositories.trading_repository import TradingRepository
@@ -137,6 +139,8 @@ class TradingService:
         # 2. 캔들 데이터 조회
         candles_info = self._fetch_candle_data()
 
+        balances_data = self.get_balance_coinone(["KRW", symbol.upper()])
+
         # 3. AI 분석을 위한 공통 데이터 구성
         #    - ai_service로 보내는 스크립트형 데이터(여기서는 market_data, 캔들 정보 등)
         common_ai_data = {
@@ -151,6 +155,11 @@ class TradingService:
             market_data=market_data,
             technical_indicators=technical_indicators,
             previous_trade_info=trading_information.action,
+            balances_data=(
+                balances_data.model_dump()
+                if not isinstance(balances_data, list)
+                else {data.currency: data.model_dump() for data in balances_data}
+            ),
         )
         action = decision.action.upper()
 
@@ -164,7 +173,7 @@ class TradingService:
 
         # 5. 액션 유형별 처리
         if action == "BUY":
-            return self._handle_buy(
+            transaction_result = self._handle_buy(
                 symbol,
                 percentage,
                 market_data,
@@ -173,7 +182,7 @@ class TradingService:
                 decision,
             )
         elif action == "SELL":
-            return self._handle_sell(
+            transaction_result = self._handle_sell(
                 symbol,
                 percentage,
                 market_data,
@@ -182,9 +191,12 @@ class TradingService:
                 decision,
             )
         else:  # HOLD 등 그 외
-            return self._handle_hold(
+            transaction_result = self._handle_hold(
                 market_data, trading_information, base_trade_data, decision
             )
+
+        logger.info(transaction_result)
+        return decision
 
     def _handle_buy(
         self,
@@ -193,7 +205,7 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: Any,
+        decision: AnalyzeResponseModel,
     ):
         """
         BUY 액션 처리 로직
@@ -216,7 +228,8 @@ class TradingService:
         used_amount = float(krw_balance.available) * percentage
 
         # 실제 매수 주문 실행
-        order_result = self.place_order(symbol=symbol, amount=used_amount, side="BUY")
+        order_result = self.place_order(**(decision.model_dump()))
+        # order_result = self.place_order(symbol=symbol, amount=used_amount, side="BUY")
 
         # 주문 실행 결과에 따른 상태 설정
         status_enum = (
@@ -236,17 +249,17 @@ class TradingService:
             ),
         }
 
-        summary = self.ai_service.generate_trade_summary(
-            information_summary=trading_information.summary,
-            trade_data=buy_trade_data,  # 스크립트로 전송
-            market_data=market_data,
-            decision_reason=decision.reason,
-        )
+        # summary = self.ai_service.generate_trade_summary(
+        #     information_summary=trading_information.summary,
+        #     trade_data=buy_trade_data,  # 스크립트로 전송
+        #     market_data=market_data,
+        #     decision_reason=decision.reason,
+        # )
 
         trade = Trade(
             action=ActionEnum.BUY,
             amount=used_amount,
-            summary=summary,
+            summary=decision.reason,
             execution_krw=order_result.krw_balance,  # 실제 체결 KRW 데이터
             execution_crypto=order_result.btc_balance,  # 실제 체결 코인 데이터
             status=status_enum,
@@ -268,7 +281,7 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: Any,
+        decision: AnalyzeResponseModel,
     ):
         """
         SELL 액션 처리 로직
@@ -294,7 +307,8 @@ class TradingService:
         sell_amount = float(coin_balance.available)
 
         # 실제 매도 주문 실행
-        order_result = self.place_order(symbol=symbol, amount=sell_amount, side="SELL")
+        order_result = self.place_order(**(decision.model_dump()))
+        # order_result = self.place_order(symbol=symbol, amount=sell_amount, side="SELL")
 
         status_enum = (
             ExecutionStatus.SUCCESS
@@ -310,12 +324,12 @@ class TradingService:
             f"{market_data['price']}원에 매도하였습니다.",
         }
 
-        summary = self.ai_service.generate_trade_summary(
-            information_summary=trading_information.summary,
-            trade_data=sell_trade_data,  # 스크립트로 전송
-            market_data=market_data,
-            decision_reason=decision.reason,
-        )
+        # summary = self.ai_service.generate_trade_summary(
+        #     information_summary=trading_information.summary,
+        #     trade_data=sell_trade_data,  # 스크립트로 전송
+        #     market_data=market_data,
+        #     decision_reason=decision.reason,
+        # )
 
         # 금액 환산 (예: 코인 보유수량 * 평균 단가)
         approximate_amount_krw = (
@@ -327,7 +341,7 @@ class TradingService:
         trade = Trade(
             action=ActionEnum.SELL,
             amount=approximate_amount_krw,
-            summary=summary,
+            summary=decision.reason,
             execution_krw=order_result.krw_balance,
             execution_crypto=order_result.btc_balance,
             status=status_enum,
@@ -346,22 +360,22 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: Any,
+        decision: AnalyzeResponseModel,
     ) -> Dict[str, Any]:
         """
         HOLD 액션 처리 로직
         """
-        summary = self.ai_service.generate_trade_summary(
-            information_summary=trading_information.summary,
-            trade_data=base_trade_data,  # 스크립트로 전송
-            market_data=market_data,
-            decision_reason=decision.reason,
-        )
+        # summary = self.ai_service.generate_trade_summary(
+        #     information_summary=trading_information.summary,
+        #     trade_data=base_trade_data,  # 스크립트로 전송
+        #     market_data=market_data,
+        #     decision_reason=decision.reason,
+        # )
 
         trade = Trade(
             action=ActionEnum.HOLD,
             amount=0.0,
-            summary=summary,
+            summary=decision.reason,
             execution_krw=None,
             execution_crypto=None,
             status=ExecutionStatus.SUCCESS,
@@ -398,7 +412,7 @@ class TradingService:
         except Exception as e:
             logger.error("Error inserting trade record: %s", e)
 
-    def place_order(self, symbol: str, amount: int | float, side: str):
+    def place_order(self, **krwgs):
         """
         코인원 주문 API (v2.1)를 호출하여 시장가 주문을 실행합니다.
 
@@ -407,19 +421,9 @@ class TradingService:
         """
         endpoint = "/v2.1/order"
         url = f"{self.BASE_URL}{endpoint}"
-        payload = {
-            "access_token": self.access_token,
-            "quote_currency": "KRW",
-            "target_currency": symbol.upper(),
-            "side": side,
-            "type": "MARKET",
-            "post_only": False,
-        }
 
-        if side == "BUY":
-            payload["amount"] = str(amount)
-        elif side == "SELL":
-            payload["qty"] = str(amount)
+        payload = OrderRequest(**krwgs).model_dump()
+        payload["access_token"] = self.access_token
 
         encoded_payload = self._get_encoded_payload(payload)
         headers = self._create_headers(encoded_payload)
@@ -441,7 +445,9 @@ class TradingService:
                 error_code=order_response.error_code,
             )
 
-        balances = self.get_balance_coinone(["KRW", "BTC", symbol.upper()])
+        balances = self.get_balance_coinone(
+            ["KRW", "BTC", krwgs["target_currency"].upper()]
+        )
 
         if not isinstance(balances, list):
             return PlaceOrderResponse(

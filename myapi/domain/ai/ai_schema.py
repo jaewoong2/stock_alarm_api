@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from myapi.domain.trading.coinone_schema import OrderRequest
 
 
-class AnalyzeResponseModel(BaseModel):
+class AnalyzeResponseModel(OrderRequest):
     action: str
     reason: str

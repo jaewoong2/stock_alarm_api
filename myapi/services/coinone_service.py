@@ -64,10 +64,6 @@ class CoinoneService:
         response = self.session.get(url)
         return response.json()
 
-    # Private API Methods
-    def _get_nonce(self) -> str:
-        return str(int(time.time() * 1000))
-
     def _get_signature(self, encoded_payload: bytes) -> str:
         """
         인코딩된 페이로드로 HMAC-SHA512 서명을 생성합니다.

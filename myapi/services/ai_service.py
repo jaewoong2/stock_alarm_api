@@ -1,8 +1,10 @@
 # services/ai_service.py
+from fastapi import HTTPException
 import openai
 import json
 
 from myapi.domain.ai.ai_schema import AnalyzeResponseModel
+from myapi.domain.ai.const import generate_prompt
 from myapi.utils.config import Settings
 
 
@@ -73,7 +75,11 @@ class AIService:
         return ""
 
     def analyze_market(
-        self, market_data: dict, technical_indicators: dict, previous_trade_info: str
+        self,
+        market_data: dict,
+        technical_indicators: dict,
+        previous_trade_info: str,
+        balances_data: dict,
     ):
         """
         OpenAI API(Deepseek R1 모델)를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -84,38 +90,14 @@ class AIService:
                 "reason": "간단한 설명"
             }
         """
-        prompt = f"""
-        You are an AI financial assistant specialized in short-term (5-minute timeframe) cryptocurrency trading (Spot).
-        Each day, you will be called approximately 7 times to automatically provide a single trading plan based on the latest data.
-        You also personally benefit from the trading profits, so focus on maximizing short-term gains while minimizing risk.
+        prompt = generate_prompt(
+            market_data=market_data,
+            previous_trade_info=previous_trade_info,
+            technical_indicators=technical_indicators,
+            balances_data=balances_data,
+            max_trades_per_update=1,
+        )
 
-        Analyze the following data, then provide a suggested trading plan in JSON format only:
-        1) Market Data (5-minute candles)
-        2) Technical Indicators
-        3) Previous Trade Information (current position, entry price, realized/unrealized PnL, etc.)
-        4) Order Book Summary (top bids/asks, notable liquidity walls)
-        5) Fee Info (maker/taker fees)
-
-        Your output must include, at minimum:
-        - "action": one of ["BUY", "SELL", "HOLD"]
-        - "reason": explanation focusing on key signals and risk considerations
-
-        Constraints:
-        - The trade must be suitable for a spot, short-term scalping strategy.
-        - Recommend tight stops and short take-profit distances.
-        - If you recommend a LIMIT order and it's not filled, the system may switch to a MARKET order depending on time and liquidity.
-        - Take into account maker/taker fees.
-        - Only return valid JSON. Do not include additional text.
-
-        Market Data:
-        {json.dumps(market_data, indent=2)}
-
-        Technical Indicators:
-        {json.dumps(technical_indicators, indent=2)}
-
-        Previous Trade Info:
-        {previous_trade_info}
-        """
         client = openai.OpenAI(
             api_key=self.open_api_key  # This is the default and can be omitted
         )
@@ -135,19 +117,22 @@ class AIService:
             result = response.choices[0].message.parsed
 
             if not result:
-                return AnalyzeResponseModel(
-                    action="HOLD", reason="응답 스키마가 올바르지 않습니다."
+                raise HTTPException(
+                    status_code=403,
+                    detail="응답 스키마가 올바르지 않습니다.",
                 )
 
             # 스키마에 action과 reason 키가 있는지 확인
             if result.action and result.reason:
                 return result
             else:
-                return AnalyzeResponseModel(
-                    action="HOLD", reason="응답 스키마가 올바르지 않습니다."
+                raise HTTPException(
+                    status_code=403,
+                    detail="응답 스키마가 올바르지 않습니다.",
                 )
         except Exception as e:
             # 에러 발생 시, JSON 스키마 형식으로 에러 메시지 반환
-            return AnalyzeResponseModel(
-                action="HOLD", reason=f"Error occurred: {str(e)}"
+            raise HTTPException(
+                status_code=403,
+                detail=str(e),
             )
