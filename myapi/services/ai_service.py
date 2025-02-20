@@ -108,7 +108,6 @@ class AIService:
                 messages=[{"role": "user", "content": prompt}],
                 response_format=AnalyzeResponseModel,
                 temperature=0.6,  # 창의성과 응답의 다양성 조절 (0~1)
-                max_tokens=600,  # 응답의 최대 토큰 수
                 top_p=0.95,  # nucleus sampling 조절
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
