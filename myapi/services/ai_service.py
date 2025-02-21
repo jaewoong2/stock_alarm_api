@@ -3,7 +3,7 @@ from fastapi import HTTPException
 import openai
 import json
 
-from myapi.domain.ai.ai_schema import AnalyzeResponseModel
+from myapi.domain.ai.ai_schema import TradingResponse
 from myapi.domain.ai.const import generate_prompt
 from myapi.utils.config import Settings
 
@@ -80,6 +80,8 @@ class AIService:
         technical_indicators: dict,
         previous_trade_info: str,
         balances_data: dict,
+        quote_currency: str = "KRW",
+        target_currency: str = "BTC",
     ):
         """
         OpenAI API(Deepseek R1 모델)를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -96,6 +98,8 @@ class AIService:
             technical_indicators=technical_indicators,
             balances_data=balances_data,
             max_trades_per_update=1,
+            quote_currency=quote_currency,
+            target_currency=target_currency,
         )
 
         client = openai.OpenAI(
@@ -106,7 +110,7 @@ class AIService:
             response = client.beta.chat.completions.parse(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                response_format=AnalyzeResponseModel,
+                response_format=TradingResponse,
                 temperature=0.6,  # 창의성과 응답의 다양성 조절 (0~1)
                 top_p=0.95,  # nucleus sampling 조절
                 frequency_penalty=0.0,  # 반복 억제 정도
@@ -122,7 +126,7 @@ class AIService:
                 )
 
             # 스키마에 action과 reason 키가 있는지 확인
-            if result.action and result.reason:
+            if result.actions:
                 return result
             else:
                 raise HTTPException(

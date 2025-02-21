@@ -8,7 +8,7 @@ import base64
 import logging
 from datetime import datetime
 
-from myapi.domain.ai.ai_schema import AnalyzeResponseModel
+from myapi.domain.ai.ai_schema import Action
 from myapi.domain.trading.trading_model import ActionEnum, ExecutionStatus, Trade
 from myapi.domain.trading.coinone_schema import (
     Balance,
@@ -149,9 +149,9 @@ class TradingService:
             "openai_prompt": json.dumps(market_data),  # AI 모델에 전달될 스크립트
         }
 
-        technical_indicators = get_technical_indicators(candles_info["5m"])
+        technical_indicators = get_technical_indicators(candles_info["15m"])
         # AI로부터 매매 의사결정 결과 받기
-        decision = self.ai_service.analyze_market(
+        decisions = self.ai_service.analyze_market(
             market_data=market_data,
             technical_indicators=technical_indicators,
             previous_trade_info=trading_information.action,
@@ -160,43 +160,50 @@ class TradingService:
                 if not isinstance(balances_data, list)
                 else {data.currency: data.model_dump() for data in balances_data}
             ),
+            target_currency=symbol.upper(),
+            quote_currency="KRW",
         )
-        action = decision.action.upper()
 
-        # 4. 공통적으로 DB에 기록할 기본 정보
-        base_trade_data = {
-            "timestamp": common_ai_data["timestamp"],
-            "symbol": symbol.upper(),
-            "reason": getattr(decision, "reason", None),
-            "openai_prompt": common_ai_data["openai_prompt"],
-        }
+        for decision in decisions.actions:
 
-        # 5. 액션 유형별 처리
-        if action == "BUY":
-            transaction_result = self._handle_buy(
-                symbol,
-                percentage,
-                market_data,
-                trading_information,
-                base_trade_data,
-                decision,
-            )
-        elif action == "SELL":
-            transaction_result = self._handle_sell(
-                symbol,
-                percentage,
-                market_data,
-                trading_information,
-                base_trade_data,
-                decision,
-            )
-        else:  # HOLD 등 그 외
-            transaction_result = self._handle_hold(
-                market_data, trading_information, base_trade_data, decision
-            )
+            action = decision.action.upper()
 
-        logger.info(transaction_result)
-        return decision
+            # 4. 공통적으로 DB에 기록할 기본 정보
+            base_trade_data = {
+                "timestamp": common_ai_data["timestamp"],
+                "symbol": symbol.upper(),
+                "reason": getattr(decision, "reason", None),
+                "openai_prompt": common_ai_data["openai_prompt"],
+            }
+
+            # 5. 액션 유형별 처리
+            if action == "BUY":
+                transaction_result = self._handle_buy(
+                    symbol,
+                    percentage,
+                    market_data,
+                    trading_information,
+                    base_trade_data,
+                    decision,
+                )
+            elif action == "SELL":
+                transaction_result = self._handle_sell(
+                    symbol,
+                    percentage,
+                    market_data,
+                    trading_information,
+                    base_trade_data,
+                    decision,
+                )
+            else:  # HOLD 등 그 외
+                transaction_result = self._handle_hold(
+                    market_data, trading_information, base_trade_data, decision
+                )
+
+            print(decision)
+            print(transaction_result)
+            logger.info("%s", transaction_result, exc_info=True)
+        return decisions
 
     def _handle_buy(
         self,
@@ -205,7 +212,7 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: AnalyzeResponseModel,
+        decision: Action,
     ):
         """
         BUY 액션 처리 로직
@@ -228,7 +235,7 @@ class TradingService:
         used_amount = float(krw_balance.available) * percentage
 
         # 실제 매수 주문 실행
-        order_result = self.place_order(**(decision.model_dump()))
+        order_result = self.place_order(**(decision.order.model_dump()))
         # order_result = self.place_order(symbol=symbol, amount=used_amount, side="BUY")
 
         # 주문 실행 결과에 따른 상태 설정
@@ -238,12 +245,15 @@ class TradingService:
             else ExecutionStatus.FAILURE
         )
 
+        price = decision.order.price or 0
+        qty = decision.order.qty or 0
+
         # 요약 및 기록
         buy_trade_data = {
             **base_trade_data,
             "action_string": (
-                f"[현재 총자산 {float(krw_balance.available)}원] ->"
-                f"{used_amount}원으로"
+                f"[현재 총자산 {krw_balance.available}원] ->"
+                f"{float(price) * float(qty)}원으로"
                 f"[{symbol}]을(를) "
                 f"{market_data['price']}원에 매수하였습니다."
             ),
@@ -281,7 +291,7 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: AnalyzeResponseModel,
+        decision: Action,
     ):
         """
         SELL 액션 처리 로직
@@ -307,7 +317,7 @@ class TradingService:
         sell_amount = float(coin_balance.available)
 
         # 실제 매도 주문 실행
-        order_result = self.place_order(**(decision.model_dump()))
+        order_result = self.place_order(**(decision.order.model_dump()))
         # order_result = self.place_order(symbol=symbol, amount=sell_amount, side="SELL")
 
         status_enum = (
@@ -360,7 +370,7 @@ class TradingService:
         market_data: Dict[str, Any],
         trading_information: Any,
         base_trade_data: Dict[str, Any],
-        decision: AnalyzeResponseModel,
+        decision: Action,
     ) -> Dict[str, Any]:
         """
         HOLD 액션 처리 로직
@@ -398,9 +408,9 @@ class TradingService:
         다양한 간격(1m, 5m, 1h)의 캔들 데이터를 Fetch하여 Dict 형태로 반환
         """
         return {
-            "5m": self.backdata_service.get_coinone_candles(interval="5m", size=size),
-            # "15m": self.backdata_service.get_coinone_candles(interval="15m", size=size),
-            # "1h": self.backdata_service.get_coinone_candles(interval="1h", size=size),
+            # "5m": self.backdata_service.get_coinone_candles(interval="5m", size=size),
+            # "6h": self.backdata_service.get_coinone_candles(interval="6h", size=size),
+            "15m": self.backdata_service.get_coinone_candles(interval="15m", size=size),
         }
 
     def _record_trade(self, trade: Trade) -> None:

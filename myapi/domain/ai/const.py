@@ -27,7 +27,7 @@ def generate_prompt(
     """
 
     prompt = f"""
-You are an AI financial assistant for short-term (5-minute) spot cryptocurrency trading.
+You are an AI financial assistant for short-term (15-minute) spot cryptocurrency trading.
 Your goal is to maximize profits and minimize risk over a 6-hour window, adapting every 5 minutes.
 
 1. Provide a 6-hour outlook (bullish, bearish, or mixed) with confidence:
@@ -53,18 +53,27 @@ Your goal is to maximize profits and minimize risk over a 6-hour window, adaptin
 
 5. Return valid JSON with:
    - "6h_outlook": string (e.g., "BULLISH") with "confidence" (0-1).
-   - "scenarios": list of objects, each with:
-       - "condition": string (e.g., "BB_upper < price and RSI > 70")
-       - "order": object matching OrderRequest schema
+   - "actions": list of objects, each with:
+       - "order": object matching OrderRequest schema (지정가로 설정)
        - "reason": string (e.g., "Bollinger breakout with overbought signal")
        - "priority": integer (1-5, 1 = highest)
+       - action: "SELL" | "BUY"
    - "immediate_action": optional OrderRequest-compatible object.
    - "time_window": string (e.g., "6h" or "15m").
    - "learned_insight": string (e.g., "Reduced qty due to past overbought losses").
 
 6. OrderRequest Schema:
-{OrderRequest.model_json_schema()}
-
+   - side: string (e.g., "BUY" or "SELL")
+   - quote_currency: string (e.g., "KRW")
+   - target_currency: string (e.g., "BTC")
+   - type: string (e.g., "LIMIT", "MARKET", "STOP_LIMIT")
+   - price: optional string (required for LIMIT or STOP_LIMIT)
+   - qty: optional string (required for LIMIT, STOP_LIMIT, or MARKET SELL)
+   - amount: optional string (required for MARKET BUY)
+   - post_only: optional boolean (applies to LIMIT)
+   - limit_price: optional string (applies to MARKET)
+   - trigger_price: optional string (required for STOP_LIMIT)
+ 
 7. Ensure non-conflicting scenarios:
    - Use 'priority' to resolve overlaps.
    - Fallback to HOLD if conditions are unclear.
@@ -83,7 +92,7 @@ Technical Indicators (RSI, MACD, BB, EMA, etc.):
 Previous Trade Info:
 {previous_trade_info}
 
-Balances Data:
+Current My Balances Data:
 {json.dumps(balances_data, indent=2)}
 
 Volatility Data:
