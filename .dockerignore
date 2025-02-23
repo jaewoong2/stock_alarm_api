@@ -1,0 +1,9 @@
+# Ignore Docker files
+Dockerfile*
+docker-compose.yml
+
+# Ignore IDE/editor config files
+.vscode
+.venv
+
+requirements.txt.

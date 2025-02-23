@@ -114,6 +114,16 @@ class CoinoneService:
     def get_balance(self, currency: List[str]):
         balance = self._private_post("/v2.1/account/balance", {"currencies": currency})
 
+        if balance.get("result") == "error":
+            return CoinoneBalanceResponse(
+                balances=[], error_code="No balance found", result="error"
+            ).balances
+
+        if not balance.get("balances"):
+            return CoinoneBalanceResponse(
+                balances=[], error_code="No balance found", result="error"
+            ).balances
+
         return CoinoneBalanceResponse(**balance).balances
 
     def place_order(self, payload: OrderRequest):
@@ -148,5 +158,15 @@ class CoinoneService:
             "/v2.1/order/active_orders",
             {"target_currency": target_currency, "quote_currency": "KRW"},
         )
+
+        if orders.get("result") == "error":
+            return ActiveOrdersResponse(
+                error_code="No active orders found", result="error", active_orders=[]
+            )
+
+        if not orders.get("active_orders"):
+            return ActiveOrdersResponse(
+                error_code="No active orders found", result="error", active_orders=[]
+            )
 
         return ActiveOrdersResponse(**orders)

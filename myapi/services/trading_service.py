@@ -334,8 +334,8 @@ class TradingService:
             status=ExecutionStatus.SUCCESS,
             timestamp=base_trade_data["timestamp"],
             symbol=base_trade_data["symbol"],
-            action_string=f"{base_trade_data["symbol"]} 구매 및 판매를 하지 않았습니다. 지켜보는중",
-            reason=base_trade_data["reason"],
+            action_string=f"{decision.order.target_currency} 구매 및 판매를 하지 않았습니다. 지켜보는중",
+            reason=decision.reason,
             openai_prompt=base_trade_data["openai_prompt"],
         )
 

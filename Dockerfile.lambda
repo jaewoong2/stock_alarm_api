@@ -1,5 +1,5 @@
 # Python 람다 함수를 위한 Dockerfile(Linux/ARM64)
-FROM public.ecr.aws/lambda/python:3.11
+FROM public.ecr.aws/lambda/python:3.12
 
 # AWS Lambda는 /var/task를 코드 디렉토리로 사용
 WORKDIR /var/task
@@ -11,6 +11,7 @@ RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # 애플리케이션 코드 복사
+COPY . .
 COPY ./myapi ./myapi
 
 # 람다 함수의 핸들러를 지정 (myapi.main.handler)
