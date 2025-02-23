@@ -1,35 +1,55 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from enum import Enum
+from pydantic import BaseModel, ConfigDict, Field
+
+from myapi.domain.trading.coinone_schema import OrderRequest
 
 
-class OrderRequest(BaseModel):
-    side: str  # "BUY" or "SELL"
-    quote_currency: str  # e.g., "KRW"
-    target_currency: str  # e.g., "BTC"
-    type: str  # "LIMIT", "MARKET", "STOP_LIMIT"
-    price: Optional[str] = None  # required for LIMIT or STOP_LIMIT
-    qty: Optional[str] = None  # required for LIMIT, STOP_LIMIT, or MARKET SELL
-    amount: Optional[str] = None  # required for MARKET BUY
-    post_only: Optional[bool] = None  # applies to LIMIT orders
-    limit_price: Optional[str] = None  # applies to MARKET orders
-    trigger_price: Optional[str] = None  # required for STOP_LIMIT orders
+class OrderSide(str, Enum):
+    BUY = "BUY"
+    CANCLE = "CANCLE"
+
+
+class OrderType(str, Enum):
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+    STOP_LIMIT = "STOP_LIMIT"
+
+
+class ActionType(str, Enum):
+    SELL = "SELL"
+    BUY = "BUY"
+    HOLD = "HOLD"
+    CANCLE = "CANCLE"
+
+
+class OutlookEnum(str, Enum):
+    BULLISH = "BULLISH"
+    BEARISH = "BEARISH"
+    MIXED = "MIXED"
 
 
 class Action(BaseModel):
-    order: OrderRequest
-    reason: str  # e.g., "Bollinger breakout with overbought signal"
-    priority: int  # 1-5 (1 = highest)
-    action: str  # "SELL" | "BUY" | "HOLD"
+    order: OrderRequest = Field(..., description="The order request details")
+    reason: str = Field(
+        ...,
+        description="Reason for the order (e.g., 'Bollinger breakout with overbought signal')",
+    )
+    priority: int = Field(..., description="Priority level (1 highest to 5 lowest)")
+    action: ActionType = Field(
+        ..., description="Action type: SELL, BUY, CANCEL, or HOLD"
+    )
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class SixHOutlook(BaseModel):
-    outlook: str  # "BULLISH", "BEARISH", or "MIXED"
-    confidence: float  # confidence level between 0 and 1
+    outlook: OutlookEnum = Field(
+        ..., description="Market outlook: BULLISH, BEARISH, or MIXED"
+    )
+    confidence: float = Field(
+        ..., ge=0, le=1, description="Confidence level between 0 and 1"
+    )
 
 
 class TradingResponse(BaseModel):
-    # Using alias for "6h_outlook" to match JSON key requirement.
-    six_h_outlook: SixHOutlook = Field(..., alias="6h_outlook")
-    actions: List[Action]
-    time_window: str  # e.g., "6h" or "15m"
-    learned_insight: str  # e.g., "Reduced qty due to past overbought losses"
+    action: Action

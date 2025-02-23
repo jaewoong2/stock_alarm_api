@@ -33,7 +33,7 @@ class Container(containers.DeclarativeContainer):
     kakao_service = providers.Factory(
         KakaoService, settings=config, aws_service=aws_service
     )
-    backdata_service = providers.Factory(BackDataService)
+    backdata_service = providers.Factory(BackDataService, settings=config)
     tqqq_service = providers.Factory(TqqqService, settings=config)
 
     ai_service = providers.Factory(AIService, settings=config)
@@ -43,7 +43,8 @@ class Container(containers.DeclarativeContainer):
     trading_service = providers.Factory(
         TradingService,
         settings=config,
-        backdata_service=backdata_service,
         ai_service=ai_service,
+        backdata_service=backdata_service,
+        coinone_service=coinone_service,
         trading_repository=trading_repository,
     )

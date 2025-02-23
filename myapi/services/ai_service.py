@@ -1,78 +1,23 @@
 # services/ai_service.py
+from typing import Type, TypeVar
 from fastapi import HTTPException
 import openai
 import json
+
+from pydantic import BaseModel
 
 from myapi.domain.ai.ai_schema import TradingResponse
 from myapi.domain.ai.const import generate_prompt
 from myapi.utils.config import Settings
 
+# T는 BaseModel을 상속하는 타입이어야 합니다.
+T = TypeVar("T", bound=BaseModel)
+
 
 class AIService:
     def __init__(self, settings: Settings):
+        self.hyperbolic_api_key = settings.HYPERBOLIC_API_KEY
         self.open_api_key = settings.OPENAI_API_KEY
-
-    def generate_trade_summary(
-        self,
-        information_summary: str | None,
-        trade_data: dict,
-        market_data: dict,
-        decision_reason: str,
-    ) -> str:
-        """
-        투자 거래 데이터, 시장 데이터, 투자 결정 근거를 바탕으로
-        투자 요약 보고서를 생성합니다.
-
-        보고서에는 아래 항목들이 포함됩니다:
-        1. 투자 결정의 근거 (어떤 근거로 했는지)
-        2. 왜 해당 투자를 진행했는지
-        3. 앞으로의 투자 전략 및 방향
-        4. 투자 과정에서의 반성과 회고를 통한 개선 방안
-
-        :param trade_data: 거래 관련 데이터 (예: 주문 내역, 체결 가격 등)
-        :param market_data: 해당 시점의 시장 데이터
-        :param decision_reason: AI 혹은 사용자가 제공한 투자 결정 이유
-        :return: 생성된 투자 요약 보고서 문자열
-        """
-        client = openai.OpenAI(
-            api_key=self.open_api_key  # This is the default and can be omitted
-        )
-
-        prompt = f"""
-            당신은 투자 전문가입니다.
-            아래 정보를 바탕으로 이번 투자에 대한 종합적인 요약 보고서를 작성하세요.
-            
-            [투자 데이터]
-            {json.dumps(trade_data, ensure_ascii=False, indent=2)}
-            
-            [시장 데이터]
-            {json.dumps(market_data, ensure_ascii=False, indent=2)}
-            
-            [거래요약]
-            {information_summary}
-            
-            보고서에는 반드시 다음 항목들이 포함되어야 합니다:
-            1. 투자 결정의 근거 (어떤 데이터를 근거로 했는지)
-            
-            종합적이고 명확한 보고서를 작성해주세요.
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an investment expert."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=500,
-        )
-
-        summary = response.choices[0].message.content
-
-        if summary:
-            return summary
-
-        return ""
 
     def analyze_market(
         self,
@@ -80,44 +25,57 @@ class AIService:
         technical_indicators: dict,
         previous_trade_info: str,
         balances_data: dict,
+        orderbook_data: dict,
+        sentiment_data: dict,
+        current_active_orders: dict,
+        news_data: dict,
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
     ):
         """
-        OpenAI API(Deepseek R1 모델)를 이용해 시장 분석 후 매매 결정을 받아옵니다.
+        OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
-
-            {
-                "action": "BUY" 또는 "SELL",
-                "reason": "간단한 설명"
-            }
         """
         prompt = generate_prompt(
             market_data=market_data,
             previous_trade_info=previous_trade_info,
             technical_indicators=technical_indicators,
             balances_data=balances_data,
-            max_trades_per_update=1,
             quote_currency=quote_currency,
             target_currency=target_currency,
+            orderbook_data=orderbook_data,
+            sentiment_data=sentiment_data,
+            news_data=news_data,
+            current_active_orders=current_active_orders,
         )
 
         client = openai.OpenAI(
-            api_key=self.open_api_key  # This is the default and can be omitted
+            base_url="https://api.hyperbolic.xyz/v1",
+            api_key=self.hyperbolic_api_key,  # This is the default and can be omitted
         )
 
         try:
-            response = client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
+            response = client.chat.completions.create(
+                model="meta-llama/Llama-3.3-70B-Instruct",
                 messages=[{"role": "user", "content": prompt}],
-                response_format=TradingResponse,
-                temperature=0.6,  # 창의성과 응답의 다양성 조절 (0~1)
-                top_p=0.95,  # nucleus sampling 조절
+                temperature=0.2,  # 창의성과 응답의 다양성 조절 (0~1)
+                top_p=0.5,  # nucleus sampling 조절
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
+                max_tokens=1024,  # 최대 토큰 길이
             )
             # response.choices[0].message.content
-            result = response.choices[0].message.parsed
+            content = response.choices[0].message.content
+
+            if not content:
+                raise HTTPException(
+                    status_code=403,
+                    detail="응답 스키마가 올바르지 않습니다.",
+                )
+
+            result = self.transform_message_to_schema(
+                message=content, schema=TradingResponse
+            )
 
             if not result:
                 raise HTTPException(
@@ -126,8 +84,8 @@ class AIService:
                 )
 
             # 스키마에 action과 reason 키가 있는지 확인
-            if result.actions:
-                return result
+            if result.action:
+                return result, prompt
             else:
                 raise HTTPException(
                     status_code=403,
@@ -139,3 +97,56 @@ class AIService:
                 status_code=403,
                 detail=str(e),
             )
+
+    def transform_message_to_schema(self, message: str, schema: Type[T]) -> T:
+        """
+        Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.
+        """
+        # Pydantic 모델 클래스에서 JSON 스키마 정보를 가져옵니다.
+        schema_dict = schema.schema()
+
+        prompt = f"""
+        Analyze the message below and restructure it to conform to the provided JSON schema.
+        Make sure to include all the fields specified in the schema, converting the values to match the defined types and structure.
+
+        Please adhere to the following rules:
+        1. The response must be in pure JSON format only. Do not include any additional text or explanation.
+        2. Use the exact field names as specified in the schema.
+        3. Each field's value must be converted to the data type defined in the schema.
+        4. For any information not present in the message, use null or the default value for that type.
+        5. Only JSON Format is allowed. (not use codeblock or something.)
+        6. IF Action Is Cancel, Order_id Is Required, (If order_id is not existed, Cancle Actions is not allowed)
+
+        Message:
+        {message}
+
+        Schema:
+        {json.dumps(schema_dict, ensure_ascii=False, indent=2)}
+        """
+
+        client = openai.OpenAI(
+            api_key=self.open_api_key,
+        )
+
+        response = client.beta.chat.completions.parse(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            response_format=schema,
+            top_p=1.0,
+            max_tokens=1024,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+        )
+
+        result_str = response.choices[0].message.parsed
+
+        if not result_str:
+            raise ValueError("The response is empty. Please provide a valid response.")
+
+        try:
+            return result_str
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e

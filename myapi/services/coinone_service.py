@@ -9,7 +9,13 @@ import uuid
 
 import requests
 
-from myapi.domain.trading.coinone_schema import OrderRequest
+from myapi.domain.trading.coinone_schema import (
+    ActiveOrdersResponse,
+    CancelOrderResponse,
+    CoinoneBalanceResponse,
+    OrderBookResponse,
+    OrderRequest,
+)
 from myapi.utils.config import Settings, row_to_dict
 
 
@@ -44,12 +50,12 @@ class CoinoneService:
         response = self.session.get(url)
         return response.json()
 
-    def get_orderbook(
-        self, quote_currency: str, target_currency: str
-    ) -> Dict[str, Any]:
-        url = f"{self.base_url}/public/v2/orderbook/{quote_currency}/{target_currency}"
+    def get_orderbook(self, quote_currency: str, target_currency: str, size: int = 10):
+        url = f"{self.base_url}/public/v2/orderbook/{quote_currency}/{target_currency}?size={size}"
         response = self.session.get(url)
-        return response.json()
+        data = response.json()
+
+        return OrderBookResponse(**data)
 
     def get_trades(
         self, quote_currency: str, target_currency: str, size: int = 200
@@ -105,16 +111,26 @@ class CoinoneService:
     def get_balances(self) -> Dict[str, Any]:
         return self._private_post("/v2.1/account/balance", {})
 
-    def get_balance(self, currency: List[str]) -> Dict[str, Any]:
-        return self._private_post("/v2.1/account/balance", {"currencies": currency})
+    def get_balance(self, currency: List[str]):
+        balance = self._private_post("/v2.1/account/balance", {"currencies": currency})
 
-    def place_order(self, payload: OrderRequest) -> Dict[str, Any]:
-        data = row_to_dict(payload)
+        return CoinoneBalanceResponse(**balance).balances
 
-        return self._private_post("/v2.1/order", data)
+    def place_order(self, payload: OrderRequest):
 
-    def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        return self._private_post("/v2.1/orders/cancel", {"order_id": order_id})
+        return self._private_post("/v2.1/order", payload.model_dump())
+
+    def cancel_order(self, order_id: str, target_currency: str):
+        result = self._private_post(
+            "/v2.1/order/cancel",
+            {
+                "order_id": order_id,
+                "quote_currency": "KRW",
+                "target_currency": target_currency,
+            },
+        )
+
+        return CancelOrderResponse(**result)
 
     def cancel_all_orders(self, target_currency: str) -> Dict[str, Any]:
         return self._private_post(
@@ -126,3 +142,11 @@ class CoinoneService:
 
     def get_fee(self, target_currency: str) -> Dict[str, Any]:
         return self._private_post("/v2.1/fees/", {"target_currency": target_currency})
+
+    def get_active_orders(self, target_currency: str):
+        orders = self._private_post(
+            "/v2.1/order/active_orders",
+            {"target_currency": target_currency, "quote_currency": "KRW"},
+        )
+
+        return ActiveOrdersResponse(**orders)

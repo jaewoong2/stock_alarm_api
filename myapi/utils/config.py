@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     COIN_ACCESS_TOKEN: str = ""
     COIN_SECRET_KEY: str = ""
+    HYPERBOLIC_API_KEY: str = ""
+    NEWS_API_KEY: str = ""
 
     database_engine: str = ""
     database_username: str = ""

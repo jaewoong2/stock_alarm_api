@@ -43,6 +43,20 @@ def calculate_atr(df: pd.DataFrame, window=14) -> pd.Series:
     return atr
 
 
+def calculate_volatility_from_df(candles_df: pd.DataFrame) -> float:
+    """
+    candles_df의 'close' 가격을 이용하여 로그 수익률 기반 변동성을 계산합니다.
+    """
+    candles_df = candles_df.copy()
+    candles_df["close"] = candles_df["close"].astype(float)
+    # 로그 수익률 계산 (첫 행은 NaN)
+    log_close = pd.Series(np.log(candles_df["close"].astype(float)))
+    candles_df["log_return"] = log_close.diff()
+    # 표본 표준편차에 기간 스케일 적용 (예시: N = 데이터 길이 - 1)
+    volatility = candles_df["log_return"].std() * np.sqrt(len(candles_df) - 1)
+    return volatility
+
+
 def get_technical_indicators(df: pd.DataFrame) -> dict:
     """
     df: 캔들 DataFrame (최소 21개 이상의 row 필요)
@@ -71,6 +85,8 @@ def get_technical_indicators(df: pd.DataFrame) -> dict:
     # ATR
     df["ATR_14"] = calculate_atr(df)
 
+    df["volatility"] = calculate_volatility_from_df(df)
+
     latest = df.iloc[-1]
     return {
         "MA_short_9": round(latest["MA_9"], 2),
@@ -83,4 +99,5 @@ def get_technical_indicators(df: pd.DataFrame) -> dict:
         "BB_Lower": round(latest["BB_Lower"], 2),
         "ATR_14": round(latest["ATR_14"], 2),
         "Latest_Close": round(latest["close"], 2),
+        "volatility": round(latest["volatility"], 2),
     }

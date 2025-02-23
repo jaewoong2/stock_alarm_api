@@ -78,13 +78,7 @@ def orderbook_endpoint(
 ):
     try:
         data = coinone_service.get_orderbook(quote_currency, target_currency)
-        return OrderBookResponse(
-            result=data.get("result", "error"),
-            error_code=data.get("error_code", ""),
-            server_time=data.get("server_time", 0),
-            bids=[OrderBookEntry(**bid) for bid in data.get("bids", [])],
-            asks=[OrderBookEntry(**ask) for ask in data.get("asks", [])],
-        )
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -140,7 +134,7 @@ def balances_endpoint(
     try:
         data = coinone_service.get_balance(["BTC", "KRW"])
 
-        return data["balances"]
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

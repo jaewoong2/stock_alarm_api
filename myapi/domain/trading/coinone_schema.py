@@ -1,6 +1,6 @@
 import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CoinoneOrderResponse(BaseModel):
@@ -58,7 +58,7 @@ class GetTradingInformationResponseModel(BaseModel):
     symbol: str
     action: str
     amount: float
-    reason: str
+    reason: Optional[str]
     summary: str
     openai_prompt: str
     execution_krw: float
@@ -111,10 +111,10 @@ class OrderBookEntry(BaseModel):
 
 class OrderBookResponse(BaseModel):
     result: str
-    error_code: str
-    server_time: int
     bids: List[OrderBookEntry]
     asks: List[OrderBookEntry]
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class TradesResponse(BaseModel):
@@ -167,6 +167,10 @@ class OrderRequest(BaseModel):
         None, description="예약가 주문이 실행되는 가격 (감시가, 예약가에서 필수)"
     )
 
+    order_id: Optional[str] = Field(  # 취소 주문 시 필요한 필드
+        None, description="취소할 주문 ID (취소 주문 시 필수)"
+    )
+
     @model_validator(mode="after")
     def check_required_fields(self) -> "OrderRequest":
         order_type = self.type
@@ -185,3 +189,51 @@ class OrderRequest(BaseModel):
             if side == "SELL" and self.qty is None:
                 raise ValueError("시장가 매도 주문 시 'qty' 값이 필요합니다.")
         return self
+
+
+class ActiveOrder(BaseModel):
+    order_id: str
+    type: str
+    side: str
+    quote_currency: str
+    target_currency: str
+    price: str
+    original_qty: str
+    remain_qty: str
+    executed_qty: str
+    canceled_qty: str
+    fee: str
+    fee_rate: str
+    average_executed_price: str
+    ordered_at: int
+    is_triggered: Optional[bool] = None
+    trigger_price: Optional[str] = None
+    triggered_at: Optional[int] = None
+
+
+class ActiveOrdersResponse(BaseModel):
+    result: str
+    error_code: str
+    active_orders: List[ActiveOrder]
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CancelOrderResponse(BaseModel):
+    result: str
+    error_code: str
+    order_id: str
+    price: str
+    qty: str
+    remain_qty: str
+    side: str
+    original_qty: str
+    traded_qty: str
+    canceled_qty: str
+    fee: str
+    fee_rate: str
+    avg_price: str
+    canceled_at: int
+    ordered_at: int
+
+    model_config = ConfigDict(extra="ignore")
