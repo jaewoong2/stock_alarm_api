@@ -16,7 +16,7 @@ from myapi.domain.trading.coinone_schema import (
     OrderBookResponse,
     OrderRequest,
 )
-from myapi.utils.config import Settings, row_to_dict
+from myapi.utils.config import Settings
 
 
 class CoinoneService:
@@ -158,6 +158,8 @@ class CoinoneService:
             "/v2.1/order/active_orders",
             {"target_currency": target_currency, "quote_currency": "KRW"},
         )
+
+        print("ACTIVE_ORDERS >> ", orders)
 
         if orders.get("result") == "error":
             return ActiveOrdersResponse(

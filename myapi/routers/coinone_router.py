@@ -1,10 +1,7 @@
-# routers/trading_router.py
 from fastapi import APIRouter, Depends, HTTPException
 from myapi.domain.trading.coinone_schema import (
-    BalanceResponse,
     CandlestickResponse,
     MarketResponse,
-    OrderBookEntry,
     OrderBookResponse,
     OrderRequest,
     TickerResponse,
@@ -149,5 +146,19 @@ def order(
         data = coinone_service.place_order(order)
 
         return data["balances"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/active_orders")
+@inject
+def active_orders(
+    symbol: str,
+    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+):
+    try:
+        data = coinone_service.get_active_orders(symbol.upper())
+
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
