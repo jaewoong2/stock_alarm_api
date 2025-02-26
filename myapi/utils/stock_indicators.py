@@ -1,63 +1,35 @@
-# 헬퍼 함수 정의
-def calculate_moving_average(df: pd.DataFrame, period: int) -> pd.Series:
-    return df["Close"].rolling(window=period).mean()
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+from datetime import datetime, timedelta
 
 
-def calculate_rsi(df: pd.DataFrame, period: int) -> pd.Series:
-    delta = df["Close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_macd(
-    df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9
-) -> tuple:
-    ema_fast = df["Close"].ewm(span=fast, adjust=False).mean()
-    ema_slow = df["Close"].ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    return macd_line, signal_line
-
-
-def calculate_bollinger_bands(df: pd.DataFrame, period: int, std_dev: float) -> tuple:
-    ma = df["Close"].rolling(window=period).mean()
-    std = df["Close"].rolling(window=period).std()
-    upper_band = ma + (std * std_dev)
-    lower_band = ma - (std * std_dev)
-    return ma, upper_band, lower_band
-
-
-def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    high_low = df["High"] - df["Low"]
-    high_close = np.abs(df["High"] - df["Close"].shift())
-    low_close = np.abs(df["Low"] - df["Close"].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.rolling(window=period).mean()
-
-
-def calculate_volatility_from_df(df: pd.DataFrame, period: int = 20) -> pd.Series:
-    return df["Close"].pct_change().rolling(window=period).std() * (252**0.5)
-
-
-# 원래 함수
 def get_technical_indicators(df: pd.DataFrame) -> dict:
+    """
+    df: 캔들 DataFrame (최소 21개 이상의 row 필요)
+    yfinance 데이터프레임에 맞게 수정됨
+    """
     if len(df) < 21:
         return {}
 
-    df["MA_9"] = calculate_moving_average(df, 9)
-    df["MA_21"] = calculate_moving_average(df, 21)
-    df["RSI_14"] = calculate_rsi(df, 14)
-    macd_line, signal_line = calculate_macd(df)
-    df["MACD"] = macd_line
-    df["MACD_Signal"] = signal_line
-    ma_bb, upper_band, lower_band = calculate_bollinger_bands(df, 20, 2)
-    df["BB_MA_20"] = ma_bb
-    df["BB_Upper"] = upper_band
-    df["BB_Lower"] = lower_band
-    df["ATR_14"] = calculate_atr(df)
-    df["volatility"] = calculate_volatility_from_df(df)
+    # yfinance 데이터프레임은 'Close' 컬럼 사용
+    df["MA_9"] = ta.sma(df["Close"], length=9)  # 단순 이동평균
+    df["MA_21"] = ta.sma(df["Close"], length=21)
+    df["RSI_14"] = ta.rsi(df["Close"], length=14)
+
+    if ta.macd is None or ta.bbands is None or ta.atr is None:
+        return {}
+
+    df[["MACD", "MACD_Signal", "MACD_Hist"]] = ta.macd(
+        df["Close"], fast=12, slow=26, signal=9
+    )[["MACD_12_26_9", "MACDS_12_26_9", "MACDH_12_26_9"]]
+    df[["BB_Lower", "BB_MA_20", "BB_Upper"]] = ta.bbands(df["Close"], length=20, std=2)[
+        ["BBL_20_2.0", "BBM_20_2.0", "BBU_20_2.0"]
+    ]
+    df["ATR_14"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
+    df["volatility"] = df["Close"].pct_change().rolling(window=20).std() * (
+        252**0.5
+    )  # 연간 변동성
 
     latest = df.iloc[-1]
     return {
@@ -70,6 +42,6 @@ def get_technical_indicators(df: pd.DataFrame) -> dict:
         "BB_Upper": round(latest["BB_Upper"], 2),
         "BB_Lower": round(latest["BB_Lower"], 2),
         "ATR_14": round(latest["ATR_14"], 2),
-        "Latest_Close": round(latest["Close"], 2),
+        "Latest_Close": round(latest["Close"], 2),  # yfinance는 'close'가 아닌 'Close'
         "volatility": round(latest["volatility"], 2),
     }
