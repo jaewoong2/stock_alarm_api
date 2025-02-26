@@ -1,6 +1,5 @@
 """Function printing python version."""
 
-import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse

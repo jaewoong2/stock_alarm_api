@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     COIN_SECRET_KEY: str = ""
     HYPERBOLIC_API_KEY: str = ""
     NEWS_API_KEY: str = ""
+    FRED_API_KEY: str = ""
 
     database_engine: str = ""
     database_username: str = ""

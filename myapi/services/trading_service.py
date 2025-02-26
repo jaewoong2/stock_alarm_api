@@ -73,16 +73,6 @@ class TradingService:
         sentiment_data = self.backdata_service.get_sentiment_data()
         current_active_orders = self.coinone_service.get_active_orders(symbol.upper())
 
-        print("symbol >> ", symbol.upper())
-        print("trading_information >> ", trading_information)
-        print("market_data >> ", market_data)
-        print("candles_info >> ", candles_info)
-        print("orderbook_data >> ", orderbook_data)
-        print("balances_data >> ", balances_data)
-        print("news_data >> ", news_data)
-        print("sentiment_data >> ", sentiment_data)
-        print("current_active_orders >> ", current_active_orders)
-
         # 3. AI 분석을 위한 공통 데이터 구성
         #    - ai_service로 보내는 스크립트형 데이터(여기서는 market_data, 캔들 정보 등)
         common_ai_data = {

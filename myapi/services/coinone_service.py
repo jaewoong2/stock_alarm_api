@@ -159,8 +159,6 @@ class CoinoneService:
             {"target_currency": target_currency, "quote_currency": "KRW"},
         )
 
-        print("ACTIVE_ORDERS >> ", orders)
-
         if orders.get("result") == "error":
             return ActiveOrdersResponse(
                 error_code="No active orders found", result="error", active_orders=[]
