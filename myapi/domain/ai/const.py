@@ -14,9 +14,10 @@ def generate_prompt(
     news_data: Dict | None = None,
     current_active_orders: Dict | None = None,
     trade_history: List[Dict] | None = None,  # 동적 학습용 과거 거래 데이터
-    max_trades_per_update: int = 1,
     target_currency: str = "BTC",
     quote_currency: str = "KRW",
+    trigger_action: str = "",
+    additional_context: str = "",
 ):
     """
     Generate an advanced prompt with complex condition support and dynamic learning:
@@ -27,38 +28,27 @@ def generate_prompt(
     """
 
     prompt = f"""
-      You are an AI financial assistant for short-term (15-minute) spot cryptocurrency trading on Coinone.
-      Your goal is to maximize profits and minimize risk over a 6-hour window, adapting every 15 minutes.
+      You are an AI financial assistant for short-term spot cryptocurrency trading on Coinone.
+      Your goal is to maximize profits and minimize risk.
 
-      1. Analyze market conditions and define trading strategy:
-         - Use market data, technical indicators (RSI, MACD, BB, VWAP), order book, volatility, volume, and trade history.
-         - Example condition: "BULLISH if RSI < 70, VWAP < price, and volume rising."
-         - Flag high volatility if 15-minute volatility > 5% or price change > 3%.
+      ### 1. Analyze Market Conditions and Validate Trigger Action
+         - A trigger has detected a potential trading opportunity: {trigger_action or "No trigger detected"}.
+         - Use market data, technical indicators (RSI, MACD, BB, VWAP), order book, volatility, volume, and trade history to validate this trigger.
+         - Data is based on **1-hour candles**, reflecting longer-term trends triggered by 15-minute checks.
+         - Example validation:
+            - For BUY: "Confirm if RSI < 30, price < BB_lower, and volume rising."
+            - For SELL: "Confirm if RSI > 70, price > BB_upper, and volume dropping."
+         - If no trigger is provided, analyze conditions and suggest an action (BUY, SELL, HOLD).
+         - Flag high volatility if 1-hour volatility > 5% or price change > 3%.
 
-      2. Define scenario-based trading conditions with complex technical indicator support:
-         - Normal: "price > VWAP and MACD > 0, set price = VWAP * 1.002 (0.2% slippage), qty adjusted for ATR."
-         - Volatility protection:
-         - If volatility > 5% or price_change > 3% in 15 minutes:
-            - HOLD: "No new trades, monitor existing positions."
-            - Reduce: "Cut qty by 50% for new orders."
-         - If volatility > 10% sustained for 15 minutes, halt all new trades.
-         - Example: "price > EMA_50 and volatility < 5%, else HOLD."
-
-      3. Incorporate dynamic learning from trade history:
-         - Quantify patterns: "If RSI > 70 led to >60% loss rate, reduce qty by 20%."
-         - Volatility adjustment: "If past trades during >5% volatility lost >2%, prioritize HOLD next time."
-
-      4. Adapt every 15 minutes while respecting open positions:
-         - Avoid conflicts unless >2% price shift or volatility >5%.
-         - Limit new trades to {max_trades_per_update} per update.
-         - If volatility > 5%, HOLD new trades unless breakout confirmed (e.g., price > BB_upper + 1%).
-
-      5. Return valid with:
+      2. Return valid with:
          - "action": list of objects, each with:
             - "order": object matching "Coinone OrderRequest schema" (or "HOLD" if no action)
             - "reason": string more specific than scenario-based conditions
-
-      6. Coinone OrderRequest Schema:
+            - "prediction": "UP" | "DOWN" (If the price will be up, "UP" else the price will be down, "DOWN")
+            - "market_outlook": string describing your best guess if price will rise or fall in the next few hours
+            
+      3. Coinone OrderRequest Schema:
          - side: string (required, "BUY" or "SELL" or "CANCEL")
          - quote_currency: string (required, e.g., "KRW")
          - target_currency: string (required, e.g., "BTC")
@@ -72,12 +62,12 @@ def generate_prompt(
          - order_id: optional string (for canceling orders only <IF Side is "CANCEL", The Order_id is required>)
             - order_id is in "Input Data: Current Active Orders"
 
-      7. Ensure non-conflicting scenarios and optimize costs:
+      4. Ensure non-conflicting scenarios and optimize costs:
          - Prefer LIMIT with post_only=true unless urgency high (volatility < 5%).
          - Use limit_price for MARKET to cap at ±5% of current price.
          - Halt trading if PnL < -5% of initial balance.
 
-      8. Input Data:
+      5. Input Data:
          - Quote Currency (Fiat): {quote_currency}
          - Target Currency (Sell|Buy|Hold Currency): {target_currency}
          - Market Data (15-minute candles): {json.dumps(market_data, indent=2)}
@@ -90,8 +80,9 @@ def generate_prompt(
          - Orderbook Data: {json.dumps(orderbook_data, indent=2)}
          - Trade History: {json.dumps(trade_history, indent=2)}
          - Current Active Orders: {json.dumps(current_active_orders, indent=2)}
+         - additional_context: {additional_context}
 
-      9. Constraints:
+      6. Constraints:
          - Default quote_currency: "KRW", target_currency: "BTC" (configurable).
          - Volatility thresholds:
          - NORMAL: <5%
@@ -105,7 +96,7 @@ def generate_prompt(
          _ [Required] Do Not Exceed MY Balances KRW (IF You Buy, Do Not Exceed My KRW Balance) [qty * price Do Not Exceed My KRW Balance]
          - [Required] Do Not Exceed MY Balances BTC (IF You Sell, Do Not Exceed My BTC Balance)
          
-      10. Balance Limits:
+      7. Balance Limits:
          - BUY: 5000 < (qty * price OR amount) ≤ {balances_data["KRW"]["available"]}.
          - SELL: qty ≤ {balances_data["BTC"]["available"]}.
          - For CANCEL, use order_id from {current_active_orders}.

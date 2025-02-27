@@ -34,7 +34,18 @@ class Action(BaseModel):
         ...,
         description="Reason for the order (e.g., 'Bollinger breakout with overbought signal')",
     )
+    # - "prediction": "UP" | "DOWN" (If the price will be up, "UP" else the price will be down, "DOWN")
+    # - "market_outlook": string describing your best guess if price will rise or fall in the next few hours
+    prediction: str = Field(
+        ...,
+        description="UP | DOWN (If the price will be up, 'UP' else the price will be down, 'DOWN'",
+    )
+    market_outlook: str = Field(
+        ...,
+        description="string describing your best guess if price will rise or fall in the next few hours",
+    )
     priority: int = Field(..., description="Priority level (1 highest to 5 lowest)")
+
     action: ActionType = Field(
         ..., description="Action type: SELL, BUY, CANCEL, or HOLD"
     )

@@ -31,6 +31,7 @@ class AIService:
         news_data: dict,
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
+        additional_context: str = "",
     ):
         """
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -47,6 +48,7 @@ class AIService:
             sentiment_data=sentiment_data,
             news_data=news_data,
             current_active_orders=current_active_orders,
+            additional_context=additional_context,
         )
 
         client = openai.OpenAI(
@@ -115,7 +117,7 @@ class AIService:
         3. Each field's value must be converted to the data type defined in the schema.
         4. For any information not present in the message, use null or the default value for that type.
         5. Only JSON Format is allowed. (not use codeblock or something.)
-        6. IF Action Is Cancel, Order_id Is Required, (If order_id is not existed, Cancle Actions is not allowed)
+        6. If Action Is Cancel, Order_id Is Required, (If order_id is not existed, Cancle Actions is not allowed)
 
         Message:
         {message}

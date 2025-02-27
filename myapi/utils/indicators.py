@@ -57,12 +57,12 @@ def calculate_volatility_from_df(candles_df: pd.DataFrame) -> float:
     return volatility
 
 
-def get_technical_indicators(df: pd.DataFrame) -> dict:
+def get_technical_indicators(df: pd.DataFrame | None) -> dict:
     """
     df: 캔들 DataFrame (최소 21개 이상의 row 필요)
     """
-    if len(df) < 21:
-        return {}
+    if df is None or len(df) < 21:
+        raise ValueError("DataFrame must have at least 21 rows. OR Dataframe is None")
 
     # 이동평균
     df["MA_9"] = calculate_moving_average(df, 9)

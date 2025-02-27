@@ -7,7 +7,6 @@ from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
-from myapi.services.stock_service import StockService
 from myapi.services.tqqq_service import TqqqService
 from myapi.services.trading_service import TradingService
 from myapi.utils.config import Settings
@@ -40,7 +39,6 @@ class Container(containers.DeclarativeContainer):
     ai_service = providers.Factory(AIService, settings=config)
     # log_service = providers.Singleton(LogService)
     coinone_service = providers.Factory(CoinoneService, settings=config)
-    stock_service = providers.Factory(StockService, settings=config)
     trading_service = providers.Factory(
         TradingService,
         settings=config,

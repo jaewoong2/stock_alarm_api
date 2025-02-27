@@ -1,5 +1,4 @@
-from typing import Any, Dict, Union
-import json
+from typing import Any, Dict, Optional, Union
 import logging
 from datetime import datetime
 
@@ -40,10 +39,112 @@ class TradingService:
         self.coinone_service = coinone_service
         self.trading_repository = trading_repository
 
+        self.rsi_overbought = 70
+        self.rsi_oversold = 30
+        self.short_ma_period = 50
+        self.long_ma_period = 200
+
+    def monitor_triggers(self, symbol: str, interval: str = "15m", size: int = 200):
+        """
+        기술적 지표를 모니터링하여 트리거 발생 시 execute_trade를 호출합니다.
+        """
+        try:
+            candles = self.backdata_service.get_coinone_candles(
+                interval=interval, size=size
+            )
+            if (
+                candles is None or len(candles) < 21
+            ):  # get_technical_indicators 요구사항
+                return {
+                    "status": "ERROR",
+                    "message": "캔들 데이터 부족 (최소 21개 필요)",
+                }
+
+            indicators = get_technical_indicators(candles)
+            if not indicators:
+                return {"status": "ERROR", "message": "지표 계산 실패"}
+
+            rsi = indicators["RSI_14"]
+            macd = indicators["MACD"]
+            macd_signal = indicators["MACD_Signal"]
+            short_ma = indicators["MA_short_9"]
+            long_ma = indicators["MA_long_21"]
+            bollinger_upper = indicators["BB_Upper"]
+            bollinger_lower = indicators["BB_Lower"]
+            current_price = indicators["Latest_Close"]
+
+            action = self._check_triggers(
+                rsi=rsi,
+                macd=macd,
+                macd_signal=macd_signal,
+                short_ma=short_ma,
+                long_ma=long_ma,
+                bollinger_upper=bollinger_upper,
+                bollinger_lower=bollinger_lower,
+                current_price=current_price,
+            )
+
+            if action:
+                logger.info(f"Trigger detected: {action} for {symbol}")
+                return self.execute_trade(
+                    symbol=symbol, percentage=0.01, trigger_action=action
+                )
+
+            return {"status": "HOLD", "message": "트리거 조건 미충족"}
+
+        except Exception as e:
+            logger.error(f"Error in monitor_triggers: {e}")
+            return {"status": "ERROR", "message": f"트리거 모니터링 실패: {str(e)}"}
+
+    def _check_triggers(
+        self,
+        rsi: float,
+        macd: float,
+        macd_signal: float,
+        short_ma: float,
+        long_ma: float,
+        bollinger_upper: float,
+        bollinger_lower: float,
+        current_price: float,
+    ):
+        """
+        indicators.py에서 제공하는 지표를 기반으로 트리거를 확인합니다.
+        """
+        # RSI 트리거
+        if rsi >= self.rsi_overbought:
+            return "SELL"
+        elif rsi <= self.rsi_oversold:
+            return "BUY"
+
+        # MACD 트리거 (골든 크로스/데드 크로스)
+        if macd > macd_signal and abs(macd - macd_signal) < 0.01:  # 골든 크로스 직후
+            return "BUY"
+        elif macd < macd_signal and abs(macd - macd_signal) < 0.01:  # 데드 크로스 직후
+            return "SELL"
+
+        # 이동평균선 트리거 (MA_9 vs MA_21)
+        if short_ma > long_ma and abs(short_ma - long_ma) < 0.01:  # 상향 돌파 직후
+            return "BUY"
+        elif short_ma < long_ma and abs(short_ma - long_ma) < 0.01:  # 하향 돌파 직후
+            return "SELL"
+
+        # 볼린저 밴드 트리거
+        if current_price >= bollinger_upper:
+            return "SELL"
+        elif current_price <= bollinger_lower:
+            return "BUY"
+
+        return None
+
     def get_trading_information(self):
         return self.trading_repository.get_trading_information()
 
-    def execute_trade(self, symbol: str, percentage: Union[int, float]):
+    def execute_trade(
+        self,
+        symbol: str,
+        percentage: float = 0.01,
+        trigger_action: Optional[str] = None,
+    ):
         """
         1. 시장 데이터를 조회하고 AI 분석을 수행합니다. (ai_service 로 전달되는 파라미터는 스크립트로 전송됨)
         2. AI 분석 결과(BUY, SELL, HOLD)에 따라 주문을 실행합니다.
@@ -56,103 +157,103 @@ class TradingService:
             Dict[str, Any]: 주문 결과 또는 HOLD 상태 등의 처리 결과를 반환합니다.
         """
 
-        # 0. 이전 거래 정보 조회
-        trading_information = self.trading_repository.get_trading_information()
-        # 1. 시장 데이터 조회
-        market_data = self.backdata_service.get_market_data(symbol)
-        # 2. 캔들 데이터 조회
-        candles_info = self._fetch_candle_data()
+        try:
+            # 시장 데이터 수집
+            trading_information = self.get_trading_information()
+            market_data = self.backdata_service.get_market_data(symbol)
+            candles_info = self._fetch_candle_data(interval="1h", size=500)
+            orderbook_data = self.coinone_service.get_orderbook(
+                quote_currency="KRW", target_currency=symbol
+            )
+            balances_data = self.coinone_service.get_balance(["KRW", symbol.upper()])
+            news_data = self.backdata_service.get_btc_news()
+            sentiment_data = self.backdata_service.get_sentiment_data()
+            current_active_orders = self.coinone_service.get_active_orders(
+                symbol.upper()
+            )
 
-        # 3. Order 데이터 조회
-        orderbook_data = self.coinone_service.get_orderbook(
-            quote_currency="KRW", target_currency=symbol
-        )
+            # AI 분석용 데이터 준비
+            common_ai_data = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                "symbol": symbol.upper(),
+                "trigger_action": trigger_action,
+            }
+            technical_indicators = get_technical_indicators(candles_info)
 
-        balances_data = self.coinone_service.get_balance(["KRW", symbol.upper()])
-        news_data = self.backdata_service.get_btc_news()
-        sentiment_data = self.backdata_service.get_sentiment_data()
-        current_active_orders = self.coinone_service.get_active_orders(symbol.upper())
+            # AI 검증 요청
+            decision, prompt = self.ai_service.analyze_market(
+                market_data=market_data,
+                technical_indicators=technical_indicators,
+                previous_trade_info=trading_information.action,
+                balances_data=(
+                    balances_data.model_dump()
+                    if not isinstance(balances_data, list)
+                    else {data.currency: data.model_dump() for data in balances_data}
+                ),
+                target_currency=symbol.upper(),
+                quote_currency="KRW",
+                orderbook_data=orderbook_data.model_dump(),
+                sentiment_data=sentiment_data.model_dump(),
+                news_data={
+                    news.title: news.model_dump()
+                    for news in news_data
+                    if isinstance(news, Article)  # Ensure url exists
+                },
+                current_active_orders=current_active_orders.model_dump(),
+                additional_context=f"Trigger detected: {trigger_action}. Validate this action based on current market conditions and technical indicators.",
+            )
 
-        # 3. AI 분석을 위한 공통 데이터 구성
-        #    - ai_service로 보내는 스크립트형 데이터(여기서는 market_data, 캔들 정보 등)
-        common_ai_data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            "symbol": symbol.upper(),
-        }
+            ai_action = decision.action.action
+            base_trade_data = {
+                "timestamp": common_ai_data["timestamp"],
+                "symbol": symbol.upper(),
+                "reason": f"Trigger: {trigger_action}, AI decision: {ai_action} - {decision.action.reason}",
+                "openai_prompt": prompt,
+            }
+            if ai_action == "CANCEL":
+                if decision.action.order.order_id:
+                    cancel_result = self.coinone_service.cancel_order(
+                        order_id=decision.action.order.order_id,
+                        target_currency=symbol.upper(),
+                    )
 
-        technical_indicators = get_technical_indicators(candles_info["15m"])
-        # AI로부터 매매 의사결정 결과 받기
-        decision, prompt = self.ai_service.analyze_market(
-            market_data=market_data,
-            technical_indicators=technical_indicators,
-            previous_trade_info=trading_information.action,
-            balances_data=(
-                balances_data.model_dump()
-                if not isinstance(balances_data, list)
-                else {data.currency: data.model_dump() for data in balances_data}
-            ),
-            target_currency=symbol.upper(),
-            quote_currency="KRW",
-            orderbook_data=orderbook_data.model_dump(),
-            sentiment_data=sentiment_data.model_dump(),
-            news_data={
-                news.title: news.model_dump()
-                for news in news_data
-                if isinstance(news, Article)  # Ensure url exists
-            },
-            current_active_orders=current_active_orders.model_dump(),
-        )
-
-        action = decision.action.action
-
-        # 4. 공통적으로 DB에 기록할 기본 정보
-        base_trade_data = {
-            "timestamp": common_ai_data["timestamp"],
-            "symbol": symbol.upper(),
-            "reason": getattr(decision, "reason", None),
-            "openai_prompt": prompt,
-        }
-
-        if action == "CANCEL":
-            if decision.action.order.order_id:
-                cancel_result = self.coinone_service.cancel_order(
-                    order_id=decision.action.order.order_id,
-                    target_currency=symbol.upper(),
+                    return cancel_result.model_dump()
+                else:
+                    return {"status": "ERROR", "message": "취소할 주문 ID가 없습니다."}
+            # AI 검증 결과에 따라 처리
+            if ai_action == trigger_action and ai_action in ["BUY", "SELL"]:
+                if ai_action == "BUY":
+                    result = self._handle_buy(
+                        symbol,
+                        percentage,
+                        market_data,
+                        trading_information,
+                        base_trade_data,
+                        decision.action,
+                    )
+                else:  # SELL
+                    result = self._handle_sell(
+                        symbol,
+                        percentage,
+                        market_data,
+                        trading_information,
+                        base_trade_data,
+                        decision.action,
+                    )
+            else:
+                result = self._handle_hold(
+                    market_data, trading_information, base_trade_data, decision.action
                 )
 
-                return cancel_result.model_dump()
-            else:
-                return {"status": "ERROR", "message": "취소할 주문 ID가 없습니다."}
+            print(decision)
+            logger.info(f"Executed trade: {result}")
+            logger.info(f"Executed trade: {decision}")
 
-        # 5. 액션 유형별 처리
-        if action == "BUY":
-            transaction_result = self._handle_buy(
-                symbol,
-                percentage,
-                market_data,
-                trading_information,
-                base_trade_data,
-                decision.action,
-            )
-        elif action == "SELL":
-            transaction_result = self._handle_sell(
-                symbol,
-                percentage,
-                market_data,
-                trading_information,
-                base_trade_data,
-                decision.action,
-            )
-        else:  # HOLD 등 그 외
-            transaction_result = self._handle_hold(
-                market_data, trading_information, base_trade_data, decision.action
-            )
+            return decision
 
-        print(decision)
-        print(transaction_result)
-        logger.info("%s", transaction_result, exc_info=True)
-
-        return decision
+        except Exception as e:
+            logger.error(f"Error in execute_trade: {e}")
+            return {"status": "ERROR", "message": f"거래 실행 실패: {str(e)}"}
 
     def _handle_buy(
         self,
@@ -342,13 +443,11 @@ class TradingService:
         self._record_trade(trade)
         return {"status": "HOLD", "message": "No action taken"}
 
-    def _fetch_candle_data(self, size: int = 200) -> Dict[str, Any]:
+    def _fetch_candle_data(self, interval: str = "1h", size: int = 200):
         """
-        다양한 간격(1m, 5m, 1h)의 캔들 데이터를 Fetch하여 Dict 형태로 반환
+        다양한 간격(1m, 3m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 6h, 1d, 1w, 1mon)의 캔들 데이터를 Fetch하여 Dict 형태로 반환
         """
-        return {
-            "15m": self.backdata_service.get_coinone_candles(interval="15m", size=size),
-        }
+        return self.backdata_service.get_coinone_candles(interval=interval, size=size)
 
     def _record_trade(self, trade: Trade) -> None:
         """
