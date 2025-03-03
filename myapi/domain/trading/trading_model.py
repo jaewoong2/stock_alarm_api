@@ -43,3 +43,6 @@ class Trade(Base):
     execution_crypto = Column(Float, nullable=True)
     # 체결 성공/실패 여부
     status = Column(Enum(ExecutionStatus), nullable=False)
+
+    # 입력된 데이터 (시세, 전략, 뉴스 등 중요한 데이터)
+    action_string = Column(Text, nullable=True)

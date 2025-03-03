@@ -162,3 +162,20 @@ def active_orders(
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cancle_order")
+@inject
+def cancle_order(
+    order_id: str,
+    symbol: str = "BTC",
+    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+):
+    try:
+        data = coinone_service.cancel_order(
+            order_id=order_id, target_currency=symbol.upper()
+        )
+
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -33,17 +33,17 @@ async def refresh_token(
     kakao_service: KakaoService = Depends(Provide[Container.kakao_service]),
 ):
     try:
-
         secret_data = aws_service.get_secret()
         prev_token = KakaoToken(
             access_token=secret_data.get("access_token", ""),
             refresh_token=secret_data.get("refresh_token", ""),
         )
 
-        token = kakao_service.refresh_toen(prev_token.refresh_token)
+        token = kakao_service.refresh_token(prev_token.refresh_token)
         secret_data = {}
 
         secret_data["access_token"] = token.access_token
+
         if token.refresh_token:
             secret_data["refresh_token"] = token.refresh_token
         else:
@@ -71,7 +71,6 @@ async def send_kakao_message_endpoint(
     카카오톡 메시지 전송 API 엔드포인트
     """
     try:
-        await refresh_token()
         secret_data = aws_service.get_secret()
         token = KakaoToken(
             access_token=secret_data.get("access_token", ""),

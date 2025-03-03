@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from myapi.domain.trading.coinone_schema import OrderRequest
@@ -29,7 +30,7 @@ class OutlookEnum(str, Enum):
 
 
 class Action(BaseModel):
-    order: OrderRequest = Field(..., description="The order request details")
+    order: Optional[OrderRequest] = Field(..., description="The order request details")
     reason: str = Field(
         ...,
         description="Reason for the order (e.g., 'Bollinger breakout with overbought signal')",

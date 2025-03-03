@@ -5,6 +5,7 @@ from myapi.repositories.trading_repository import TradingRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
+from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
 from myapi.services.tqqq_service import TqqqService
@@ -33,7 +34,9 @@ class Container(containers.DeclarativeContainer):
     kakao_service = providers.Factory(
         KakaoService, settings=config, aws_service=aws_service
     )
-    backdata_service = providers.Factory(BackDataService, settings=config)
+    backdata_service = providers.Factory(
+        BackDataService, settings=config, trading_repository=trading_repository
+    )
     tqqq_service = providers.Factory(TqqqService, settings=config)
 
     ai_service = providers.Factory(AIService, settings=config)
@@ -47,3 +50,5 @@ class Container(containers.DeclarativeContainer):
         coinone_service=coinone_service,
         trading_repository=trading_repository,
     )
+
+    discord_service = providers.Factory(DiscordService, settings=config)

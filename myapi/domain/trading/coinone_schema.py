@@ -64,6 +64,7 @@ class GetTradingInformationResponseModel(BaseModel):
     execution_krw: float
     execution_crypto: float
     status: str
+    action_string: str
 
     @field_validator("amount", "execution_krw", "execution_crypto", mode="before")
     @classmethod
@@ -177,17 +178,22 @@ class OrderRequest(BaseModel):
         side = self.side
 
         if order_type in ["LIMIT", "STOP_LIMIT"]:
+            if side not in ["BUY", "SELL"]:
+                return self
+
             if self.price is None:
                 raise ValueError("지정가/예약가 주문 시 'price' 값이 필요합니다.")
             if order_type == "STOP_LIMIT" and self.trigger_price is None:
                 raise ValueError("예약가 주문 시 'trigger_price' 값이 필요합니다.")
             if self.qty is None:
                 raise ValueError("지정가/예약가 주문 시 'qty' 값이 필요합니다.")
+
         if order_type == "MARKET":
             if side == "BUY" and self.amount is None:
                 raise ValueError("시장가 매수 주문 시 'amount' 값이 필요합니다.")
             if side == "SELL" and self.qty is None:
                 raise ValueError("시장가 매도 주문 시 'qty' 값이 필요합니다.")
+
         return self
 
 
@@ -237,3 +243,8 @@ class CancelOrderResponse(BaseModel):
     ordered_at: int
 
     model_config = ConfigDict(extra="ignore")
+
+
+class TriggerResponse(BaseModel):
+    status: str | None
+    message: str

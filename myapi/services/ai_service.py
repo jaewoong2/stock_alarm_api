@@ -29,6 +29,7 @@ class AIService:
         sentiment_data: dict,
         current_active_orders: dict,
         news_data: dict,
+        schema: Type[T] = TradingResponse,
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
         additional_context: str = "",
@@ -52,22 +53,20 @@ class AIService:
         )
 
         client = openai.OpenAI(
-            base_url="https://api.hyperbolic.xyz/v1",
-            api_key=self.hyperbolic_api_key,  # This is the default and can be omitted
+            # base_url="https://api.hyperbolic.xyz/v1",
+            api_key=self.open_api_key,  # This is the default and can be omitted
         )
 
         try:
-            response = client.chat.completions.create(
-                model="meta-llama/Llama-3.3-70B-Instruct",
+            response = client.beta.chat.completions.parse(
+                model="o3-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,  # 창의성과 응답의 다양성 조절 (0~1)
-                top_p=0.5,  # nucleus sampling 조절
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
-                max_tokens=1024,  # 최대 토큰 길이
+                response_format=schema,
             )
             # response.choices[0].message.content
-            content = response.choices[0].message.content
+            content = response.choices[0].message.parsed
 
             if not content:
                 raise HTTPException(
@@ -75,19 +74,13 @@ class AIService:
                     detail="응답 스키마가 올바르지 않습니다.",
                 )
 
-            result = self.transform_message_to_schema(
-                message=content, schema=TradingResponse
-            )
-
-            if not result:
-                raise HTTPException(
-                    status_code=403,
-                    detail="응답 스키마가 올바르지 않습니다.",
-                )
+            # result = self.transform_message_to_schema(
+            #     message=content, schema=TradingResponse
+            # )
 
             # 스키마에 action과 reason 키가 있는지 확인
-            if result.action:
-                return result, prompt
+            if content:
+                return content, prompt
             else:
                 raise HTTPException(
                     status_code=403,
@@ -133,8 +126,8 @@ class AIService:
         response = client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
             response_format=schema,
+            temperature=0.2,
             top_p=1.0,
             max_tokens=1024,
             frequency_penalty=0.0,

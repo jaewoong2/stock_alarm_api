@@ -45,3 +45,28 @@ class SentimentResponse(BaseModel):
 
 SentimentResponseType = Union[SentimentResponse, ErrorResponse]
 ArticleResponseType = Union[List[Article], ErrorResponse]
+
+
+# Response Models 정의
+class LinearRegressionTrendResponse(BaseModel):
+    trend: str
+    slope: float
+    intercept: float
+    confidence: float
+
+
+class SupportResistanceResponse(BaseModel):
+    pivot: float
+    support_levels: List[float]
+    resistance_levels: List[float]
+
+
+class DirectionPredictionResponse(BaseModel):
+    current_price: float
+    closest_level: str
+    closest_value: float
+    prediction: str
+    confidence: float
+    volume_spike: bool
+    opinions: List[str]
+    score: float

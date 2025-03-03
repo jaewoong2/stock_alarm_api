@@ -1,3 +1,4 @@
+import ccxt
 import pandas as pd
 import requests
 
@@ -8,17 +9,81 @@ from myapi.domain.backdata.backdata_schema import (
     SentimentResponse,
     SentimentResponseType,
 )
+from myapi.repositories.trading_repository import TradingRepository
 from myapi.utils.config import Settings
+
+import pandas as pd
+
+# 거래소 주소 목록 (예시, 실제 데이터로 대체 필요)
+EXCHANGE_ADDRESSES = {
+    "1Kr6QSydW9bFQG1mXiPNNu6WpJGmUa9i1g",  # Binance 예시 주소
+    "3EyjEjqUzLfGx2b9LTDQAlbLHTCjXjQ87v",  # Coinbase 예시 주소
+}
 
 
 # 38af960b93d04842847b618aa17796ee
 class BackDataService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, trading_repository: TradingRepository):
         self.NEWS_API_KEY = settings.NEWS_API_KEY
+        self.trading_repository = trading_repository
 
     BASE_URL = "https://api.coinone.co.kr/public/v2"
 
     # Function to fetch Bitcoin news from NewsAPI
+
+    def get_ohlcv_data(
+        self,
+        symbol: str = "BTC/KRW",
+        timeframe: str = "1d",
+        limit: int = 300,
+    ):
+        """
+        Binance 거래소에서 OHLCV 데이터를 가져와서 Pandas DataFrame으로 반환하는 함수입니다.
+
+        [Parameters]
+        symbol: str
+            조회할 거래쌍(티커)입니다.
+            예시: "BTC/USDT", "ETH/USDT", "BTC/KRW"
+        limit: int
+            데이터의 개수 입니다.
+        timeframe: str
+            데이터의 시간 간격입니다.
+            예시: "1d" (일별 데이터), "1h" (시간별 데이터), "5m" (5분 단위 데이터)
+
+        [Returns]
+        df: pandas.DataFrame
+            변환된 OHLCV 데이터로, 'Date' 열이 인덱스로 설정되어 있으며,
+            'Open', 'High', 'Low', 'Close', 'Volume' 컬럼을 포함합니다.
+
+        [Example]
+        >>> # BTC/USDT 거래쌍의 2022년 1월 1일 이후 1시간 간격 데이터 조회
+        >>> data = get_ohlcv_data("BTC/USDT", "2022-01-01T00:00:00Z", "1h")
+        """
+        exchange = ccxt.binance()
+
+        ohlcv = exchange.fetch_ohlcv(
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=limit,
+        )
+
+        # 가져온 OHLCV 데이터를 Pandas DataFrame으로 변환
+        # 각 컬럼은 "Timestamp", "Open", "High", "Low", "Close", "Volume" 순으로 배열됨
+        df = pd.DataFrame(
+            ohlcv, columns=["Timestamp", "Open", "High", "Low", "Close", "Volume"]
+        )
+
+        # 'Timestamp' 컬럼을 datetime 형식으로 변환하여 'Date' 컬럼에 저장 (밀리초 단위임)
+        df["Date"] = pd.to_datetime(df["Timestamp"], unit="ms")
+
+        # 'Date' 컬럼을 DataFrame의 인덱스로 설정하여 시간 순으로 정렬된 데이터를 생성
+        df.set_index("Date", inplace=True)
+
+        # 불필요한 'Timestamp' 컬럼 삭제
+        del df["Timestamp"]
+
+        # 최종적으로 변환된 DataFrame 반환
+        return df
 
     def get_btc_news(self) -> ArticleResponseType:
         NEWS_API_URL = "https://newsapi.org/v2/everything"
@@ -68,7 +133,7 @@ class BackDataService:
         except ValueError as e:
             return ErrorResponse(error="Invalid JSON response", message=str(e))
 
-    # 📌 코인원 API에서 1분봉 캔들 데이터 가져오기
+    # 📌 코인원 API에서 N분봉 캔들 데이터 가져오기
     def get_coinone_candles(
         self, quote_currency="KRW", target_currency="BTC", interval="1m", size=200
     ):
@@ -123,3 +188,75 @@ class BackDataService:
             "low": float(ticker["low"]),
             "volume": float(ticker["target_volume"]),
         }
+
+    def get_moving_average(self, coin: str, ma_days: int):
+        """이동평균선 계산"""
+        df = self.get_ohlcv_data(coin, limit=ma_days + 1)
+
+        if df is None or len(df) < ma_days:
+            return None
+
+        ma = df["close"].rolling(window=ma_days).mean().iloc[-1]
+
+        return ma
+
+    def check_buy_condition(self, target, ma, price, high):
+        """
+        매수 조건을 확인합니다.
+        :param coin: 코인 티커
+        :param target: 목표 가격
+        :param ma: 이동평균 값
+        :param price: 현재 가격
+        :param high: 오늘의 최고가
+        :return: 매수 가능 여부 (bool)
+        """
+        if price >= target and high <= target * 1.02 and price >= ma:
+            return True
+        return False
+
+    def check_sell_condition(self, symbol: str, ma_days: int = 5):
+        """
+        매도 조건을 확인합니다.
+        :param symbol: 코인 티커
+        :param ma_days: 이동평균선 일수
+        :return: 매도 가능 여부 (bool)
+        """
+        df = self.get_ohlcv_data(symbol, limit=ma_days + 1)
+
+        if df is None or len(df) < ma_days:
+            return False
+
+        ma = df["close"].rolling(window=ma_days).mean().iloc[-1]
+        price = df["close"].iloc[-1]
+
+        # 현재 가격이 이동평균선 아래로 떨어지면 매도
+        if price < ma:
+            return True
+
+        return False
+
+    def check_whale_transactions(self):
+        url = "https://blockchain.info/unconfirmed-transactions?format=json"
+        response = requests.get(url)
+        data = response.json()
+
+        for tx in data["txs"]:
+            total_output_btc = (
+                sum(out["value"] for out in tx["out"]) / 100000000
+            )  # satoshi -> BTC
+            if total_output_btc > 100:  # 100 BTC 이상 거래만 체크
+                inputs = [inp["prev_out"]["addr"] for inp in tx["inputs"]]
+                outputs = [out["addr"] for out in tx["out"]]
+
+                # 거래소로 입금 (매도 가능성)
+                if any(out_addr in EXCHANGE_ADDRESSES for out_addr in outputs):
+                    print(f"Whale SELL detected: {total_output_btc} BTC to exchange")
+                    print(f"Tx Hash: {tx['hash']}")
+
+                # 거래소에서 출금 (매수 가능성)
+                elif any(in_addr in EXCHANGE_ADDRESSES for in_addr in inputs):
+                    print(f"Whale BUY detected: {total_output_btc} BTC from exchange")
+                    print(f"Tx Hash: {tx['hash']}")
+                else:
+                    print(f"Whale transfer (unknown intent): {total_output_btc} BTC")
+                    print(f"Tx Hash: {tx['hash']}")

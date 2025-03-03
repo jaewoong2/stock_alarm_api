@@ -13,7 +13,7 @@ REGION_NAME = "ap-northeast-2"  # 예: "ap-northeast-2"
 
 class AwsService:
     def __init__(self, settings: Settings):
-        self.aws_access_key_id = settings.AWS_ACCESS_KEY_ID
+        self.aws_access_key_id = settings.AWS_S3_ACCESS_KEY_ID
         self.aws_secret_access_key = settings.AWS_S3_SECRET_ACCESS_KEY
 
     def get_secret(self) -> dict:

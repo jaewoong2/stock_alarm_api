@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Kakao 토큰 정보를 위한 Pydantic 모델
@@ -10,6 +10,24 @@ class KakaoToken(BaseModel):
 
 class KakaoMessageRequest(BaseModel):
     message: str
+
+
+class KakaoJSONResponse(BaseModel):
+    message: Optional[str] = None
+    code: Optional[str] = None
+    result_code: Optional[str] = None
+
+    @field_validator("code", mode="before")
+    def transform_code(cls, v):
+        if isinstance(v, int):
+            return str(v)
+        return v
+
+    @field_validator("result_code", mode="before")
+    def transform_result_code(cls, v):
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class KakaoTokenResponse(BaseModel):

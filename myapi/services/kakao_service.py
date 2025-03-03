@@ -2,7 +2,11 @@
 import json
 import requests
 
-from myapi.domain.kakao.kakao_schema import KakaoToken, KakaoTokenResponse
+from myapi.domain.kakao.kakao_schema import (
+    KakaoJSONResponse,
+    KakaoToken,
+    KakaoTokenResponse,
+)
 from myapi.services.aws_service import AwsService
 from myapi.utils.config import Settings
 
@@ -26,7 +30,7 @@ class KakaoService:
             refresh_token=secret_data.get("refresh_token", ""),
         )
 
-    def refresh_toen(self, refresh_token) -> KakaoTokenResponse:
+    def refresh_token(self, refresh_token) -> KakaoTokenResponse:
 
         url = "https://kauth.kakao.com/oauth/token"
         headers = {"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"}
@@ -68,7 +72,7 @@ class KakaoService:
         token: str,
         template_object: dict | None = None,
         message: str | None = None,
-    ) -> dict:
+    ):
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -89,6 +93,5 @@ class KakaoService:
             data["template_object"] = json.dumps(template_object)
 
         response = requests.post(self.base_url, data=data, headers=headers)
-        # 요청 실패 시 예외 발생
-        response.raise_for_status()
-        return response.json()
+
+        return KakaoJSONResponse(**response.json())

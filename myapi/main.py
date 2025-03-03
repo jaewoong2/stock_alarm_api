@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from mangum import Mangum
 from starlette.middleware.cors import CORSMiddleware
 
@@ -33,17 +32,6 @@ def hello():
     """Function printing python version."""
 
     return {"message": "Hello World!!"}
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "code": exc.status_code,
-            "message": exc.detail,
-        },
-    )
 
 
 app.include_router(tqqq_router.router)

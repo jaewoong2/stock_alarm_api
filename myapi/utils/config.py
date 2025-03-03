@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from sqlalchemy import inspect
 
+import logging
+import logging.config
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -32,6 +35,7 @@ class Settings(BaseSettings):
     HYPERBOLIC_API_KEY: str = ""
     NEWS_API_KEY: str = ""
     FRED_API_KEY: str = ""
+    DISCORD_WEBHOOK_URL: str = ""
 
     database_engine: str = ""
     database_username: str = ""
@@ -50,3 +54,11 @@ def get_settings():
 
 def row_to_dict(row) -> dict:
     return {key: getattr(row, key) for key in inspect(row).attrs.keys()}
+
+
+def init_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] %(levelname)s in %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
