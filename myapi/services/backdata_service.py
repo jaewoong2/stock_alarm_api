@@ -85,15 +85,19 @@ class BackDataService:
         # 최종적으로 변환된 DataFrame 반환
         return df
 
-    def get_btc_news(self) -> ArticleResponseType:
+    def get_btc_news(self, symbol: str = "Crypto") -> ArticleResponseType:
         NEWS_API_URL = "https://newsapi.org/v2/everything"
 
+        yesterday = pd.Timestamp.now() - pd.Timedelta(days=1)
+        yesterday_date = yesterday.strftime("%Y-%m-%d")
+
         params = {
-            "q": "bitcoin OR btc",  # Search query for Bitcoin-related news
+            "q": f"bitcoin OR btc OR {symbol}",  # Search query for Bitcoin-related news
             "apiKey": self.NEWS_API_KEY,
             "language": "en",  # English news only (optional)
             "sortBy": "publishedAt",  # Sort by latest
-            "pageSize": 3,  # Limit to 10 articles
+            "pageSize": 10,  # Limit to 10 articles
+            "from": yesterday_date,
         }
 
         try:
@@ -189,17 +193,6 @@ class BackDataService:
             "volume": float(ticker["target_volume"]),
         }
 
-    def get_moving_average(self, coin: str, ma_days: int):
-        """이동평균선 계산"""
-        df = self.get_ohlcv_data(coin, limit=ma_days + 1)
-
-        if df is None or len(df) < ma_days:
-            return None
-
-        ma = df["close"].rolling(window=ma_days).mean().iloc[-1]
-
-        return ma
-
     def check_buy_condition(self, target, ma, price, high):
         """
         매수 조건을 확인합니다.
@@ -234,29 +227,3 @@ class BackDataService:
             return True
 
         return False
-
-    def check_whale_transactions(self):
-        url = "https://blockchain.info/unconfirmed-transactions?format=json"
-        response = requests.get(url)
-        data = response.json()
-
-        for tx in data["txs"]:
-            total_output_btc = (
-                sum(out["value"] for out in tx["out"]) / 100000000
-            )  # satoshi -> BTC
-            if total_output_btc > 100:  # 100 BTC 이상 거래만 체크
-                inputs = [inp["prev_out"]["addr"] for inp in tx["inputs"]]
-                outputs = [out["addr"] for out in tx["out"]]
-
-                # 거래소로 입금 (매도 가능성)
-                if any(out_addr in EXCHANGE_ADDRESSES for out_addr in outputs):
-                    print(f"Whale SELL detected: {total_output_btc} BTC to exchange")
-                    print(f"Tx Hash: {tx['hash']}")
-
-                # 거래소에서 출금 (매수 가능성)
-                elif any(in_addr in EXCHANGE_ADDRESSES for in_addr in inputs):
-                    print(f"Whale BUY detected: {total_output_btc} BTC from exchange")
-                    print(f"Tx Hash: {tx['hash']}")
-                else:
-                    print(f"Whale transfer (unknown intent): {total_output_btc} BTC")
-                    print(f"Tx Hash: {tx['hash']}")

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 import logging
 from datetime import datetime
 
@@ -138,6 +138,7 @@ class TradingService:
         percentage: float = 0.01,
         interval: str = "1h",
         opinion: Optional[str] = None,
+        size: int = 500,
     ):
         """ """
 
@@ -145,7 +146,7 @@ class TradingService:
             # 시장 데이터 수집
             trading_information = self.get_trading_information()
             market_data = self.backdata_service.get_market_data(symbol)
-            candles_info = self._fetch_candle_data(interval=interval, size=500)
+            candles_info = self._fetch_candle_data(interval=interval, size=size)
             orderbook_data = self.coinone_service.get_orderbook(
                 quote_currency="KRW", target_currency=symbol
             )
@@ -159,7 +160,7 @@ class TradingService:
             # AI 분석용 데이터 준비
             current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
 
-            technical_indicators = get_technical_indicators(candles_info)
+            technical_indicators = get_technical_indicators(candles_info, size)
 
             # AI 검증 요청
             decision, prompt = self.ai_service.analyze_market(
