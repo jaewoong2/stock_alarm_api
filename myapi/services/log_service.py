@@ -10,7 +10,7 @@ class LogService:
         """
         trade_info에 타임스탬프를 추가하고 로그에 저장합니다.
         """
-        trade_info["timestamp"] = datetime.utcnow().isoformat()
+        trade_info["timestamp"] = datetime.now().isoformat()
         self.logs.append(trade_info)
 
     def get_logs(self):

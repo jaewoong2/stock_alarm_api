@@ -9,11 +9,55 @@ from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
 from myapi.services.tqqq_service import TqqqService
-from myapi.services.trading_service import TradingService
+from myapi.services.trading.trade_service import TradingService
 from myapi.utils.config import Settings
 
 
+class ConfigModule(containers.DeclarativeContainer):
+    """환경 설정 및 공통 의존성 관리"""
+
+    config = providers.Singleton(Settings)
+
+
+class RepositoryModule(containers.DeclarativeContainer):
+    """데이터베이스 관련 의존성 관리"""
+
+    db = providers.Resource(get_db)
+    trading_repository = providers.Singleton(TradingRepository, db_session=db)
+
+
+class ServiceModule(containers.DeclarativeContainer):
+    """각 서비스의 의존성 관리"""
+
+    config = providers.DependenciesContainer()
+    repositories = providers.DependenciesContainer()
+
+    aws_service = providers.Factory(AwsService, settings=config.config)
+    kakao_service = providers.Factory(
+        KakaoService, settings=config.config, aws_service=aws_service
+    )
+    backdata_service = providers.Factory(
+        BackDataService,
+        settings=config.config,
+        trading_repository=repositories.trading_repository,
+    )
+    tqqq_service = providers.Factory(TqqqService, settings=config.config)
+    ai_service = providers.Factory(AIService, settings=config.config)
+    coinone_service = providers.Factory(CoinoneService, settings=config.config)
+    trading_service = providers.Factory(
+        TradingService,
+        settings=config.config,
+        ai_service=ai_service,
+        backdata_service=backdata_service,
+        coinone_service=coinone_service,
+        trading_repository=repositories.trading_repository,
+    )
+    discord_service = providers.Factory(DiscordService, settings=config.config)
+
+
 class Container(containers.DeclarativeContainer):
+    """전체 의존성 컨테이너"""
+
     wiring_config = containers.WiringConfiguration(
         modules=[
             "myapi.routers.kakao_router",
@@ -23,32 +67,8 @@ class Container(containers.DeclarativeContainer):
         ],
     )
 
-    # DB 딕셔너리 리소스 제공자
-    db = providers.Resource(get_db)
-
-    config = providers.Singleton(Settings)
-
-    trading_repository = providers.Singleton(TradingRepository, db_session=db)
-
-    aws_service = providers.Factory(AwsService, settings=config)
-    kakao_service = providers.Factory(
-        KakaoService, settings=config, aws_service=aws_service
+    config = providers.Container(ConfigModule)
+    repositories = providers.Container(RepositoryModule)
+    services = providers.Container(
+        ServiceModule, config=config, repositories=repositories
     )
-    backdata_service = providers.Factory(
-        BackDataService, settings=config, trading_repository=trading_repository
-    )
-    tqqq_service = providers.Factory(TqqqService, settings=config)
-
-    ai_service = providers.Factory(AIService, settings=config)
-    # log_service = providers.Singleton(LogService)
-    coinone_service = providers.Factory(CoinoneService, settings=config)
-    trading_service = providers.Factory(
-        TradingService,
-        settings=config,
-        ai_service=ai_service,
-        backdata_service=backdata_service,
-        coinone_service=coinone_service,
-        trading_repository=trading_repository,
-    )
-
-    discord_service = providers.Factory(DiscordService, settings=config)

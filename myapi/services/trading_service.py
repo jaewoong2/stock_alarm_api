@@ -201,7 +201,7 @@ class TradingService:
 
                     return TradingResponse(
                         action=Action(
-                            action=ActionType.CANCLE,
+                            action=ActionType.CANCEL,
                             market_outlook="",
                             order=None,
                             reason=f"{cancel_result.model_dump_json()}",
@@ -212,7 +212,7 @@ class TradingService:
                 else:
                     return TradingResponse(
                         action=Action(
-                            action=ActionType.CANCLE,
+                            action=ActionType.CANCEL,
                             market_outlook="",
                             order=None,
                             reason="",
@@ -252,7 +252,7 @@ class TradingService:
             logger.error(f"Error in execute_trade: {e}")
             return TradingResponse(
                 action=Action(
-                    action=ActionType.CANCLE,
+                    action=ActionType.CANCEL,
                     market_outlook="",
                     order=None,
                     reason="Error",

@@ -20,7 +20,7 @@ class ActionType(str, Enum):
     SELL = "SELL"
     BUY = "BUY"
     HOLD = "HOLD"
-    CANCLE = "CANCLE"
+    CANCEL = "CANCEL"
 
 
 class OutlookEnum(str, Enum):
