@@ -25,7 +25,7 @@ DEFAULT_GRAPH_DISPLAY_DAYS = 100  # 차트에 표시할 기본 일수
 )
 @inject
 def create_answer(
-    tqqq_service: TqqqService = Depends(Provide[Container.tqqq_service]),
+    tqqq_service: TqqqService = Depends(Provide[Container.services.tqqq_service]),
 ):
     try:
         result = tqqq_service.get_actions()

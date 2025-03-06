@@ -46,7 +46,6 @@ class ServiceModule(containers.DeclarativeContainer):
     coinone_service = providers.Factory(CoinoneService, settings=config.config)
     trading_service = providers.Factory(
         TradingService,
-        settings=config.config,
         ai_service=ai_service,
         backdata_service=backdata_service,
         coinone_service=coinone_service,

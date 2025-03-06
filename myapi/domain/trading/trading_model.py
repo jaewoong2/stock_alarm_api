@@ -1,6 +1,20 @@
+from typing import List
+from openai import BaseModel
+from pandas import DataFrame
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 import enum
+
+from myapi.domain.backdata.backdata_schema import (
+    ArticleResponseType,
+    SentimentResponseType,
+)
+from myapi.domain.trading.coinone_schema import (
+    ActiveOrdersResponse,
+    Balance,
+    GetTradingInformationResponseModel,
+    OrderBookResponse,
+)
 
 Base = declarative_base()
 
@@ -46,3 +60,16 @@ class Trade(Base):
 
     # 입력된 데이터 (시세, 전략, 뉴스 등 중요한 데이터)
     action_string = Column(Text, nullable=True)
+
+
+class BackdataInformations(BaseModel):
+    trading_info: GetTradingInformationResponseModel
+    market_data: dict
+    candles_info: DataFrame
+    orderbook: OrderBookResponse
+    balances: List[Balance]
+    news: ArticleResponseType
+    sentiment: SentimentResponseType
+    active_orders: ActiveOrdersResponse
+    current_time: str
+    technical_indicators: dict

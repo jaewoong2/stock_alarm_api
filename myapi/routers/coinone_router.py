@@ -24,7 +24,9 @@ def candlestick_endpoint(
     target_currency: str,
     interval: str = "5m",
     limit: int = 72,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_candlestick(
@@ -46,7 +48,9 @@ def candlestick_endpoint(
 @inject
 def ticker_all_endpoint(
     quote_currency: str,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_ticker_all(quote_currency)
@@ -71,7 +75,9 @@ def ticker_all_endpoint(
 def orderbook_endpoint(
     quote_currency: str,
     target_currency: str,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_orderbook(quote_currency, target_currency)
@@ -86,7 +92,9 @@ def trades_endpoint(
     quote_currency: str,
     target_currency: str,
     size: int = 200,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_trades(quote_currency, target_currency, size)
@@ -109,7 +117,9 @@ def trades_endpoint(
 def markets_endpoint(
     quote_currency: str = "KRW",
     target_currency: str = "BTC",
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_markets(quote_currency, target_currency)
@@ -126,7 +136,9 @@ def markets_endpoint(
 @router.get("/balances")
 @inject
 def balances_endpoint(
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_balance(["BTC", "KRW"])
@@ -140,7 +152,9 @@ def balances_endpoint(
 @inject
 def order(
     order: OrderRequest,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.place_order(order)
@@ -154,7 +168,9 @@ def order(
 @inject
 def active_orders(
     symbol: str,
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.get_active_orders(symbol.upper())
@@ -169,7 +185,9 @@ def active_orders(
 def cancle_order(
     order_id: str,
     symbol: str = "BTC",
-    coinone_service: CoinoneService = Depends(Provide[Container.coinone_service]),
+    coinone_service: CoinoneService = Depends(
+        Provide[Container.services.coinone_service]
+    ),
 ):
     try:
         data = coinone_service.cancel_order(

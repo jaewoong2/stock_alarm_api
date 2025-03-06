@@ -5,13 +5,17 @@ from typing import Any, Dict
 from fastapi import HTTPException
 
 from myapi.domain.trading.coinone_schema import TriggerResponse
+from myapi.services.backdata_service import BackDataService
 from myapi.utils.indicators import get_technical_indicators
+from myapi.utils.trading_utils import TradingUtils
 
 logger = logging.getLogger(__name__)
 
 
 class TradeMonitor:
-    def __init__(self, backdata_service: Any, trading_utils: Any) -> None:
+    def __init__(
+        self, backdata_service: BackDataService, trading_utils: TradingUtils
+    ) -> None:
         self.backdata_service = backdata_service
         self.trading_utils = trading_utils
 
@@ -25,16 +29,18 @@ class TradeMonitor:
             current_info: Dict[str, Any] = self.backdata_service.get_market_data(
                 symbol.upper()
             )
+
             candles = self.backdata_service.get_coinone_candles(
                 interval=interval, size=size
             )
 
-            if not candles or len(candles) < 120:
+            if candles is None or len(candles) < 120:
                 return TriggerResponse(
                     status="ERROR", message="캔들 데이터 부족 (최소 120개 필요)"
                 )
 
             indicators = get_technical_indicators(candles, size)
+
             if not indicators:
                 return TriggerResponse(status="ERROR", message="기술적 지표 계산 오류")
 

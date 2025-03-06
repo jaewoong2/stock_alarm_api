@@ -16,8 +16,8 @@ router = APIRouter(prefix="/api/kakao")
 @router.get("/token")
 @inject
 async def get_token(
-    kakao_service: KakaoService = Depends(Provide[Container.kakao_service]),
-    aws_service: AwsService = Depends(Provide[Container.aws_service]),
+    kakao_service: KakaoService = Depends(Provide[Container.services.kakao_service]),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     tokens = kakao_service.get_oauth_token()
 
@@ -29,8 +29,8 @@ async def get_token(
 @router.post("/refresh")
 @inject
 async def refresh_token(
-    aws_service: AwsService = Depends(Provide[Container.aws_service]),
-    kakao_service: KakaoService = Depends(Provide[Container.kakao_service]),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+    kakao_service: KakaoService = Depends(Provide[Container.services.kakao_service]),
 ):
     try:
         secret_data = aws_service.get_secret()
@@ -64,8 +64,8 @@ async def refresh_token(
 @router.post("/send-kakao-message")
 @inject
 async def send_kakao_message_endpoint(
-    kakao_service: KakaoService = Depends(Provide[Container.kakao_service]),
-    aws_service: AwsService = Depends(Provide[Container.aws_service]),
+    kakao_service: KakaoService = Depends(Provide[Container.services.kakao_service]),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     """
     카카오톡 메시지 전송 API 엔드포인트

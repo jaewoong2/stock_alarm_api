@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from myapi import containers
 from myapi.routers import coinone_router, kakao_router, trading_router
+from myapi.utils.config import init_logging
 
 from .routers import tqqq_router
 
@@ -14,6 +15,7 @@ load_dotenv("myapi/.env")
 
 app.container = containers.Container()  # type: ignore
 
+init_logging()
 
 origins = ["http://localhost:5173"]
 

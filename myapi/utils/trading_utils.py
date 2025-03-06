@@ -147,17 +147,17 @@ class TradingUtils:
 
     def _check_triggers(
         self,
-        rsi: float,
-        macd: float,
-        macd_signal: float,
-        short_ma: float,
-        long_ma: float,
-        adx: float,
-        bollinger_upper: float,
-        bollinger_lower: float,
-        current_price: float,
-        atr: float,
-        prev_price: float,
+        rsi: Optional[float],
+        macd: Optional[float],
+        macd_signal: Optional[float],
+        short_ma: Optional[float],
+        long_ma: Optional[float],
+        adx: Optional[float],
+        bollinger_upper: Optional[float],
+        bollinger_lower: Optional[float],
+        current_price: Optional[float],
+        atr: Optional[float],
+        prev_price: Optional[float],
         target: Optional[float] = None,
         high: Optional[float] = None,
     ) -> Tuple[Optional[str], float, str, float]:
@@ -165,6 +165,21 @@ class TradingUtils:
         signals = {}
         confidences = {}
         opinions = []
+
+        if (
+            not rsi
+            or not macd
+            or not macd_signal
+            or not short_ma
+            or not long_ma
+            or not atr
+            or not adx
+            or not bollinger_upper
+            or not bollinger_lower
+            or not current_price
+            or not prev_price
+        ):
+            return None, 0.0, "필요한 지표가 부족합니다.", 0.0
 
         # RSI 신호
         rsi_signal, rsi_conf, rsi_op = self._check_rsi_with_confidence(rsi)

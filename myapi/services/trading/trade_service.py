@@ -9,7 +9,6 @@ from myapi.utils.trading_utils import TradingUtils
 class TradingService:
     def __init__(
         self,
-        settings: Any,
         ai_service: Any,
         backdata_service: Any,
         coinone_service: Any,
@@ -23,11 +22,10 @@ class TradingService:
         )
         self.trade_monitor = TradeMonitor(backdata_service, self.trading_utils)
         self.trade_executor = TradeExecutor(
-            ai_service,
-            backdata_service,
-            coinone_service,
-            trading_repository,
-            self.trading_utils,
+            ai_service=ai_service,
+            backdata_service=backdata_service,
+            coinone_service=coinone_service,
+            trading_repository=trading_repository,
         )
 
     def monitor_triggers(
