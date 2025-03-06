@@ -36,14 +36,18 @@ class ServiceModule(containers.DeclarativeContainer):
     kakao_service = providers.Factory(
         KakaoService, settings=config.config, aws_service=aws_service
     )
+
+    tqqq_service = providers.Factory(TqqqService, settings=config.config)
+    ai_service = providers.Factory(AIService, settings=config.config)
+    coinone_service = providers.Factory(CoinoneService, settings=config.config)
+
     backdata_service = providers.Factory(
         BackDataService,
         settings=config.config,
         trading_repository=repositories.trading_repository,
+        coinone_service=coinone_service,
     )
-    tqqq_service = providers.Factory(TqqqService, settings=config.config)
-    ai_service = providers.Factory(AIService, settings=config.config)
-    coinone_service = providers.Factory(CoinoneService, settings=config.config)
+
     trading_service = providers.Factory(
         TradingService,
         ai_service=ai_service,

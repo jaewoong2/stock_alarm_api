@@ -10,6 +10,7 @@ from myapi.domain.backdata.backdata_schema import (
     SentimentResponseType,
 )
 from myapi.repositories.trading_repository import TradingRepository
+from myapi.services.coinone_service import CoinoneService
 from myapi.utils.config import Settings
 
 # 거래소 주소 목록 (예시, 실제 데이터로 대체 필요)
@@ -22,9 +23,15 @@ EXCHANGE_ADDRESSES = {
 class BackDataService:
     BASE_URL = "https://api.coinone.co.kr/public/v2"
 
-    def __init__(self, settings: Settings, trading_repository: TradingRepository):
+    def __init__(
+        self,
+        settings: Settings,
+        trading_repository: TradingRepository,
+        coinone_service: CoinoneService,
+    ):
         self.NEWS_API_KEY = settings.NEWS_API_KEY
         self.trading_repository = trading_repository
+        self.coinone_service = coinone_service
 
     def get_ohlcv_data(
         self,
@@ -115,14 +122,17 @@ class BackDataService:
         url = f"https://api.coinone.co.kr/public/v2/chart/{quote_currency}/{target_currency}"
         params = {"interval": interval, "size": size}
         try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("result") != "success":
-                error_code = data.get("error_code", "Unknown error code")
+            candle_data = self.coinone_service.get_candlestick(
+                quote_currency=quote_currency,
+                target_currency=target_currency,
+                interval=interval,
+                size=size,
+            )
+            if candle_data.get("result") != "success":
+                error_code = candle_data.get("error_code", "Unknown error code")
                 logging.error(f"Coinone API error: {error_code}")
                 raise ValueError(f"Coinone API error: {error_code}")
-            df = pd.DataFrame(data["chart"])
+            df = pd.DataFrame(candle_data["chart"])
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
             df.rename(
