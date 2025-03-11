@@ -76,6 +76,7 @@ class TradeExecutor:
                 },
                 current_active_orders=backdata_information.active_orders.model_dump(),
                 additional_context=f"Trigger detected: {opinion}. Validate this action based on current market conditions and technical indicators.",
+                plot_image_path=backdata_information.plot_image_path,
             )
 
             ai_action = (
@@ -418,9 +419,6 @@ class TradeExecutor:
             )
         )
 
-    def _fetch_candle_data(self, interval: str = "1h", size: int = 200):
-        return self.backdata_service.get_coinone_candles(interval=interval, size=size)
-
     def _record_trade(self, trade: Trade):
         try:
             return self.trading_repository.insert_trading_information(trade)
@@ -490,12 +488,12 @@ class TradeExecutor:
             **balance_object,
         )
 
-    def _get_information(
-        self, symbol: str, interval: str, size: int
-    ) -> BackdataInformations:
+    def _get_information(self, symbol: str, interval: str, size: int):
         trading_info = self.trading_repository.get_trading_information()
         market_data = self.backdata_service.get_market_data(symbol)
-        candles_info = self._fetch_candle_data(interval=interval, size=size)
+        candles_info = self.backdata_service.get_coinone_candles(
+            interval=interval, size=size
+        )
         orderbook = self.coinone_service.get_orderbook(
             quote_currency="KRW", target_currency=symbol
         )
@@ -505,7 +503,11 @@ class TradeExecutor:
         active_orders = self.coinone_service.get_active_orders(symbol.upper())
 
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
-        technical_indicators = get_technical_indicators(candles_info, size)
+        technical_indicators, df = get_technical_indicators(candles_info, size)
+
+        plot_image_path = self.backdata_service.upload_plot_image(
+            df=df, length=200, path=f"{symbol}_{current_time}.png"
+        )
 
         return BackdataInformations(
             trading_info=trading_info,
@@ -518,4 +520,5 @@ class TradeExecutor:
             active_orders=active_orders,
             current_time=current_time,
             technical_indicators=technical_indicators,
+            plot_image_path=plot_image_path,
         )

@@ -1,6 +1,9 @@
 # routers/trading_router.py
 import logging
+from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Depends, Request
+from myapi.domain.trading.trading_model import TechnicalAnalysisResponse
+from myapi.services.ai_service import AIService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.trading.trade_service import TradingService
@@ -12,7 +15,43 @@ router = APIRouter(prefix="/trading")
 logger = logging.getLogger(__name__)
 
 
-@router.get("/monitoring")
+@router.get("/prediction", tags=["trading"])
+@inject
+def prediction_with_chart(
+    symbol: str,
+    interval: str = "15m",
+    trading_service: TradingService = Depends(
+        Provide[Container.services.trading_service]
+    ),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+):
+    information = trading_service.trade_executor._get_information(symbol, interval, 200)
+
+    prompt = """
+    The chart includes candlesticks along with Bollinger Bands (BB, 200), RSI, MACD, and ADX indicators.
+    
+    **I want more specific price movement and price level**
+    
+    it is not real chart, so you can analyze the chart.
+
+    Please think about the following:
+        1. What might the price movement look like over the next 1-2 hours based on these indicators?
+        2. What price level could be considered for limiting losses (potential stop loss line)?
+        3. What price level might be suitable for entering a position (potential buy line)?
+        4. What price level could be a reasonable target for securing gains (potential take profit line)?
+        5. What is Your recommendation For me acting right now? 
+    """
+
+    encoded_image_url = quote(information.plot_image_path, safe=":/")
+
+    analyze = ai_service.analzye_image(prompt=prompt, image_path=encoded_image_url)
+
+    result = ai_service.transform_message_to_schema(analyze, TechnicalAnalysisResponse)
+
+    return result
+
+
+@router.get("/monitoring", tags=["trading"])
 @inject
 def monitoring(
     symbol: str,
@@ -46,7 +85,7 @@ def monitoring(
     return content
 
 
-@router.post("/trade/{symbol}")
+@router.post("/trade/{symbol}", tags=["trading"])
 @inject
 def trade(
     symbol: str,
@@ -74,3 +113,33 @@ def trade(
     discord_service.send_message(content=trade_info.action.model_dump_json())
 
     return trade_info
+
+
+@router.post("/trade/{symbol}", tags=["trading"])
+@inject
+def grid_trading(
+    symbol: str,
+    interval: str = "30m",
+    trading_service: TradingService = Depends(
+        Provide[Container.services.trading_service]
+    ),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
+):
+
+    current_infromations = trading_service.trade_monitor.monitor_triggers(
+        symbol=symbol, interval=interval, size=200
+    )
+
+    if current_infromations.indicators is None:
+        return
+
+    ai_result = ai_service.analyze_grid(
+        indicators=current_infromations.indicators,
+        symbol=symbol,
+        interval=interval,
+        size=200,
+        market_data={},
+    )

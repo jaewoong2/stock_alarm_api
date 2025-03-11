@@ -300,6 +300,7 @@ class TradingUtils:
 
         if not all([pd.notna(high), pd.notna(low), pd.notna(close)]):
             raise ValueError("데이터에 결측치가 있습니다.")
+        # amazonq-ignore-next-line
 
         pivot = (high + low + close) / 3.0
         range_ = high - low
@@ -360,6 +361,7 @@ class TradingUtils:
             if current_price > pivot:
                 confidence -= 0.1
                 opinion += " 피벗 위로 신뢰도 감소."
+        # amazonq-ignore-next-line
         elif current_price < s1:
             signal = "SELL"
             confidence = 0.8 if volume_spike else 0.6

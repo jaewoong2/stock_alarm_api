@@ -248,3 +248,5 @@ class CancelOrderResponse(BaseModel):
 class TriggerResponse(BaseModel):
     status: str | None
     message: str
+
+    indicators: Optional[Dict] = None

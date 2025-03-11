@@ -1,5 +1,15 @@
+import io
+import logging
+from typing import Optional
+import matplotlib
+from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
+
+matplotlib.use(
+    "Agg", force=True
+)  # GUI 백엔드 대신 Agg 사용 (반드시 import plt 전에 호출)
+import mplfinance as mpf
 
 
 def calculate_moving_average(df: pd.DataFrame, window: int) -> pd.Series:
@@ -99,7 +109,7 @@ def compute_adx(df, period=14):
     return df
 
 
-def get_technical_indicators(df: pd.DataFrame | None, length: int) -> dict:
+def get_technical_indicators(df: pd.DataFrame | None, length: int):
     """
     df: 캔들 DataFrame
         - 원본 df는 [0]이 최신, [마지막]이 과거 순서라고 가정.
@@ -115,7 +125,8 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int) -> dict:
 
     # (1) df를 시간순(옛날→최신)으로 뒤집기
     df = df.iloc[::-1].copy()
-    df.reset_index(drop=True, inplace=True)
+    # df.reset_index(drop=True, inplace=True)
+    df = df.reset_index()  # drop=True 제거, timestamp를 열로 유지
 
     # (2) 지표 계산
     # 이동평균
@@ -147,6 +158,7 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int) -> dict:
     # ADX
     df = compute_adx(df)
 
+    df.set_index("timestamp", inplace=True)
     # (3) 뒤집은 상태에서 '마지막 행'이 곧 최신 데이터
     latest = df.iloc[-1]
 
@@ -168,4 +180,157 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int) -> dict:
         "Latest_Open": round(latest["open"], 2),
         "volatility": round(latest["volatility"], 2),
         "high": round(latest["high"], 2),
+    }, df
+
+
+def plot_with_indicators(df: pd.DataFrame, length: int):
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if pd.api.types.is_numeric_dtype(df.index):
+            df.index = pd.to_datetime(df.index, unit="ms")
+        else:
+            raise ValueError(
+                "DataFrame index must be a DatetimeIndex or numeric timestamp"
+            )
+
+    # 커스텀 스타일 설정
+    custom_style = mpf.make_mpf_style(
+        base_mpf_style="yahoo",
+        rc={
+            "axes.labelsize": 12,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+            "lines.linewidth": 1.5,
+        },
+        marketcolors=mpf.make_marketcolors(
+            up="green", down="red", wick="black", volume="gray", edge="black", alpha=0.8
+        ),
+        mavcolors=["blue", "orange", "green"],  # 이동평균선 색상 지정
+    )
+
+    # 추가 플롯 설정 (범례와 함께)
+    add_plots = [
+        mpf.make_addplot(
+            df["MA_9"], panel=0, width=1.2, linestyle="solid", color="blue", label="MA9"
+        ),
+        mpf.make_addplot(
+            df["MA_21"],
+            panel=0,
+            width=1.2,
+            linestyle="solid",
+            color="orange",
+            label="MA21",
+        ),
+        mpf.make_addplot(
+            df["MA_120"],
+            panel=0,
+            width=1.2,
+            linestyle="solid",
+            color="green",
+            label="MA120",
+        ),
+        mpf.make_addplot(
+            df["BB_Upper"],
+            panel=0,
+            width=0.8,
+            linestyle="dashdot",
+            color="purple",
+            label="BB Upper",
+        ),
+        mpf.make_addplot(
+            df["BB_Lower"],
+            panel=0,
+            width=0.8,
+            linestyle="dashdot",
+            color="purple",
+            label="BB Lower",
+        ),
+        mpf.make_addplot(
+            df["RSI_14"],
+            panel=1,
+            color="lime",
+            width=1.2,
+            ylabel="RSI(14)",
+            label="RSI",
+        ),
+        mpf.make_addplot(
+            df["MACD"], panel=2, color="fuchsia", width=1.2, ylabel="MACD", label="MACD"
+        ),
+        mpf.make_addplot(
+            df["MACD_Signal"], panel=2, color="blue", width=1.2, label="MACD Signal"
+        ),
+    ]
+
+    if "adx" in df.columns:
+        add_plots.append(
+            mpf.make_addplot(
+                df["adx"], panel=3, color="orange", width=1.2, ylabel="ADX", label="ADX"
+            )
+        )
+
+    # 차트 그리기 옵션
+    mpf_kwargs = {
+        "type": "candle",
+        "volume": True,
+        "addplot": add_plots,
+        "figratio": (20, 12),  # 더 큰 비율로 설정
+        "figscale": 1.5,  # 크기 확장
+        "title": f"Candlestick Chart with Indicators (BB_{length})",
+        "tight_layout": True,
+        "style": custom_style,
+        "panel_ratios": (3, 1, 1, 1),
+        "show_nontrading": False,  # 비거래 시간 제외
+        "datetime_format": "%Y-%m-%d %H:%M:%S",  # 상세한 시간 형식
+        "xrotation": 45,  # X축 레이블 회전
+        "scale_padding": {
+            "left": 0.5,
+            "right": 0.5,
+            "top": 0.5,
+            "bottom": 0.5,
+        },  # 여백 조정
     }
+
+    fig = mpf.plot(df, **mpf_kwargs, returnfig=True)
+    # 범례 추가
+    max_price = df["high"].max()
+    min_price = df["low"].min()
+    ax = fig[0].get_axes()[0]
+    ax.annotate(
+        f"Max: {max_price:.2f}",
+        xy=(0.05, 0.95),
+        xycoords="axes fraction",
+        fontsize=10,
+        color="black",
+    )
+    ax.annotate(
+        f"Min: {min_price:.2f}",
+        xy=(0.05, 0.90),
+        xycoords="axes fraction",
+        fontsize=10,
+        color="black",
+    )
+
+    start_time = df.index[0].strftime("%Y-%m-%d %H:%M:%S")
+    end_time = df.index[-1].strftime("%Y-%m-%d %H:%M:%S")
+    ax.annotate(
+        f"Start: {start_time}",
+        xy=(0.05, 0.85),
+        xycoords="axes fraction",
+        fontsize=10,
+        color="black",
+    )
+    ax.annotate(
+        f"End: {end_time}",
+        xy=(0.05, 0.80),
+        xycoords="axes fraction",
+        fontsize=10,
+        color="black",
+    )
+    handles, labels = ax.get_legend_handles_labels()
+    fig[0].legend(handles, labels, loc="upper left", fontsize=10)
+
+    buffer = io.BytesIO()
+    fig[0].savefig(buffer, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig[0])
+    buffer.seek(0)
+    return buffer

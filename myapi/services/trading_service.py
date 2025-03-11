@@ -72,7 +72,7 @@ class TradingService:
                     status="ERROR", message="캔들 데이터 부족 (최소 120개 필요)"
                 )
 
-            indicators = get_technical_indicators(candles, size)
+            indicators, df = get_technical_indicators(candles, size)
             if not indicators:
                 return TriggerResponse(status="ERROR", message="ERROR")
 
@@ -132,6 +132,7 @@ class TradingService:
     def get_trading_information(self):
         return self.trading_repository.get_trading_information()
 
+    # amazonq-ignore-next-line
     def execute_trade(
         self,
         symbol: str,
@@ -160,7 +161,7 @@ class TradingService:
             # AI 분석용 데이터 준비
             current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
 
-            technical_indicators = get_technical_indicators(candles_info, size)
+            technical_indicators, df = get_technical_indicators(candles_info, size)
 
             # AI 검증 요청
             decision, prompt = self.ai_service.analyze_market(
@@ -182,6 +183,7 @@ class TradingService:
                     if isinstance(news, Article)  # Ensure url exists
                 },
                 current_active_orders=current_active_orders.model_dump(),
+                plot_image_path="",
                 additional_context=f"Trigger detected: {opinion}. Validate this action based on current market conditions and technical indicators.",
             )
 

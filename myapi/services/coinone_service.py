@@ -35,40 +35,57 @@ class CoinoneService:
         self,
         quote_currency: str,
         target_currency: str,
-        interval: str = "5m",
-        limit: int = 72,
+        interval: str = "15m",
+        size: int = 200,
     ) -> Dict[str, Any]:
-        url = (
-            f"{self.base_url}/public/v2/candlestick/{quote_currency}/{target_currency}"
-        )
-        params = {"interval": interval, "limit": limit}
-        response = self.session.get(url, params=params)
-        return response.json()
+        url = f"https://api.coinone.co.kr/public/v2/chart/{quote_currency}/{target_currency}"
+        params = {"interval": interval, "size": size}
+
+        """
+        with
+        Resources are automatically released when the with block exits
+        Cleanup happens even if an exception occurs
+        Prevents memory leaks and resource exhaustion
+        More robust error handling
+        """
+        with self.session.get(url, params=params) as response:
+            response.raise_for_status()
+            return response.json()
 
     def get_ticker_all(self, quote_currency: str) -> Dict[str, Any]:
         url = f"{self.base_url}/public/v2/ticker_all/{quote_currency}"
-        response = self.session.get(url)
-        return response.json()
+
+        with self.session.get(url) as response:
+            response.raise_for_status()
+            return response.json()
 
     def get_orderbook(self, quote_currency: str, target_currency: str, size: int = 10):
         url = f"{self.base_url}/public/v2/orderbook/{quote_currency}/{target_currency}?size={size}"
-        response = self.session.get(url)
-        data = response.json()
 
-        return OrderBookResponse(**data)
+        with self.session.get(url) as response:
+            response.raise_for_status()
+            data = response.json()
+            return OrderBookResponse(**data)
 
     def get_trades(
         self, quote_currency: str, target_currency: str, size: int = 200
     ) -> Dict[str, Any]:
         url = f"{self.base_url}/public/v2/trades/{quote_currency}/{target_currency}"
         params = {"size": size}
-        response = self.session.get(url, params=params)
-        return response.json()
+
+        with self.session.get(url, params=params) as response:
+            return response.json()
+
+    def get_ticker(self, ticker: str) -> Dict[str, Any]:
+        url = f"{self.base_url}/public/v2/ticker_new/KRW/{ticker}?additional_data=false"
+        with self.session.get(url) as response:
+            response.raise_for_status()
+            return response.json()
 
     def get_markets(self, quote_currency: str, target_currency: str) -> Dict[str, Any]:
         url = f"{self.base_url}/public/v2/markets/{quote_currency}/{target_currency}"
-        response = self.session.get(url)
-        return response.json()
+        with self.session.get(url) as response:
+            return response.json()
 
     def _get_signature(self, encoded_payload: bytes) -> str:
         """
@@ -104,9 +121,8 @@ class CoinoneService:
         encoded_payload = self._sign_request(payload=data)
         headers = self._create_headers(encoded_payload)
 
-        response = self.session.post(url, headers=headers)
-
-        return response.json()
+        with self.session.post(url, headers=headers) as response:
+            return response.json()
 
     def get_balances(self) -> Dict[str, Any]:
         return self._private_post("/v2.1/account/balance", {})
@@ -127,7 +143,6 @@ class CoinoneService:
         return CoinoneBalanceResponse(**balance).balances
 
     def place_order(self, payload: OrderRequest):
-
         return self._private_post("/v2.1/order", payload.model_dump())
 
     def cancel_order(self, order_id: str, target_currency: str):

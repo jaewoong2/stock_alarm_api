@@ -39,7 +39,7 @@ class TradeMonitor:
                     status="ERROR", message="캔들 데이터 부족 (최소 120개 필요)"
                 )
 
-            indicators = get_technical_indicators(candles, size)
+            indicators, df = get_technical_indicators(candles, size)
 
             if not indicators:
                 return TriggerResponse(status="ERROR", message="기술적 지표 계산 오류")
@@ -78,6 +78,7 @@ class TradeMonitor:
             response = self.trading_utils.predict_direction_using_levels(
                 candles, lookback_period=size, volume_threshold=1.2, adx=adx
             )
+
             combined_opinion = (
                 f"{interval} candle indicators >>\n\n{opinion}\n"
                 + "\n".join(response.opinions)
@@ -92,7 +93,9 @@ class TradeMonitor:
             elif response.score + score <= 0:
                 signal = "SELL"
 
-            return TriggerResponse(status=signal, message=combined_opinion)
+            return TriggerResponse(
+                status=signal, message=combined_opinion, indicators=indicators
+            )
         except Exception as exc:
             logger.error("Error in monitor_triggers: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))

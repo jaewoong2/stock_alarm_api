@@ -1,5 +1,5 @@
 # services/ai_service.py
-from typing import Type, TypeVar
+from typing import Dict, Type, TypeVar
 from fastapi import HTTPException
 import openai
 import json
@@ -19,6 +19,83 @@ class AIService:
         self.hyperbolic_api_key = settings.HYPERBOLIC_API_KEY
         self.open_api_key = settings.OPENAI_API_KEY
 
+    def analyze_grid(
+        self,
+        indicators: Dict,
+        interval: str,
+        size: int,
+        symbol: str,
+        market_data: Dict | None,
+    ):
+        """
+        OpenAI API 등으로부터 '최적 그리드 범위, 간격, 매매 시그널'을 받는다고 가정.
+        예: 과거 시세, 기술적 지표 등을 프롬프트로 넣은 뒤
+            '95~105만원 구간, 2만원 간격, 매수/매도 분포' 를 받아온다고 생각.
+        여기서는 간단한 임의 로직으로 대체.
+
+        :return: dict with recommended lower bound, upper bound, step
+        """
+
+        prompt = f"""
+        Below is our current market data and technical indicators.
+        Based on these, return your answer strictly in JSON format, following these requirements:
+
+        ## technical indicators >> {indicators}
+        ## current market data >> {market_data}
+        ## ETC Inofrmation >> {interval}, {size}, {symbol}
+        
+        1. Include the fields grid_lower_bound, grid_upper_bound, and grid_step.
+        2. Also provide a simple risk management note (e.g., possible stop-loss area or caution points).
+        3. The response must be in JSON only (no extra explanatory text).
+        """
+
+        client = openai.OpenAI(
+            api_key=self.open_api_key,  # This is the default and can be omitted
+        )
+
+        try:
+            response = client.beta.chat.completions.parse(
+                model="o3-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                frequency_penalty=0.0,  # 반복 억제 정도
+                presence_penalty=0.0,  # 새로운 주제 도입 억제
+                # response_format=schema,
+            )
+            # response.choices[0].message.content
+            content = response.choices[0].message.parsed
+
+            if not content:
+                raise HTTPException(
+                    status_code=403,
+                    detail="응답 스키마가 올바르지 않습니다.",
+                )
+
+            # result = self.transform_message_to_schema(
+            #     message=content, schema=TradingResponse
+            # )
+
+            # 스키마에 action과 reason 키가 있는지 확인
+            if content:
+                return content, prompt
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail="응답 스키마가 올바르지 않습니다.",
+                )
+        except Exception as e:
+            # 에러 발생 시, JSON 스키마 형식으로 에러 메시지 반환
+            raise HTTPException(
+                status_code=403,
+                detail=str(e),
+            )
+
+        return
+
     def analyze_market(
         self,
         market_data: dict,
@@ -33,6 +110,7 @@ class AIService:
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
         additional_context: str = "",
+        plot_image_path: str = "",
     ):
         """
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -53,14 +131,18 @@ class AIService:
         )
 
         client = openai.OpenAI(
-            # base_url="https://api.hyperbolic.xyz/v1",
             api_key=self.open_api_key,  # This is the default and can be omitted
         )
 
         try:
             response = client.beta.chat.completions.parse(
                 model="o3-mini",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
                 response_format=schema,
@@ -110,7 +192,6 @@ class AIService:
         3. Each field's value must be converted to the data type defined in the schema.
         4. For any information not present in the message, use null or the default value for that type.
         5. Only JSON Format is allowed. (not use codeblock or something.)
-        6. If Action Is Cancel, Order_id Is Required, (If order_id is not existed, Cancle Actions is not allowed)
 
         Message:
         {message}
@@ -135,6 +216,52 @@ class AIService:
         )
 
         result_str = response.choices[0].message.parsed
+
+        if not result_str:
+            raise ValueError("The response is empty. Please provide a valid response.")
+
+        try:
+            return result_str
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e
+
+    def analzye_image(self, prompt: str, image_path: str):
+        """ """
+        # Pydantic 모델 클래스에서 JSON 스키마 정보를 가져옵니다.
+
+        client = openai.OpenAI(
+            api_key=self.open_api_key,
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt,
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_path,
+                            },
+                        },
+                    ],
+                }
+            ],
+            temperature=0.2,
+            top_p=1.0,
+            max_tokens=1024,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+        )
+
+        result_str = response.choices[0].message.content
 
         if not result_str:
             raise ValueError("The response is empty. Please provide a valid response.")

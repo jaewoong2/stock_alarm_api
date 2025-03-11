@@ -10,8 +10,10 @@ from myapi.domain.backdata.backdata_schema import (
     SentimentResponseType,
 )
 from myapi.repositories.trading_repository import TradingRepository
+from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
 from myapi.utils.config import Settings
+from myapi.utils.indicators import plot_with_indicators
 
 # 거래소 주소 목록 (예시, 실제 데이터로 대체 필요)
 EXCHANGE_ADDRESSES = {
@@ -28,10 +30,12 @@ class BackDataService:
         settings: Settings,
         trading_repository: TradingRepository,
         coinone_service: CoinoneService,
+        aws_service: AwsService,
     ):
         self.NEWS_API_KEY = settings.NEWS_API_KEY
         self.trading_repository = trading_repository
         self.coinone_service = coinone_service
+        self.aws_service = aws_service
 
     def get_ohlcv_data(
         self,
@@ -119,8 +123,6 @@ class BackDataService:
         코인원 API에서 N분봉 캔들 데이터를 가져와 DataFrame으로 반환합니다.
         에러 발생 시 예외를 raise합니다.
         """
-        url = f"https://api.coinone.co.kr/public/v2/chart/{quote_currency}/{target_currency}"
-        params = {"interval": interval, "size": size}
         try:
             candle_data = self.coinone_service.get_candlestick(
                 quote_currency=quote_currency,
@@ -133,6 +135,8 @@ class BackDataService:
                 logging.error(f"Coinone API error: {error_code}")
                 raise ValueError(f"Coinone API error: {error_code}")
             df = pd.DataFrame(candle_data["chart"])
+            # df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
             df.rename(
@@ -156,17 +160,19 @@ class BackDataService:
         코인원 API에서 지정 심볼에 대한 마켓 데이터를 가져옵니다.
         에러 발생 시 예외를 raise합니다.
         """
-        url = f"{self.BASE_URL}/ticker_new/KRW/{symbol}?additional_data=false"
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
+            data = self.coinone_service.get_ticker(symbol)
+
             if "errorCode" in data and data["errorCode"] != "0":
                 raise ValueError(f"코인원 API 오류: {data['errorCode']}")
+
             tickers = data.get("tickers")
+
             if not tickers or len(tickers) == 0:
                 raise ValueError("No tickers data found")
+
             ticker = tickers[0]
+
             return {
                 "symbol": symbol,
                 "price": float(ticker["last"]),
@@ -174,6 +180,7 @@ class BackDataService:
                 "low": float(ticker["low"]),
                 "volume": float(ticker["target_volume"]),
             }
+
         except (requests.exceptions.RequestException, ValueError, KeyError) as e:
             logging.exception("Error fetching market data:")
             raise
@@ -203,3 +210,16 @@ class BackDataService:
         ma = df["close"].rolling(window=ma_days).mean().iloc[-1]
         price = df["close"].iloc[-1]
         return price < ma
+
+    def upload_plot_image(self, df: pd.DataFrame, length: int, path: str):
+
+        img_buffer = plot_with_indicators(df=df, length=length)
+
+        self.aws_service.upload_s3(
+            fileobj=img_buffer,
+            bucket_name="lime-trading",
+            object_key=path,
+            content_type="image/png",
+        )
+
+        return f"{self.aws_service.cloudfront_url}/{path}"

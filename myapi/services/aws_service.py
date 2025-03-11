@@ -1,9 +1,11 @@
 import os
+from typing import Any
 from fastapi import HTTPException
 import boto3
 import json
 
 from myapi.utils.config import Settings
+from myapi.utils.indicators import plot_with_indicators
 
 # AWS Secrets Manager 설정 (여러분의 환경에 맞게 수정)
 SECRET_NAME = "kakao/tokens"  # 예: "kakao/tokens"
@@ -15,6 +17,7 @@ class AwsService:
     def __init__(self, settings: Settings):
         self.aws_access_key_id = settings.AWS_S3_ACCESS_KEY_ID
         self.aws_secret_access_key = settings.AWS_S3_SECRET_ACCESS_KEY
+        self.cloudfront_url = "https://d3u9eh8c3uxxfx.cloudfront.net"
 
     def get_secret(self) -> dict:
         """
@@ -76,3 +79,17 @@ class AwsService:
             raise HTTPException(
                 status_code=500, detail=f"Error updating secret: {str(e)}"
             )
+
+    def upload_s3(
+        self, bucket_name: str, object_key: str, fileobj: Any, content_type: str
+    ):
+        s3 = boto3.client(
+            "s3",
+            region_name=REGION_NAME,
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key,
+        )
+
+        return s3.upload_fileobj(
+            fileobj, bucket_name, object_key, ExtraArgs={"ContentType": content_type}
+        )

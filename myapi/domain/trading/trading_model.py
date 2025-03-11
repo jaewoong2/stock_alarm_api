@@ -1,6 +1,6 @@
-from typing import List
-from openai import BaseModel
+from typing import List, Optional
 from pandas import DataFrame
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 import enum
@@ -73,3 +73,54 @@ class BackdataInformations(BaseModel):
     active_orders: ActiveOrdersResponse
     current_time: str
     technical_indicators: dict
+    plot_image_path: str
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+# "When price level could go up or down"을 위한 하위 구조
+class PriceDirection(BaseModel):
+    condition: str = Field(
+        ..., description="가격이 오르거나 내릴 조건"
+    )  # 가격이 오르거나 내릴 조건
+    price_level: float = Field(..., description="예상 가격 레벨")  # 예상 가격 레벨
+    timeframe: str = Field(
+        ..., description="예상 시간 범위 (예: 'within 1-2 hours')"
+    )  # 예상 시간 범위 (예: "within 1-2 hours")
+
+
+class TechnicalAnalysisResponse(BaseModel):
+    price_movement: str = Field(
+        ..., description="Predict of price movement"
+    )  # Description of price movement within the next 1-2 hours
+    stop_loss: float = Field(
+        ..., description="Stop-loss price level"
+    )  # Stop-loss price level
+    stop_loss_reason: Optional[str] = Field(
+        None, description="Reason for stop-loss (optional)"
+    )  # Reason for stop-loss (optional)
+    buy_line: float = Field(
+        ..., description="Buy entry price level"
+    )  # Buy entry price level
+    buy_line_reason: Optional[str] = Field(
+        None, description="Reason for buy entry (optional)"
+    )  # Reason for buy entry (optional)
+    take_profit: float = Field(
+        ..., description="Take-profit price level"
+    )  # Take-profit price level
+    take_profit_reason: Optional[str] = Field(
+        None, description="Reason for take-profit (optional)"
+    )  # Reason for take-profit (optional)
+    price_up: PriceDirection = Field(
+        ..., description="Scenario when the price moves up"
+    )  # Scenario when the price moves up
+    price_down: PriceDirection = Field(
+        ..., description="Scenario when the price moves down"
+    )  # Scenario when the price moves down
+    disclaimer: Optional[str] = Field(
+        None, description="Additional cautionary notes (optional)"
+    )  # Additional cautionary notes (optional)
+    users_action: str = Field(
+        ..., description="Immediate action the user should take"
+    )  # Immediate action the user should take

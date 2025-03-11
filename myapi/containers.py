@@ -46,6 +46,7 @@ class ServiceModule(containers.DeclarativeContainer):
         settings=config.config,
         trading_repository=repositories.trading_repository,
         coinone_service=coinone_service,
+        aws_service=aws_service,
     )
 
     trading_service = providers.Factory(
