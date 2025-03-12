@@ -143,3 +143,5 @@ def grid_trading(
         size=200,
         market_data={},
     )
+
+    ai_result
