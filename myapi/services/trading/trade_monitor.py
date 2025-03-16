@@ -31,7 +31,10 @@ class TradeMonitor:
             )
 
             candles = self.backdata_service.get_coinone_candles(
-                interval=interval, size=size
+                quote_currency="KRW",
+                target_currency=symbol.upper(),
+                interval=interval,
+                size=size,
             )
 
             if candles is None or len(candles) < 120:
@@ -39,7 +42,7 @@ class TradeMonitor:
                     status="ERROR", message="캔들 데이터 부족 (최소 120개 필요)"
                 )
 
-            indicators, df = get_technical_indicators(candles, size)
+            indicators, _ = get_technical_indicators(candles, size)
 
             if not indicators:
                 return TriggerResponse(status="ERROR", message="기술적 지표 계산 오류")

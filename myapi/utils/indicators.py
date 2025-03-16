@@ -6,6 +6,8 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 
+from myapi.domain.trading.trading_model import TechnicalIndicators
+
 matplotlib.use(
     "Agg", force=True
 )  # GUI 백엔드 대신 Agg 사용 (반드시 import plt 전에 호출)
@@ -163,7 +165,7 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int):
     latest = df.iloc[-1]
 
     # (4) 결과를 딕셔너리로 반환
-    return {
+    result = {
         "MA_short_9": round(latest["MA_9"], 2),
         "MA_long_21": round(latest["MA_21"], 2),
         "MA_long_120": round(latest["MA_120"], 2),
@@ -180,7 +182,9 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int):
         "Latest_Open": round(latest["open"], 2),
         "volatility": round(latest["volatility"], 2),
         "high": round(latest["high"], 2),
-    }, df
+    }
+
+    return TechnicalIndicators(**result), df
 
 
 def plot_with_indicators(df: pd.DataFrame, length: int):

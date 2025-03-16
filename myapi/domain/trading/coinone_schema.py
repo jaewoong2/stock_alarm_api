@@ -23,6 +23,10 @@ class Balance(BaseModel):
     average_price: str
     currency: str
 
+    @property
+    def description(self) -> str:
+        return f"[currecny: {self.currency}] Available: {self.available} {self.currency} (Avg Price: {self.average_price})"
+
 
 class CoinoneBalanceResponse(BaseModel):
     """
@@ -32,6 +36,10 @@ class CoinoneBalanceResponse(BaseModel):
     result: str
     error_code: str
     balances: List[Balance]
+
+    @property
+    def description(self) -> str:
+        return ", ".join([balance.description for balance in self.balances])
 
 
 class PlaceOrderResponse(BaseModel):
@@ -109,6 +117,10 @@ class OrderBookEntry(BaseModel):
     price: str
     qty: str
 
+    @property
+    def description(self) -> str:
+        return f"Price: {self.price}, Qty: {self.qty}"
+
 
 class OrderBookResponse(BaseModel):
     result: str
@@ -116,6 +128,13 @@ class OrderBookResponse(BaseModel):
     asks: List[OrderBookEntry]
 
     model_config = ConfigDict(extra="ignore")
+
+    @property
+    def description(self) -> str:
+        bids = [bid.description for bid in self.bids]
+        asks = [ask.description for ask in self.asks]
+
+        return f"Bids: {bids}, Asks: {asks}"
 
 
 class TradesResponse(BaseModel):

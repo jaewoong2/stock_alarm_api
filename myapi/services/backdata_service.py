@@ -80,15 +80,18 @@ class BackDataService:
             "apiKey": self.NEWS_API_KEY,
             "language": "en",
             "sortBy": "publishedAt",
-            "pageSize": 10,
+            "pageSize": 5,
             "from": yesterday_date,
         }
+
         try:
             response = requests.get(NEWS_API_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
             if data.get("status") == "ok":
                 articles = data.get("articles", [])
+
                 return [Article(**article) for article in articles]
             else:
                 raise ValueError(
@@ -155,12 +158,13 @@ class BackDataService:
             logging.exception("Request exception in get_coinone_candles:")
             raise
 
-    def get_market_data(self, symbol: str = "BTC"):
+    def get_market_data(self, symbol: str = "XRP"):
         """
         코인원 API에서 지정 심볼에 대한 마켓 데이터를 가져옵니다.
         에러 발생 시 예외를 raise합니다.
         """
         try:
+
             data = self.coinone_service.get_ticker(symbol)
 
             if "errorCode" in data and data["errorCode"] != "0":

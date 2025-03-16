@@ -12,7 +12,6 @@ class Source(BaseModel):
 class Article(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    publishedAt: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -20,6 +19,10 @@ class Article(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     message: str
+
+    @property
+    def description(self) -> str:
+        return f"[{self.error}]: ${self.message}"
 
 
 # Pydantic models for the response
@@ -41,6 +44,10 @@ class SentimentResponse(BaseModel):
     data: List[SentimentDataItem]  # List of sentiment data points
 
     model_config = ConfigDict(extra="ignore")
+
+    @property
+    def description(self) -> str:
+        return f"[{self.name}]: ${self.data[-1].value} ({self.data[-1].value_classification})"
 
 
 SentimentResponseType = Union[SentimentResponse, ErrorResponse]

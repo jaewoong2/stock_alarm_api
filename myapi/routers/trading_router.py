@@ -25,7 +25,9 @@ def prediction_with_chart(
     ),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
-    information = trading_service.trade_executor._get_information(symbol, interval, 200)
+    information = trading_service.trade_executor._get_information(
+        symbol, interval, 200, is_plot_use=True
+    )
 
     prompt = """
     The chart includes candlesticks along with Bollinger Bands (BB, 200), RSI, MACD, and ADX indicators.
@@ -42,6 +44,9 @@ def prediction_with_chart(
         5. What is Your recommendation For me acting right now? 
     """
 
+    if information.plot_image_path is None:
+        return None
+
     encoded_image_url = quote(information.plot_image_path, safe=":/")
 
     analyze = ai_service.analzye_image(prompt=prompt, image_path=encoded_image_url)
@@ -55,7 +60,7 @@ def prediction_with_chart(
 @inject
 def monitoring(
     symbol: str,
-    interval: str = "15m",
+    interval: str = "30m",
     trading_service: TradingService = Depends(
         Provide[Container.services.trading_service]
     ),
@@ -71,7 +76,7 @@ def monitoring(
 
     if content.status == "BUY" or content.status == "SELL":
         trade_info = trading_service.execute_trade(
-            symbol=symbol,
+            symbol=symbol.upper(),
             percentage=100,
             interval="1h",
             opinion=content.message,
@@ -143,5 +148,3 @@ def grid_trading(
         size=200,
         market_data={},
     )
-
-    ai_result

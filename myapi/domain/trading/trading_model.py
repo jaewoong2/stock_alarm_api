@@ -12,11 +12,50 @@ from myapi.domain.backdata.backdata_schema import (
 from myapi.domain.trading.coinone_schema import (
     ActiveOrdersResponse,
     Balance,
+    CoinoneBalanceResponse,
     GetTradingInformationResponseModel,
     OrderBookResponse,
 )
 
 Base = declarative_base()
+
+
+class TechnicalIndicators(BaseModel):
+    MA_short_9: float
+    MA_long_21: float
+    MA_long_120: float
+    RSI_14: float
+    MACD: float
+    MACD_Signal: float
+    BB_MA: float
+    BB_Upper: float
+    BB_Lower: float
+    ADX: float
+    ATR_14: float
+    Latest_Close: float
+    Latest_Open: float
+    volatility: float
+    high: float
+
+    @property
+    def description(self) -> str:
+        return f"""
+            MA_short_9: {self.MA_short_9}
+            MA_long_21: {self.MA_long_21}
+            MA_long_120: {self.MA_long_120}
+            RSI_14: {self.RSI_14}
+            MACD: {self.MACD}
+            MACD_Signal: {self.MACD_Signal}
+            BB_MA: {self.BB_MA}
+            BB_Upper: {self.BB_Upper}
+            BB_Lower: {self.BB_Lower}
+            ADX: {self.ADX}
+            ATR_14: {self.ATR_14}
+            Latest_Close: {self.Latest_Close}
+            Latest_Open: {self.Latest_Open}
+            volatility: {self.volatility}
+            high: {self.high}
+        """
 
 
 class ActionEnum(enum.Enum):
@@ -67,13 +106,13 @@ class BackdataInformations(BaseModel):
     market_data: dict
     candles_info: DataFrame
     orderbook: OrderBookResponse
-    balances: List[Balance]
+    balances: CoinoneBalanceResponse
     news: ArticleResponseType
     sentiment: SentimentResponseType
     active_orders: ActiveOrdersResponse
     current_time: str
-    technical_indicators: dict
-    plot_image_path: str
+    technical_indicators: TechnicalIndicators
+    plot_image_path: Optional[str]
 
     class Config:
         arbitrary_types_allowed = True

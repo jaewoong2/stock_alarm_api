@@ -1,5 +1,5 @@
 # services/ai_service.py
-from typing import Dict, Type, TypeVar
+from typing import Dict, List, Type, TypeVar
 from fastapi import HTTPException
 import openai
 import json
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from myapi.domain.ai.ai_schema import TradingResponse
 from myapi.domain.ai.const import generate_prompt
+from myapi.domain.trading.coinone_schema import ActiveOrder
 from myapi.utils.config import Settings
 
 # T는 BaseModel을 상속하는 타입이어야 합니다.
@@ -101,22 +102,21 @@ class AIService:
         market_data: dict,
         technical_indicators: dict,
         previous_trade_info: str,
-        balances_data: dict,
-        orderbook_data: dict,
-        sentiment_data: dict,
-        current_active_orders: dict,
+        balances_data: str,
+        orderbook_data: str,
+        sentiment_data: str,
+        current_active_orders: List[ActiveOrder],
         news_data: dict,
         schema: Type[T] = TradingResponse,
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
         additional_context: str = "",
-        plot_image_path: str = "",
     ):
         """
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
         """
-        prompt = generate_prompt(
+        prompt, system_prompt = generate_prompt(
             market_data=market_data,
             previous_trade_info=previous_trade_info,
             technical_indicators=technical_indicators,
@@ -138,6 +138,10 @@ class AIService:
             response = client.beta.chat.completions.parse(
                 model="o3-mini",
                 messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
                     {
                         "role": "user",
                         "content": prompt,

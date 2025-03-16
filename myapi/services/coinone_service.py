@@ -133,14 +133,14 @@ class CoinoneService:
         if balance.get("result") == "error":
             return CoinoneBalanceResponse(
                 balances=[], error_code="No balance found", result="error"
-            ).balances
+            )
 
         if not balance.get("balances"):
             return CoinoneBalanceResponse(
                 balances=[], error_code="No balance found", result="error"
-            ).balances
+            )
 
-        return CoinoneBalanceResponse(**balance).balances
+        return CoinoneBalanceResponse(**balance)
 
     def place_order(self, payload: OrderRequest):
         return self._private_post("/v2.1/order", payload.model_dump())

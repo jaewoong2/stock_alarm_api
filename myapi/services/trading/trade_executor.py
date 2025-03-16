@@ -55,28 +55,20 @@ class TradeExecutor:
 
             decision, prompt = self.ai_service.analyze_market(
                 market_data=backdata_information.market_data,
-                technical_indicators=backdata_information.technical_indicators,
+                technical_indicators=backdata_information.technical_indicators.model_dump(),
                 previous_trade_info=backdata_information.trading_info.action_string,
-                balances_data=(
-                    backdata_information.balances.model_dump()
-                    if not isinstance(backdata_information.balances, list)
-                    else {
-                        data.currency: data.model_dump()
-                        for data in backdata_information.balances
-                    }
-                ),
+                balances_data=backdata_information.balances.description,
                 target_currency=symbol.upper(),
                 quote_currency="KRW",
-                orderbook_data=backdata_information.orderbook.model_dump(),
-                sentiment_data=backdata_information.sentiment.model_dump(),
+                orderbook_data=backdata_information.orderbook.description,
+                sentiment_data=backdata_information.sentiment.description,
                 news_data={
-                    n.title: n.model_dump()
+                    n.title: n.description
                     for n in backdata_information.news
                     if isinstance(n, Article)
                 },
-                current_active_orders=backdata_information.active_orders.model_dump(),
+                current_active_orders=backdata_information.active_orders.active_orders,
                 additional_context=f"Trigger detected: {opinion}. Validate this action based on current market conditions and technical indicators.",
-                plot_image_path=backdata_information.plot_image_path,
             )
 
             ai_action = (
@@ -475,7 +467,7 @@ class TradeExecutor:
                 error_code="잔고 조회 실패",
             )
 
-        balance_object = {balance.currency: balance for balance in balances}
+        balance_object = {balance.currency: balance for balance in balances.balances}
 
         krw_balance = balance_object.get("KRW")
         btc_balance = balance_object.get("BTC")
@@ -488,26 +480,30 @@ class TradeExecutor:
             **balance_object,
         )
 
-    def _get_information(self, symbol: str, interval: str, size: int):
+    def _get_information(
+        self, symbol: str, interval: str, size: int, is_plot_use: bool = False
+    ) -> BackdataInformations:
         trading_info = self.trading_repository.get_trading_information()
         market_data = self.backdata_service.get_market_data(symbol)
         candles_info = self.backdata_service.get_coinone_candles(
-            interval=interval, size=size
+            quote_currency="KRW", target_currency=symbol, interval=interval, size=size
         )
         orderbook = self.coinone_service.get_orderbook(
             quote_currency="KRW", target_currency=symbol
         )
         balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
-        news = self.backdata_service.get_btc_news()
+        news = self.backdata_service.get_btc_news(symbol=symbol.upper())
         sentiment = self.backdata_service.get_sentiment_data()
         active_orders = self.coinone_service.get_active_orders(symbol.upper())
 
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
         technical_indicators, df = get_technical_indicators(candles_info, size)
+        plot_image_path = None
 
-        plot_image_path = self.backdata_service.upload_plot_image(
-            df=df, length=200, path=f"{symbol}_{current_time}.png"
-        )
+        if is_plot_use:
+            plot_image_path = self.backdata_service.upload_plot_image(
+                df=df, length=200, path=f"{symbol}_{current_time}.png"
+            )
 
         return BackdataInformations(
             trading_info=trading_info,
