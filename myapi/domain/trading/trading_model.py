@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pandas import DataFrame
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 import enum
@@ -21,21 +21,22 @@ Base = declarative_base()
 
 
 class TechnicalIndicators(BaseModel):
-    MA_short_9: float
-    MA_long_21: float
-    MA_long_120: float
-    RSI_14: float
-    MACD: float
-    MACD_Signal: float
-    BB_MA: float
-    BB_Upper: float
-    BB_Lower: float
-    ADX: float
-    ATR_14: float
-    Latest_Close: float
-    Latest_Open: float
-    volatility: float
-    high: float
+    MA_short_9: Optional[float]
+    MA_long_21: Optional[float]
+    MA_long_120: Optional[float]
+    RSI_14: Optional[float]
+    MACD: Optional[float]
+    MACD_Signal: Optional[float]
+    BB_Upper: Optional[float]
+    BB_Lower: Optional[float]
+    ADX: Optional[float]
+    ATR_14: Optional[float]
+    Latest_Close: Optional[float]
+    Latest_Open: Optional[float]
+    volatility: Optional[float]
+    high: Optional[float]
+
+    model_config = ConfigDict(extra="allow")  # 🚀 추가 필드 허용
 
     @property
     def description(self) -> str:
@@ -46,7 +47,6 @@ class TechnicalIndicators(BaseModel):
             RSI_14: {self.RSI_14}
             MACD: {self.MACD}
             MACD_Signal: {self.MACD_Signal}
-            BB_MA: {self.BB_MA}
             BB_Upper: {self.BB_Upper}
             BB_Lower: {self.BB_Lower}
             ADX: {self.ADX}
