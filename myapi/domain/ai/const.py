@@ -19,6 +19,7 @@ def generate_prompt(
     quote_currency: str = "KRW",
     trigger_action: str = "",
     additional_context: str = "",
+    interval: str = "1h",
 ):
     """ """
     system_prompt = f"""
@@ -59,7 +60,7 @@ def generate_prompt(
     - Use post_only = true by default, but you may adjust based on market conditions.
     - "LIMIT"/"STOP_LIMIT" requires a `price` and `qty`.
 
-    ### 2. Input Data
+    ### 2. Input Data >> It is {interval} interval Input Data
     - quote_currency: {quote_currency}
     - target_currency: {target_currency}
     - market_data: {json.dumps(market_data, indent=2)}

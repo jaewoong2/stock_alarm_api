@@ -103,6 +103,7 @@ class AIService:
         quote_currency: str = "KRW",
         target_currency: str = "BTC",
         additional_context: str = "",
+        interval: str = "1h",
     ):
         """
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -120,6 +121,7 @@ class AIService:
             news_data=news_data,
             current_active_orders=current_active_orders,
             additional_context=additional_context,
+            interval=interval,
         )
 
         client = openai.OpenAI(

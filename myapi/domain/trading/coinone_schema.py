@@ -3,6 +3,13 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class TriggerResponse(BaseModel):
+    status: str | None
+    message: str
+
+    indicators: Dict | None = None
+
+
 class CoinoneOrderResponse(BaseModel):
     """
     /v2.1/order 엔드포인트 응답 모델
@@ -50,7 +57,7 @@ class PlaceOrderResponse(BaseModel):
     result: str
     error_code: str
     krw_balance: str
-    btc_balance: str
+    crypto_balance: str
 
     class Config:
         extra = "allow"
@@ -262,10 +269,3 @@ class CancelOrderResponse(BaseModel):
     ordered_at: int
 
     model_config = ConfigDict(extra="ignore")
-
-
-class TriggerResponse(BaseModel):
-    status: str | None
-    message: str
-
-    indicators: Optional[Dict] = None

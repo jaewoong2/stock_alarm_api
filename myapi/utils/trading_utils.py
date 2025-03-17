@@ -1,12 +1,11 @@
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict
 
 from sklearn.linear_model import LinearRegression
 
 from myapi.domain.backdata.backdata_schema import (
     DirectionPredictionResponse,
-    LinearRegressionTrendResponse,
     SupportResistanceResponse,
 )
 
@@ -29,18 +28,18 @@ class TradingUtils:
     ) -> Tuple[Optional[str], float, str]:
         """RSI를 평가하여 신호, 신뢰도 및 의견을 반환합니다."""
         if not isinstance(rsi, (int, float)) or rsi is None:
-            return (None, 0.0, "RSI 값이 유효하지 않습니다.")
+            return (None, 0.0, "Invalid RSI value.")
         if rsi >= self.rsi_overbought:
             confidence = min(
                 0.8 + (rsi - self.rsi_overbought) * 0.01, 0.95
             )  # 과매수 강도 반영
-            return ("SELL", confidence, f"RSI({rsi:.1f})가 과매수 구간에 있습니다.")
+            return ("SELL", confidence, f"RSI({rsi:.1f}) is in an overbought zone.")
         elif rsi <= self.rsi_oversold:
             confidence = min(
                 0.8 + (self.rsi_oversold - rsi) * 0.01, 0.95
             )  # 과매도 강도 반영
-            return ("BUY", confidence, f"RSI({rsi:.1f})가 과매도 구간에 있습니다.")
-        return (None, 0.5, f"RSI({rsi:.1f})가 중립 상태입니다.")
+            return ("BUY", confidence, f"RSI({rsi:.1f}) is in an oversold zone.")
+        return (None, 0.5, f"RSI({rsi:.1f}) is in a neutral state.")
 
     def _check_macd_trigger(self, macd: float, macd_signal: float, atr: float):
         """ATR 기반 변동성을 고려한 MACD 신호를 평가합니다."""
@@ -48,21 +47,21 @@ class TradingUtils:
             isinstance(x, (int, float)) and x is not None
             for x in [macd, macd_signal, atr]
         ):
-            return (None, 0.0, "MACD 입력값이 유효하지 않습니다.")
+            return (None, 0.0, "Invalid MACD input.")
         tolerance = self.macd_tolerance * atr  # 변동성 기반 허용 범위
         diff = macd - macd_signal
         if abs(diff) < tolerance:
             return (
                 None,
                 0.5,
-                f"MACD({macd:.2f})와 Signal({macd_signal:.2f})이 중립 상태입니다.",
+                f"MACD({macd:.2f}) and Signal({macd_signal:.2f}) are in a neutral state.",
             )
         elif diff > 0:
             confidence = min(0.8 + diff * 0.1, 0.9)
-            return ("BUY", confidence, f"MACD가 Signal을 상향 돌파했습니다.")
+            return ("BUY", confidence, "MACD has crossed above the Signal line.")
         else:
             confidence = min(0.8 - diff * 0.1, 0.9)
-            return ("SELL", confidence, f"MACD가 Signal을 하향 돌파했습니다.")
+            return ("SELL", confidence, "MACD has crossed below the Signal line.")
 
     def _check_bollinger_trigger(
         self,
@@ -76,7 +75,7 @@ class TradingUtils:
             isinstance(x, (int, float)) and x is not None
             for x in [current_price, bollinger_upper, bollinger_lower, prev_price]
         ):
-            return (None, 0.0, "볼린저 밴드 입력값이 유효하지 않습니다.")
+            return (None, 0.0, "Invalid Bollinger Band input.")
         upper_diff = current_price - bollinger_upper
         lower_diff = bollinger_lower - current_price
         if upper_diff >= 0 and current_price < prev_price:
@@ -84,19 +83,19 @@ class TradingUtils:
             return (
                 "SELL",
                 confidence,
-                f"가격({current_price:.2f})이 상단 밴드({bollinger_upper:.2f})를 넘어 약세입니다.",
+                f"Price({current_price:.2f}) has exceeded the upper band({bollinger_upper:.2f}), indicating a bearish outlook.",
             )
         elif lower_diff >= 0 and current_price > prev_price:
             confidence = min(0.7 + lower_diff * 0.05, 0.9)
             return (
                 "BUY",
                 confidence,
-                f"가격({current_price:.2f})이 하단 밴드({bollinger_lower:.2f}) 아래로 강세입니다.",
+                f"Price({current_price:.2f}) has fallen below the lower band({bollinger_lower:.2f}), indicating a bullish outlook.",
             )
         return (
             None,
             0.5,
-            f"가격({current_price:.2f})이 볼린저 밴드 내 중립 상태입니다.",
+            f"Price({current_price:.2f}) is within the Bollinger Bands in a neutral state.",
         )
 
     def _check_triggers_with_adx(
@@ -107,18 +106,18 @@ class TradingUtils:
             isinstance(x, (int, float)) and x is not None
             for x in [adx, short_ma, long_ma]
         ):
-            return (None, 0.0, "ADX 입력값이 유효하지 않습니다.")
+            return (None, 0.0, "Invalid ADX input.")
         if short_ma > long_ma and adx > 25:  # ADX 25 이상은 강한 추세로 간주
             confidence = min(0.8 + (adx - 25) * 0.01, 0.95)
-            return ("BUY", confidence, f"ADX({adx:.1f})가 강한 상승 추세를 나타냅니다.")
+            return ("BUY", confidence, f"ADX({adx:.1f}) indicates a strong uptrend.")
         elif short_ma < long_ma and adx > 25:
             confidence = min(0.8 + (adx - 25) * 0.01, 0.95)
             return (
                 "SELL",
                 confidence,
-                f"ADX({adx:.1f})가 강한 하락 추세를 나타냅니다.",
+                f"ADX({adx:.1f}) indicates a strong downtrend.",
             )
-        return (None, 0.5, f"ADX({adx:.1f})가 중립 또는 약한 추세를 나타냅니다.")
+        return (None, 0.5, f"ADX({adx:.1f}) indicates a neutral or weak trend.")
 
     def _combine_signals(
         self,
@@ -128,7 +127,6 @@ class TradingUtils:
     ):
         """지표 신호를 가중치로 결합합니다."""
         total_weight = sum(weights.values())
-
         normalized_weights = {k: v / total_weight for k, v in weights.items()}
 
         total_score = score
@@ -179,7 +177,7 @@ class TradingUtils:
             or not current_price
             or not prev_price
         ):
-            return None, 0.0, "필요한 지표가 부족합니다.", 0.0
+            return None, 0.0, "Not enough indicators.", 0.0
 
         # RSI 신호
         rsi_signal, rsi_conf, rsi_op = self._check_rsi_with_confidence(rsi)
@@ -189,7 +187,6 @@ class TradingUtils:
 
         # MACD 신호
         ma_signal, macd_conf, macd_op = self._check_macd_trigger(macd, macd_signal, atr)
-
         signals["macd"] = ma_signal
         confidences["macd"] = macd_conf
         opinions.append(macd_op)
@@ -226,15 +223,12 @@ class TradingUtils:
 
         # 신뢰도 계산
         final_confidence = 0.0
-
         if final_signal:
             total_weight, weighted_conf = 0.0, 0.0
-
             for key, signal in signals.items():
                 if signal == final_signal:
                     weighted_conf += weights.get(key, 0) * confidences[key]
                     total_weight += weights.get(key, 0)
-
             final_confidence = weighted_conf / total_weight if total_weight > 0 else 0.0
 
         return final_signal, final_confidence, " | ".join(opinions), total_scroes
@@ -291,7 +285,7 @@ class TradingUtils:
     ) -> SupportResistanceResponse:
         """최근 데이터를 기반으로 피벗 포인트와 지지/저항선을 계산."""
         if len(df) < period:
-            raise ValueError(f"최소 {period}개의 데이터가 필요합니다.")
+            raise ValueError(f"At least {period} data points are required.")
 
         recent = df.tail(period)
         high = recent["high"].max()
@@ -299,8 +293,7 @@ class TradingUtils:
         close = recent["close"].iloc[-1]
 
         if not all([pd.notna(high), pd.notna(low), pd.notna(close)]):
-            raise ValueError("데이터에 결측치가 있습니다.")
-        # amazonq-ignore-next-line
+            raise ValueError("There are missing values in the data.")
 
         pivot = (high + low + close) / 3.0
         range_ = high - low
@@ -339,47 +332,47 @@ class TradingUtils:
         closest_value = locals()[closest_level.split("_")[1]]
         signal = None
         confidence = 0.5
-        opinion = f"현재 가격({current_price:.2f})이 {closest_level}({closest_value:.2f}) 근처입니다."
+        opinion = f"Current price({current_price:.2f}) is near {closest_level}({closest_value:.2f})."
 
         if "s" in closest_level and current_price >= closest_value:
             signal = "BUY"
             confidence = 0.7
-            opinion += " 지지선 근처에서 반등 가능성."
+            opinion += " Potential rebound near the support level."
             if volume_spike:
                 confidence += 0.1
-                opinion += " 거래량 증가로 신뢰도 상승."
+                opinion += " Increased volume raises the confidence."
             if current_price < pivot:
                 confidence -= 0.1
-                opinion += " 피벗 아래로 신뢰도 감소."
+                opinion += " Confidence decreases below the pivot."
         elif "r" in closest_level and current_price <= closest_value:
             signal = "SELL"
             confidence = 0.7
-            opinion += " 저항선 근처에서 하락 가능성."
+            opinion += " Potential drop near the resistance level."
             if volume_spike:
                 confidence += 0.1
-                opinion += " 거래량 증가로 신뢰도 상승."
+                opinion += " Increased volume raises the confidence."
             if current_price > pivot:
                 confidence -= 0.1
-                opinion += " 피벗 위로 신뢰도 감소."
-        # amazonq-ignore-next-line
+                opinion += " Confidence decreases above the pivot."
         elif current_price < s1:
             signal = "SELL"
             confidence = 0.8 if volume_spike else 0.6
-            opinion += f" S1({s1:.2f}) 아래로 돌파하여 하락 예상."
+            opinion += f" Breaking below S1({s1:.2f}) suggests a decline."
             if volume_spike:
-                opinion += " 거래량 급등으로 강한 신호."
+                opinion += " Strong signal due to a surge in volume."
         elif current_price > r1:
             signal = "BUY"
             confidence = 0.8 if volume_spike else 0.6
-            opinion += f" R1({r1:.2f}) 위로 돌파하여 상승 예상."
+            opinion += f" Breaking above R1({r1:.2f}) suggests an increase."
             if volume_spike:
-                opinion += " 거래량 급등으로 강한 신호."
+                opinion += " Strong signal due to a surge in volume."
 
         return signal, confidence, opinion
 
     def predict_direction_using_levels(
         self,
         df: pd.DataFrame,
+        current_price: float,
         lookback_period: int = 5,
         volume_threshold: float = 1.2,
         adx: Optional[float] = None,
@@ -387,14 +380,13 @@ class TradingUtils:
         # 데이터 유효성 검사
         if df.empty or len(df) < lookback_period:
             raise ValueError(
-                f"데이터프레임이 비어 있거나, 최소 {lookback_period}개의 데이터가 필요합니다."
+                f"The DataFrame is empty or needs at least {lookback_period} rows."
             )
         if not all(col in df.columns for col in ["close", "volume", "high", "low"]):
-            raise ValueError("데이터프레임에 필요한 컬럼이 없습니다.")
+            raise ValueError("The DataFrame lacks required columns.")
 
-        current_price = df["close"].iloc[-1]
         if pd.isna(current_price):
-            raise ValueError("현재 가격(current_price)이 NaN입니다.")
+            raise ValueError("current_price is NaN.")
 
         levels = self.get_support_resistance_pivots(df, period=lookback_period)
         s1, s2 = levels.support_levels
@@ -402,7 +394,7 @@ class TradingUtils:
         pivot = levels.pivot
 
         if any(pd.isna(x) for x in [s1, s2, r1, r2, pivot]):
-            raise ValueError("지지/저항선 값에 NaN이 포함되어 있습니다.")
+            raise ValueError("There are NaN values in support/resistance levels.")
 
         avg_volume = df["volume"].iloc[-lookback_period:-1].mean()
         current_volume = df["volume"].iloc[-1]
@@ -456,7 +448,6 @@ class TradingUtils:
             "to_r2": abs(current_price - r2),
             "to_pivot": abs(current_price - pivot),
         }
-
         closest_level = min(distances, key=lambda x: distances[x])
         closest_value = locals()[closest_level.split("_")[1]]
 
@@ -477,7 +468,7 @@ class TradingUtils:
         """선형 회귀 분석을 통해 신호와 신뢰도를 계산."""
         data_frame = df[["close"]].dropna().copy()
         if len(data_frame) < 2:
-            return None, 0.0, "데이터가 부족해 선형 회귀를 수행할 수 없습니다."
+            return None, 0.0, "Not enough data to perform linear regression."
 
         X = np.arange(len(data_frame)).reshape(-1, 1)
         y = data_frame["close"].to_numpy().reshape(-1, 1)
@@ -495,15 +486,15 @@ class TradingUtils:
 
         signal = None
         confidence = r2  # R²를 기본 신뢰도로 사용
-        opinion = f"선형 회귀 추세: {trend}, 기울기: {slope:.4f}, R²: {r2:.4f}"
+        opinion = f"Linear regression trend: {trend}, slope: {slope:.4f}, R²: {r2:.4f}"
 
         if trend == "UPWARD":
             signal = "BUY"
-            confidence = min(0.7 + abs(slope) * 0.1, 0.9) * r2  # 기울기 크기 반영
-            opinion += " - 상승 추세로 매수 신호."
+            confidence = min(0.7 + abs(slope) * 0.1, 0.9) * r2
+            opinion += " - Upward trend, indicating a buy signal."
         elif trend == "DOWNWARD":
             signal = "SELL"
             confidence = min(0.7 + abs(slope) * 0.1, 0.9) * r2
-            opinion += " - 하락 추세로 매도 신호."
+            opinion += " - Downward trend, indicating a sell signal."
 
         return signal, confidence, opinion

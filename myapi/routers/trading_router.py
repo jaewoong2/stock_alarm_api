@@ -77,7 +77,6 @@ def monitoring(
     if content.status == "BUY" or content.status == "SELL":
         trade_info = trading_service.execute_trade(
             symbol=symbol.upper(),
-            percentage=100,
             interval="1h",
             opinion=content.message,
         )
@@ -94,7 +93,6 @@ def monitoring(
 @inject
 def trade(
     symbol: str,
-    percentage: int = 100,
     interval: str = "",
     opinion: str = "",
     trading_service: TradingService = Depends(
@@ -110,7 +108,6 @@ def trade(
     """
     trade_info = trading_service.execute_trade(
         symbol=symbol,
-        percentage=percentage / 100,
         interval=interval,
         opinion=opinion,
     )

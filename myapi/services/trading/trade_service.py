@@ -36,11 +36,8 @@ class TradingService:
     def execute_trade(
         self,
         symbol: str,
-        percentage: float = 0.01,
         interval: str = "1h",
         opinion: Optional[str] = None,
         size: int = 500,
     ) -> Any:
-        return self.trade_executor.execute_trade(
-            symbol, percentage, interval, opinion, size
-        )
+        return self.trade_executor.execute_trade(symbol, interval, opinion, size)
