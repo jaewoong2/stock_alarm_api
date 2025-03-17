@@ -30,6 +30,13 @@ class TradeMonitor:
                 symbol.upper()
             )
 
+            btc_candles = self.backdata_service.get_coinone_candles(
+                quote_currency="KRW",
+                target_currency="BTC",
+                interval=interval,
+                size=size,
+            )
+
             candles = self.backdata_service.get_coinone_candles(
                 quote_currency="KRW",
                 target_currency=symbol.upper(),
@@ -62,7 +69,18 @@ class TradeMonitor:
                 prev_price=indicators.Latest_Close,
                 target=target,
                 high=indicators.high,
+                btc_candles=btc_candles,
             )
+
+            if btc_candles is not None:
+                # (1) df를 시간순(옛날→최)으로 뒤집기
+                btc_candles = btc_candles.iloc[::-1].copy()
+                # btc_candles.reset_index(drop=True, inplace=True)
+                btc_candles = btc_candles.reset_index()
+
+                arbitrage_signal = self.trading_utils.get_arbitrage_signal(
+                    target_df=candles, btc_df=btc_candles, symbol=symbol
+                )
 
             response = self.trading_utils.predict_direction_using_levels(
                 df=candles,
@@ -75,6 +93,7 @@ class TradeMonitor:
             combined_opinion = (
                 f"{interval} candle indicators >>\n\n{opinion}\n"
                 + "\n".join(response.opinions)
+                + f"\n {arbitrage_signal.description} \n"
             )
 
             if signal:

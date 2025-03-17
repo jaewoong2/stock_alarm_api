@@ -19,6 +19,7 @@ def generate_prompt(
     quote_currency: str = "KRW",
     trigger_action: str = "",
     additional_context: str = "",
+    arbitrage_signal: str = "",
     interval: str = "1h",
 ):
     """ """
@@ -70,11 +71,14 @@ def generate_prompt(
     - sentiment_data: {sentiment_data}
     - news_data: {news_data}
     - orderbook_data: {orderbook_data}
+    - arbitrage_signal: {arbitrage_signal}
     - trade_history: {json.dumps(trade_history, indent=2)}
     - current_active_orders: {json.dumps(current_active_orders, indent=2)}
+
+    ### 3. Additional Context
     - additional_context: {additional_context}
 
-    ### 3. Summary
+    ### 4. Summary
     - Decide on BUY, SELL, HOLD, or CANCEL based on triggers and indicators.
     - Provide your short-term (~1 hours) price prediction ("UP", "DOWN", or "NEUTRAL").
     - Return only the JSON as specified, with no extra text.

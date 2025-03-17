@@ -101,23 +101,6 @@ class Trade(Base):
     action_string = Column(Text, nullable=True)
 
 
-class BackdataInformations(BaseModel):
-    trading_info: GetTradingInformationResponseModel
-    market_data: dict
-    candles_info: DataFrame
-    orderbook: OrderBookResponse
-    balances: CoinoneBalanceResponse
-    news: ArticleResponseType
-    sentiment: SentimentResponseType
-    active_orders: ActiveOrdersResponse
-    current_time: str
-    technical_indicators: TechnicalIndicators
-    plot_image_path: Optional[str]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
 # "When price level could go up or down"을 위한 하위 구조
 class PriceDirection(BaseModel):
     condition: str = Field(
@@ -163,3 +146,32 @@ class TechnicalAnalysisResponse(BaseModel):
     users_action: str = Field(
         ..., description="Immediate action the user should take"
     )  # Immediate action the user should take
+
+
+# {"action": action, "z_score": latest_z, "hedge_ratio": hedge_ratio}
+class ArbitrageSignal(BaseModel):
+    action: str
+    z_score: float
+    hedge_ratio: float
+
+    @property
+    def description(self) -> str:
+        return f"[ArbitrageSignal With Bitcoin - {self.action}]: Z-Score: {self.z_score}, Hedge Ratio: {self.hedge_ratio}"
+
+
+class BackdataInformations(BaseModel):
+    trading_info: GetTradingInformationResponseModel
+    market_data: dict
+    candles_info: DataFrame
+    orderbook: OrderBookResponse
+    balances: CoinoneBalanceResponse
+    news: ArticleResponseType
+    sentiment: SentimentResponseType
+    active_orders: ActiveOrdersResponse
+    current_time: str
+    technical_indicators: TechnicalIndicators
+    plot_image_path: Optional[str]
+    arbitrage_signal: ArbitrageSignal
+
+    class Config:
+        arbitrary_types_allowed = True

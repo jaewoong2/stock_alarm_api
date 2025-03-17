@@ -104,6 +104,7 @@ class AIService:
         target_currency: str = "BTC",
         additional_context: str = "",
         interval: str = "1h",
+        arbitrage_signal: str = "",
     ):
         """
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
@@ -120,6 +121,7 @@ class AIService:
             sentiment_data=sentiment_data,
             news_data=news_data,
             current_active_orders=current_active_orders,
+            arbitrage_signal=arbitrage_signal,
             additional_context=additional_context,
             interval=interval,
         )

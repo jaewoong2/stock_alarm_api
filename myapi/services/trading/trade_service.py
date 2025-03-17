@@ -26,6 +26,7 @@ class TradingService:
             backdata_service=backdata_service,
             coinone_service=coinone_service,
             trading_repository=trading_repository,
+            trading_utils=self.trading_utils,
         )
 
     def monitor_triggers(

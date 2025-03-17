@@ -20,6 +20,7 @@ from myapi.services.ai_service import AIService
 from myapi.services.backdata_service import BackDataService
 from myapi.services.coinone_service import CoinoneService
 from myapi.utils.indicators import get_technical_indicators
+from myapi.utils.trading_utils import TradingUtils
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +28,20 @@ MIN_ORDER_AMOUNT = 5000  # 최소 주문 금액 (설정파일 등으로 분리 �
 
 
 class TradeExecutor:
+
     def __init__(
         self,
         ai_service: AIService,
         backdata_service: BackDataService,
         coinone_service: CoinoneService,
         trading_repository: TradingRepository,
+        trading_utils: TradingUtils,
     ) -> None:
         self.ai_service = ai_service
         self.backdata_service = backdata_service
         self.coinone_service = coinone_service
         self.trading_repository = trading_repository
+        self.trading_utils = trading_utils
 
     def execute_trade(
         self,
@@ -67,6 +71,7 @@ class TradeExecutor:
                     for n in backdata_information.news
                     if isinstance(n, Article)
                 },
+                arbitrage_signal=backdata_information.arbitrage_signal.description,
                 current_active_orders=backdata_information.active_orders.active_orders,
                 additional_context=(
                     f"Trigger detected: {opinion}. "
@@ -518,8 +523,14 @@ class TradeExecutor:
         candles_info = self.backdata_service.get_coinone_candles(
             quote_currency="KRW", target_currency=symbol, interval=interval, size=size
         )
+        btc_candles_info = self.backdata_service.get_coinone_candles(
+            quote_currency="KRW", target_currency="BTC", interval=interval, size=size
+        )
         orderbook = self.coinone_service.get_orderbook(
             quote_currency="KRW", target_currency=symbol
+        )
+        arbitrage_signal = self.trading_utils.get_arbitrage_signal(
+            target_df=candles_info, btc_df=btc_candles_info, symbol=symbol
         )
         balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
         news = self.backdata_service.get_btc_news(symbol=symbol.upper())
@@ -547,4 +558,5 @@ class TradeExecutor:
             current_time=current_time,
             technical_indicators=technical_indicators,
             plot_image_path=plot_image_path,
+            arbitrage_signal=arbitrage_signal,
         )

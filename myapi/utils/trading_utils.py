@@ -9,6 +9,10 @@ from myapi.domain.backdata.backdata_schema import (
     SupportResistanceResponse,
 )
 
+from sklearn.linear_model import LinearRegression
+
+from myapi.domain.trading.trading_model import ArbitrageSignal
+
 
 class TradingUtils:
     def __init__(
@@ -22,6 +26,37 @@ class TradingUtils:
         self.rsi_oversold = rsi_oversold  # 일반적으로 30 이하에서 과매도
         self.macd_tolerance = macd_tolerance  # MACD 크로스오버 민감도
         self.ma_tolerance = ma_tolerance  # 이동평균선 비교 민감도
+
+    def get_arbitrage_signal(
+        self, target_df: pd.DataFrame, btc_df: pd.DataFrame, symbol: str = "XRP"
+    ):
+        """통계적 기법을 사용하여 가격 차이를 분석하고 화폐 간의 헷지 비율을 계산합니다."""
+
+        df_target = target_df.copy()
+        df_btc = btc_df.copy()
+
+        target_prices = df_target["close"].to_numpy().reshape(-1, 1)  # (200, 1)
+        btc_prices = df_btc["close"].to_numpy()  # (200,)
+
+        model = LinearRegression()
+        model.fit(target_prices, btc_prices)
+        hedge_ratio = model.coef_[0]
+        spread = btc_prices - hedge_ratio * target_prices.flatten()
+
+        z_score = (spread - spread.mean()) / spread.std()
+        latest_z = z_score[-1]
+
+        action = "HOLD"
+        if latest_z > 2:
+            action = f"SELL {symbol}"
+        elif latest_z < -2:
+            action = f"BUY , {symbol}"
+
+        return ArbitrageSignal(
+            action=action,
+            z_score=latest_z,
+            hedge_ratio=hedge_ratio,
+        )
 
     def _check_rsi_with_confidence(
         self, rsi: float
@@ -158,6 +193,7 @@ class TradingUtils:
         prev_price: Optional[float],
         target: Optional[float] = None,
         high: Optional[float] = None,
+        btc_candles: Optional[pd.DataFrame] = None,
     ) -> Tuple[Optional[str], float, str, float]:
         """다양한 지표를 기반으로 최종 매매 신호를 생성합니다."""
         signals = {}

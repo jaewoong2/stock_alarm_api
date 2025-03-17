@@ -57,8 +57,21 @@ def row_to_dict(row) -> dict:
 
 
 def init_logging():
+    # 루트 로거 가져오기
+    logger = logging.getLogger()
+
+    # 기존 핸들러가 있으면 제거 (중복 방지)
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # 로거 설정
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s in %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    # AWS Lambda에서 로그가 찍히도록 로그 레벨 설정
+    logger.setLevel(logging.INFO)
+
+    logger.info("✅ Logging initialized!")  # 로그 확인용
