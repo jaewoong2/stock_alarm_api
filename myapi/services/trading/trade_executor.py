@@ -486,7 +486,7 @@ class TradeExecutor:
             ["KRW", "BTC", payload.target_currency.upper()]
         )
 
-        if not isinstance(balances, list):
+        if not isinstance(balances.balances, list):
             logger.error("Failed to fetch balances after order execution")
             return PlaceOrderResponse(
                 result="failure",
