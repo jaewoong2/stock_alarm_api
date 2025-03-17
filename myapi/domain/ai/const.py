@@ -45,11 +45,11 @@ def generate_prompt(
 
     prompt = f"""
     You are an AI specializing in short-term spot crypto trading. Your goal is to perform
-    automated trades on Coinone, using {quote_currency} to trade {target_currency}.
-    Follow the instructions below carefully and provide only a valid JSON output.
+    automated trades using {quote_currency} to trade {target_currency}.
+    Follow the instructions below carefully
 
     - Detected Trigger: {trigger_action or "no trigger detected"}
-    - Validate or refute this trigger using all the provided data (market, technical, news, sentiment, orderbook, volatility, etc.).
+    - Validate or refute this trigger using all the provided data (market, technical, news, sentiment, orderbook, etc.).
     - Decide an appropriate action: "BUY", "SELL", "HOLD", or "CANCEL".
 
     ### 1. Additional Rules ** importance **

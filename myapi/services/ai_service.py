@@ -29,7 +29,7 @@ class AIService:
         market_data: Dict | None,
     ):
         """
-        OpenAI API 등으로부터 '최적 그리드 범위, 간격, 매매 시그널'을 받는다고 가정.
+        OpenAI API 등으로부터 '최적 그리드 범위, 간격, 매매 시그널, 예측'을 받는다고 가정.
         예: 과거 시세, 기술적 지표 등을 프롬프트로 넣은 뒤
             '95~105만원 구간, 2만원 간격, 매수/매도 분포' 를 받아온다고 생각.
         여기서는 간단한 임의 로직으로 대체.
@@ -46,8 +46,7 @@ class AIService:
         ## ETC Inofrmation >> {interval}, {size}, {symbol}
         
         1. Include the fields grid_lower_bound, grid_upper_bound, and grid_step.
-        2. Also provide a simple risk management note (e.g., possible stop-loss area or caution points).
-        3. The response must be in JSON only (no extra explanatory text).
+        2. Also provide risk management note (e.g., possible stop-loss area or caution points).
         """
 
         client = openai.OpenAI(
@@ -65,7 +64,7 @@ class AIService:
                 ],
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
-                # response_format=schema,
+                # response_format=,
             )
             # response.choices[0].message.content
             content = response.choices[0].message.parsed
@@ -76,11 +75,6 @@ class AIService:
                     detail="응답 스키마가 올바르지 않습니다.",
                 )
 
-            # result = self.transform_message_to_schema(
-            #     message=content, schema=TradingResponse
-            # )
-
-            # 스키마에 action과 reason 키가 있는지 확인
             if content:
                 return content, prompt
             else:
@@ -94,8 +88,6 @@ class AIService:
                 status_code=403,
                 detail=str(e),
             )
-
-        return
 
     def analyze_market(
         self,

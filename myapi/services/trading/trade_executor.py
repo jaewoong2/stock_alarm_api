@@ -43,7 +43,6 @@ class TradeExecutor:
     def execute_trade(
         self,
         symbol: str,
-        percentage: float = 0.01,
         interval: str = "1h",
         opinion: Optional[str] = None,
         size: int = 500,
@@ -88,7 +87,6 @@ class TradeExecutor:
             elif ai_action == "BUY":
                 response = self._handle_buy(
                     symbol,
-                    percentage,
                     backdata_information.market_data,
                     base_trade_data,
                     decision.action,
@@ -96,7 +94,6 @@ class TradeExecutor:
             elif ai_action == "SELL":
                 response = self._handle_sell(
                     symbol,
-                    percentage,
                     backdata_information.market_data,
                     base_trade_data,
                     decision.action,
@@ -153,7 +150,6 @@ class TradeExecutor:
     def _handle_buy(
         self,
         symbol: str,
-        percentage: float,
         market_data: Dict[str, Any],
         base_trade_data: Dict[str, Any],
         decision: Action,
@@ -203,7 +199,7 @@ class TradeExecutor:
                 )
             )
 
-        used_amount = available_amount * percentage
+        used_amount = available_amount
         order_result = None
         if decision and decision.order:
             try:
@@ -279,7 +275,6 @@ class TradeExecutor:
     def _handle_sell(
         self,
         symbol: str,
-        percentage: float,
         market_data: Dict[str, Any],
         base_trade_data: Dict[str, Any],
         decision: Action,
@@ -338,9 +333,7 @@ class TradeExecutor:
 
         sell_trade_data = {**base_trade_data, "action_string": action_str}
 
-        approximate_amount_krw = (
-            float(coin_balance.average_price) * sell_amount * percentage
-        )
+        approximate_amount_krw = float(coin_balance.average_price) * sell_amount
 
         trade = Trade(
             action=ActionEnum.SELL,
@@ -458,8 +451,10 @@ class TradeExecutor:
         balances = self.coinone_service.get_balance(
             ["KRW", "BTC", payload.target_currency.upper()]
         )
+
         if not isinstance(balances, list):
             logger.error("Failed to fetch balances after order execution")
+
             return PlaceOrderResponse(
                 result="failure",
                 krw_balance="0",
