@@ -55,9 +55,8 @@ class TradeExecutor:
             transaction_data = self.coinone_service.get_completed_order(
                 target_currency=symbol.upper(),
                 quote_currency="KRW",
-                size=size,
-                from_ts=0,
-                to_ts=0,
+                size=100,
+                minutes=30,
             )
 
             backdata_information = self._get_information(
