@@ -242,6 +242,30 @@ class ActiveOrder(BaseModel):
     trigger_price: Optional[str] = None
     triggered_at: Optional[int] = None
 
+    @property
+    def description(self) -> str:
+        return f"""
+        Order ID: {self.order_id}
+        Type: {self.type}
+        Side: {self.side}
+        Quote Currency: {self.quote_currency}
+        Target Currency: {self.target_currency}
+        Price: {self.price}
+        Original Qty: {self.original_qty}
+        Remain Qty: {self.remain_qty}
+        Executed Qty: {self.executed_qty}
+        Canceled Qty: {self.canceled_qty}
+        Fee: {self.fee}
+        Fee Rate: {self.fee_rate}
+        Average Executed Price: {self.average_executed_price}
+        Ordered At: {self.ordered_at}
+        Is Triggered: {self.is_triggered}
+        Trigger Price: {self.trigger_price}
+        Triggered At: {self.triggered_at}
+        """
+
+    model_config = ConfigDict(extra="ignore")
+
 
 class ActiveOrdersResponse(BaseModel):
     result: str
@@ -269,3 +293,41 @@ class CancelOrderResponse(BaseModel):
     ordered_at: int
 
     model_config = ConfigDict(extra="ignore")
+
+
+class CompletedOrder(BaseModel):
+    trade_id: str = Field(
+        ..., description="체결 ID (예: '0e2bb80f-1e4d-11e9-9ec7-00e04c3600d1')"
+    )
+    order_id: str = Field(
+        ..., description="주문 식별 ID (예: '0e30219d-1e4d-11e9-9ec7-00e04c3600d7')"
+    )
+    quote_currency: str = Field(..., description="마켓 기준 통화 (예: 'KRW')")
+    target_currency: str = Field(..., description="주문 체결된 종목 (예: 'BTC')")
+    order_type: str = Field(
+        ..., description='주문 방식 (Enum: "LIMIT", "MARKET", "STOP_LIMIT")'
+    )
+    is_ask: bool = Field(
+        ..., description="체결된 주문의 매도 주문 여부 (true: 매도, false: 매수)"
+    )
+    is_maker: bool = Field(..., description="maker 주문 여부 (예: true)")
+    price: str = Field(..., description="체결된 주문 금액 (숫자형 문자열)")
+    qty: str = Field(..., description="체결된 주문 수량 (숫자형 문자열)")
+    timestamp: int = Field(..., description="주문 체결 시점의 타임스탬프 (밀리초 단위)")
+    fee_rate: str = Field(..., description="체결된 주문 수수료율 (숫자형 문자열)")
+    fee: str = Field(..., description="체결된 주문의 수수료 (숫자형 문자열)")
+    fee_currency: str = Field(..., description='수수료 지불 통화 (예: "KRW")')
+
+
+class CompleteOrderResponse(BaseModel):
+    result: str = Field(..., description='정상 반환 시 "success", 에러 발생 시 "error"')
+    error_code: str = Field(
+        ...,
+        description="에러 발생 시 에러코드 반환, 성공인 경우 0 반환 (숫자형 문자열)",
+    )
+    completed_orders: List[CompletedOrder] = Field(
+        ..., description="배열 형태의 체결 주문 목록"
+    )
+
+    class Config:
+        from_attributes = True  # Pydantic V2에서 ORM 모델 변환을 위해 사용

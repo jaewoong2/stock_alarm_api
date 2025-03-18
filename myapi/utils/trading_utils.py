@@ -11,7 +11,7 @@ from myapi.domain.backdata.backdata_schema import (
 
 from sklearn.linear_model import LinearRegression
 
-from myapi.domain.trading.trading_model import ArbitrageSignal
+from myapi.domain.trading.trading_schema import ArbitrageSignal
 
 
 class TradingUtils:

@@ -1,10 +1,9 @@
 import base64
+import datetime
 import hashlib
 import hmac
 import json
-import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
 import uuid
 
 import requests
@@ -13,6 +12,7 @@ from myapi.domain.trading.coinone_schema import (
     ActiveOrdersResponse,
     CancelOrderResponse,
     CoinoneBalanceResponse,
+    CompleteOrderResponse,
     OrderBookResponse,
     OrderRequest,
 )
@@ -29,6 +29,26 @@ class CoinoneService:
         self.secret_key = settings.COIN_SECRET_KEY
         self.base_url = base_url
         self.session = requests.Session()
+
+    def get_completed_order(
+        self,
+        size: int,
+        target_currency: str,
+        minutes: int = 30,
+        quote_currency: str = "KRW",
+    ):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        to_ts = int(now.timestamp() * 1000)
+        from_ts = int((now - datetime.timedelta(minutes=minutes)).timestamp() * 1000)
+        data = {
+            "size": size,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "target_currency": target_currency,
+            "quote_currency": quote_currency,
+        }
+        result = self._private_post("/v2.1/order/completed_orders", data)
+        return CompleteOrderResponse(**result)
 
     # Public API Methods
     def get_candlestick(

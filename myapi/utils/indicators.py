@@ -6,7 +6,8 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 
-from myapi.domain.trading.trading_model import TechnicalIndicators
+from myapi.domain.trading.trading_schema import TechnicalIndicators
+
 
 matplotlib.use(
     "Agg", force=True

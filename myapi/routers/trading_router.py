@@ -2,7 +2,7 @@
 import logging
 from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Depends, Request
-from myapi.domain.trading.trading_model import TechnicalAnalysisResponse
+from myapi.domain.trading.trading_schema import TechnicalAnalysisResponse
 from myapi.services.ai_service import AIService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService

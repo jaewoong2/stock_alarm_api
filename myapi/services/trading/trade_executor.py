@@ -1,20 +1,21 @@
 import logging
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
 
 from myapi.domain.ai.ai_schema import Action, ActionType, TradingResponse
 from myapi.domain.backdata.backdata_schema import Article
 from myapi.domain.trading.trading_model import (
     ActionEnum,
-    BackdataInformations,
     ExecutionStatus,
     Trade,
 )
 from myapi.domain.trading.coinone_schema import (
+    ActiveOrder,
     CoinoneOrderResponse,
     OrderRequest,
     PlaceOrderResponse,
 )
+from myapi.domain.trading.trading_schema import BackdataInformations
 from myapi.repositories.trading_repository import TradingRepository
 from myapi.services.ai_service import AIService
 from myapi.services.backdata_service import BackDataService
@@ -51,6 +52,14 @@ class TradeExecutor:
         size: int = 500,
     ) -> TradingResponse:
         try:
+            transaction_data = self.coinone_service.get_completed_order(
+                target_currency=symbol.upper(),
+                quote_currency="KRW",
+                size=size,
+                from_ts=0,
+                to_ts=0,
+            )
+
             backdata_information = self._get_information(
                 symbol=symbol, interval=interval, size=size
             )
@@ -95,7 +104,12 @@ class TradeExecutor:
             }
 
             if ai_action == "CANCEL":
-                response = self._handle_cancel(symbol, base_trade_data, decision.action)
+                response = self._handle_cancel(
+                    symbol=symbol,
+                    decision=decision.action,
+                    orders=backdata_information.active_orders.active_orders,
+                    trade_data=base_trade_data,
+                )
 
             elif ai_action == "BUY":
                 response = self._handle_buy(
@@ -134,9 +148,23 @@ class TradeExecutor:
             )
 
     def _handle_cancel(
-        self, symbol: str, base_trade_data: Dict[str, Any], decision: Action
+        self, symbol: str, decision: Action, orders: List[ActiveOrder], trade_data: dict
     ) -> TradingResponse:
         reason = ""
+        if decision and decision.order and decision.order.order_id:
+            if decision.order.order_id not in [order.order_id for order in orders]:
+                reason = f"존재 하지 않는 Order_Id {decision.order.order_id} 입니다"
+                return TradingResponse(
+                    action=Action(
+                        action=ActionType.CANCEL,
+                        market_outlook="",
+                        order=None,
+                        reason=reason,
+                        prediction="",
+                        priority=0,
+                    )
+                )
+
         if decision and decision.order and decision.order.order_id:
             try:
                 cancel_result = self.coinone_service.cancel_order(
@@ -147,6 +175,22 @@ class TradeExecutor:
             except Exception as exc:
                 logger.error("Error canceling order: %s", exc, exc_info=True)
                 reason = "Cancel order failed: " + str(exc)
+
+        trade = Trade(
+            action=ActionEnum,
+            amount=0,
+            summary=decision.reason,
+            execution_krw=(0),
+            execution_crypto=(0),
+            status=ExecutionStatus.SUCCESS,
+            timestamp=trade_data.get("timestamp", trade_data.get("timestamp")),
+            symbol=trade_data.get("symbol", trade_data.get("symbol")),
+            action_string=trade_data["action_string"],
+            reason=decision.reason,
+            openai_prompt=trade_data["openai_prompt"],
+        )
+
+        self._record_trade(trade)
 
         return TradingResponse(
             action=Action(
@@ -517,7 +561,7 @@ class TradeExecutor:
 
     def _get_information(
         self, symbol: str, interval: str, size: int, is_plot_use: bool = False
-    ) -> BackdataInformations:
+    ):
         trading_info = self.trading_repository.get_trading_information()
         market_data = self.backdata_service.get_market_data(symbol)
         candles_info = self.backdata_service.get_coinone_candles(
@@ -526,17 +570,17 @@ class TradeExecutor:
         btc_candles_info = self.backdata_service.get_coinone_candles(
             quote_currency="KRW", target_currency="BTC", interval=interval, size=size
         )
-        orderbook = self.coinone_service.get_orderbook(
-            quote_currency="KRW", target_currency=symbol
-        )
         arbitrage_signal = self.trading_utils.get_arbitrage_signal(
             target_df=candles_info, btc_df=btc_candles_info, symbol=symbol
         )
-        balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
         news = self.backdata_service.get_btc_news(symbol=symbol.upper())
         sentiment = self.backdata_service.get_sentiment_data()
-        active_orders = self.coinone_service.get_active_orders(symbol.upper())
 
+        orderbook = self.coinone_service.get_orderbook(
+            quote_currency="KRW", target_currency=symbol
+        )
+        balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
+        active_orders = self.coinone_service.get_active_orders(symbol.upper())
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
         technical_indicators, df = get_technical_indicators(candles_info, size)
         plot_image_path = None
