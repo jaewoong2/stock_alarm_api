@@ -61,3 +61,7 @@ class Transaction(Base):
     total_price = Column(Float, nullable=False)  # 필수
     fee = Column(Float, nullable=True)  # nullable
     timestamp = Column(DateTime, nullable=False)
+
+    trade_id = Column(String, nullable=False)
+    order_id = Column(String, nullable=False)
+    action = Column(Enum(ActionEnum), nullable=False)

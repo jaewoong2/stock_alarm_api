@@ -15,7 +15,7 @@ from myapi.domain.trading.coinone_schema import (
     OrderRequest,
     PlaceOrderResponse,
 )
-from myapi.domain.trading.trading_schema import BackdataInformations
+from myapi.domain.trading.trading_schema import BackdataInformations, TransactionCreate
 from myapi.repositories.trading_repository import TradingRepository
 from myapi.services.ai_service import AIService
 from myapi.services.backdata_service import BackDataService
@@ -56,7 +56,24 @@ class TradeExecutor:
                 target_currency=symbol.upper(),
                 quote_currency="KRW",
                 size=100,
-                minutes=30,
+                minutes=60 * 24 * 7,
+            )
+
+            self.trading_repository.insert_transaction(
+                [
+                    TransactionCreate(
+                        currency=symbol.upper(),
+                        qty=float(order.qty),
+                        avarage_price=float(order.price),
+                        total_price=float(order.price) * float(order.qty),
+                        fee=float(order.fee),
+                        timestamp=datetime.fromtimestamp(order.timestamp / 1e3),
+                        trade_id=order.trade_id,
+                        order_id=order.order_id,
+                        action=ActionEnum.SELL if order.is_ask else ActionEnum.BUY,
+                    )
+                    for order in transaction_data.completed_orders
+                ]
             )
 
             backdata_information = self._get_information(

@@ -13,6 +13,7 @@ from myapi.domain.trading.coinone_schema import (
     GetTradingInformationResponseModel,
     OrderBookResponse,
 )
+from myapi.domain.trading.trading_model import ActionEnum
 
 
 class TechnicalIndicators(BaseModel):
@@ -137,6 +138,9 @@ class TransactionBase(BaseModel):
     total_price: float
     fee: Optional[float] = None
     timestamp: datetime
+    action: ActionEnum
+    trade_id: str = ""
+    order_id: str = ""
 
 
 class TransactionCreate(TransactionBase):
