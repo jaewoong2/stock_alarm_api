@@ -59,9 +59,10 @@ class TradeExecutor:
                 minutes=60 * 24 * 7,
             )
 
-            self.trading_repository.insert_transaction(
+            self.trading_repository.insert_transactions_if_not_exist(
                 [
                     TransactionCreate(
+                        id=None,
                         currency=symbol.upper(),
                         qty=float(order.qty),
                         avarage_price=float(order.price),

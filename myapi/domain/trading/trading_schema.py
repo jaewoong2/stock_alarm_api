@@ -132,6 +132,7 @@ class BackdataInformations(BaseModel):
 
 # FastAPI Pydantic 스키마
 class TransactionBase(BaseModel):
+    id: Optional[str]
     currency: str
     qty: Optional[float] = None
     avarage_price: Optional[float] = None
