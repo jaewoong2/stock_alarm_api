@@ -53,6 +53,7 @@ class Trade(Base):
 # SQLAlchemy 모델
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = {"schema": "crypto"}  # 스키마 지정
 
     id = Column(Integer, primary_key=True, index=True)
     currency = Column(String, nullable=False)  # 필수

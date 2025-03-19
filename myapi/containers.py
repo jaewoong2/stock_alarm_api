@@ -22,8 +22,8 @@ class ConfigModule(containers.DeclarativeContainer):
 class RepositoryModule(containers.DeclarativeContainer):
     """데이터베이스 관련 의존성 관리"""
 
-    db = providers.Resource(get_db)
-    trading_repository = providers.Singleton(TradingRepository, db_session=db)
+    get_db = providers.Resource(get_db)
+    trading_repository = providers.Factory(TradingRepository, db_session=get_db)
 
 
 class ServiceModule(containers.DeclarativeContainer):
