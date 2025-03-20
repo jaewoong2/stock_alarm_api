@@ -1,7 +1,7 @@
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, Enum
+from sqlalchemy import ARRAY, Column, String, Integer, Float, DateTime, Text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 import enum
-
+from uuid import UUID
 
 Base = declarative_base()
 
@@ -28,8 +28,10 @@ class Trade(Base):
     # 종목 (예: BTC, ETH 등)
     symbol = Column(String(10), nullable=False)
     # BUY, SELL, HOLD 중 하나
-    action = Column(Enum(ActionEnum), nullable=False)
-    # 매수/매도 수량
+    action = Column(
+        Enum(ActionEnum, name="actionenum", create_type=True), nullable=False
+    )
+    # 매수/매도 수량``
     amount = Column(Float, nullable=False)
 
     action_string = Column(Text, nullable=False)
@@ -66,3 +68,16 @@ class Transaction(Base):
     trade_id = Column(String, nullable=False)
     order_id = Column(String, nullable=False)
     action = Column(Enum(ActionEnum), nullable=False)
+
+
+class ProfitLoss(Base):
+    __tablename__ = "profit_loss"
+    __table_args__ = {"schema": "crypto"}  # 스키마 지정
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    sell_trade_id = Column(Integer, nullable=False, index=True)
+    buy_trade_ids = Column(ARRAY(Integer), nullable=False, index=True)
+    realized_pl = Column(Float, nullable=False)
+    cumulative_pl = Column(Float, nullable=False)
+    calculated_at = Column(DateTime(timezone=True))
+    last_processed_trade_id = Column(Integer, index=True)

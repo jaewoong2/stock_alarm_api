@@ -194,7 +194,7 @@ class TradeExecutor:
                 reason = "Cancel order failed: " + str(exc)
 
         trade = Trade(
-            action=ActionEnum,
+            action=ActionEnum.CANCLE,
             amount=0,
             summary=decision.reason,
             execution_krw=(0),

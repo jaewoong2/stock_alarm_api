@@ -139,7 +139,7 @@ class TransactionBase(BaseModel):
     total_price: float
     fee: Optional[float] = None
     timestamp: datetime
-    action: ActionEnum
+    action: ActionEnum = ActionEnum.HOLD
     trade_id: str = ""
     order_id: str = ""
 
