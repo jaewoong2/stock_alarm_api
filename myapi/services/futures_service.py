@@ -232,7 +232,7 @@ class FuturesService:
             raise ValueError("Invalid OpenAI response") from e
 
     def execute_futures_with_suggestion(
-        self, db: Session, symbol: str, quantity: float, repo: FuturesRepository
+        self, symbol: str, quantity: float, repo: FuturesRepository
     ):
         suggestion = self.analyze_with_openai(symbol)
         decision = suggestion.decision.lower()
@@ -251,7 +251,7 @@ class FuturesService:
                 db, futures, position_type="long", take_profit=tp, stop_loss=sl
             )
         elif decision == "sell":
-            current_futures, row = repo.get_open_futures(db, symbol)
+            current_futures, row = repo.get_open_futures(symbol)
             if current_futures is not None and current_futures.position_type == "long":
                 order = self.exchange.create_market_sell_order(symbol, quantity)
                 return repo.update_futures_status(db, current_futures, "closed")
@@ -264,7 +264,7 @@ class FuturesService:
                     db, futures, position_type="short", take_profit=tp, stop_loss=sl
                 )
         else:
-            current_futures = repo.get_open_futures(db, symbol)
+            current_futures = repo.get_open_futures(symbol)
             if current_futures is not None:
                 return current_futures
             return FuturesResponse(
@@ -327,8 +327,8 @@ class FuturesService:
         except Exception as e:
             logging.error(f"TP/SL order creation failed: {e}")
 
-    def monitor_futures(self, db: Session, symbol: str, repo: FuturesRepository):
-        futures, row = repo.get_open_futures(db, symbol)
+    def monitor_futures(self, symbol: str, repo: FuturesRepository):
+        futures, row = repo.get_open_futures(symbol)
         if futures is None:
             return
         ticker = self.fetch_ticker(symbol)
@@ -342,7 +342,7 @@ class FuturesService:
                 futures.stop_loss is not None
                 and current_price <= float(futures.stop_loss)
             ):
-                repo.update_futures_status(db, row, "closed")
+                repo.update_futures_status(row, "closed")
 
         elif futures.position_type == "short":
             if (
@@ -352,4 +352,4 @@ class FuturesService:
                 futures.stop_loss is not None
                 and current_price >= float(futures.stop_loss)
             ):
-                repo.update_futures_status(db, row, "closed")
+                repo.update_futures_status(row, "closed")

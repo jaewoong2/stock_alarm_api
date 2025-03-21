@@ -16,27 +16,29 @@ from myapi.services.futures_service import FuturesService
 router = APIRouter(prefix="/futures", tags=["futures"])
 
 
-@router.post("/", response_model=FuturesResponse)
+@router.post("/", tags=["futures"], response_model=FuturesResponse)
 @inject
 async def create_futures(
     futures: FuturesCreate,
-    db: Session = Depends(get_db),
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
-    repo: FuturesRepository = Depends(lambda: FuturesRepository()),
+    repo: FuturesRepository = Depends(
+        Provide[Container.repositories.futures_repository]
+    ),
 ):
-    return repo.create_futures(db, futures)
+    return repo.create_futures(futures)
 
 
-@router.get("/{symbol}", response_model=List[FuturesResponse])
+@router.get("/{symbol}", tags=["futures"], response_model=List[FuturesResponse])
 @inject
 async def get_futures(
     symbol: str,
-    db: Session = Depends(get_db),
-    repo: FuturesRepository = Depends(lambda: FuturesRepository()),
+    repo: FuturesRepository = Depends(
+        Provide[Container.repositories.futures_repository]
+    ),
 ):
-    futures = repo.get_futures_by_symbol(db, symbol)
+    futures = repo.get_futures_by_symbol(symbol)
     if not futures:
         raise HTTPException(status_code=404, detail="No futures found")
     return futures
@@ -52,12 +54,12 @@ async def get_ticker(
 ):
     try:
         ticker = futures_service.fetch_ticker(symbol)
-        return {"symbol": symbol, "price": ticker.last}
+        return {"symbol": f"{symbol}/USDT", "price": ticker.last}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/analysis/{symbol}", response_model=TechnicalAnalysis)
+@router.get("/analysis/{symbol}", tags=["futures"], response_model=TechnicalAnalysis)
 @inject
 async def get_technical_analysis(
     symbol: str,
@@ -85,7 +87,7 @@ async def get_openai_analysis(
         raise HTTPException(status_code=500, detail=f"OpenAI analysis failed: {str(e)}")
 
 
-@router.post("/execute/{symbol}", response_model=FuturesResponse)
+@router.post("/execute/{symbol}", tags=["futures"], response_model=FuturesResponse)
 @inject
 async def execute_futures_with_ai(
     symbol: str,
@@ -94,12 +96,12 @@ async def execute_futures_with_ai(
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
-    repo: FuturesRepository = Depends(lambda: FuturesRepository()),
+    repo: FuturesRepository = Depends(
+        Provide[Container.repositories.futures_repository]
+    ),
 ):
     try:
-        return futures_service.execute_futures_with_suggestion(
-            db, symbol, quantity, repo
-        )
+        return futures_service.execute_futures_with_suggestion(symbol, quantity, repo)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"

@@ -6,7 +6,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from myapi import containers
 from myapi.exceptions.index import ServiceException
-from myapi.routers import coinone_router, kakao_router, trading_router
+from myapi.routers import coinone_router, futures_router, kakao_router, trading_router
 from myapi.utils.config import init_logging
 
 from .routers import tqqq_router
@@ -69,4 +69,5 @@ app.include_router(tqqq_router.router)
 app.include_router(kakao_router.router)
 app.include_router(trading_router.router)
 app.include_router(coinone_router.router)
+app.include_router(futures_router.router)
 handler = Mangum(app)

@@ -12,9 +12,14 @@ from myapi.utils.config import row_to_dict
 
 
 class FuturesRepository:
+    def __init__(
+        self,
+        db_session: Session,
+    ):
+        self.db_session = db_session
+
     def create_futures(
         self,
-        db: Session,
         futures: FuturesCreate,
         position_type: Optional[str] = None,
         take_profit: Optional[float] = None,
@@ -30,37 +35,35 @@ class FuturesRepository:
                 take_profit=take_profit,
                 stop_loss=stop_loss,
             )
-            db.add(db_futures)
-            db.commit()
-            db.refresh(db_futures)
+            self.db_session.add(db_futures)
+            self.db_session.commit()
+            self.db_session.refresh(db_futures)
             return FuturesResponse.model_validate(db_futures)
         except Exception as e:
-            db.rollback()
+            self.db_session.rollback()
             logging.error(f"DB futures creation failed: {e}")
             raise
 
-    def get_futures_by_symbol(self, db: Session, symbol: str) -> List[FuturesResponse]:
-        futures = db.query(Futures).filter(Futures.symbol == symbol).all()
+    def get_futures_by_symbol(self, symbol: str) -> List[FuturesResponse]:
+        futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
         return [FuturesResponse.model_validate(f) for f in futures]
 
-    def get_open_futures(self, db: Session, symbol: str):
+    def get_open_futures(self, symbol: str):
         row = (
-            db.query(Futures)
+            self.db_session.query(Futures)
             .filter(Futures.symbol == symbol, Futures.status == "open")
             .first()
         )
         return FuturesVO(**row_to_dict(row)), row
 
-    def update_futures_status(
-        self, db: Session, futures: Futures, status: str
-    ) -> FuturesResponse:
+    def update_futures_status(self, futures: Futures, status: str) -> FuturesResponse:
         try:
             futures.status = status
-            db.add(futures)
-            db.commit()
-            db.refresh(futures)
+            self.db_session.add(futures)
+            self.db_session.commit()
+            self.db_session.refresh(futures)
             return FuturesResponse.from_orm(futures)
         except Exception as e:
-            db.rollback()
+            self.db_session.rollback()
             logging.error(f"DB futures update failed: {e}")
             raise

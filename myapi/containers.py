@@ -1,7 +1,9 @@
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
+from myapi.repositories.futures_repository import FuturesRepository
 from myapi.repositories.trading_repository import TradingRepository
+from myapi.services import futures_service
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
@@ -24,6 +26,7 @@ class RepositoryModule(containers.DeclarativeContainer):
 
     get_db = providers.Resource(get_db)
     trading_repository = providers.Factory(TradingRepository, db_session=get_db)
+    futures_repository = providers.Factory(FuturesRepository, db_session=get_db)
 
 
 class ServiceModule(containers.DeclarativeContainer):
@@ -58,6 +61,10 @@ class ServiceModule(containers.DeclarativeContainer):
     )
     discord_service = providers.Factory(DiscordService, settings=config.config)
 
+    futures_service = providers.Factory(
+        futures_service.FuturesService, api_key="", secret="", openai_api_key=""
+    )
+
 
 class Container(containers.DeclarativeContainer):
     """전체 의존성 컨테이너"""
@@ -68,6 +75,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.tqqq_router",
             "myapi.routers.trading_router",
             "myapi.routers.coinone_router",
+            "myapi.routers.futures_router",
         ],
     )
 
