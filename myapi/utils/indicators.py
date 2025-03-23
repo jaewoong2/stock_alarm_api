@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 from typing import Optional
 import matplotlib
 from matplotlib import pyplot as plt
@@ -112,7 +113,9 @@ def compute_adx(df, period=14):
     return df
 
 
-def get_technical_indicators(df: pd.DataFrame | None, length: int):
+def get_technical_indicators(
+    df: pd.DataFrame | None, length: int, reverse: bool = True
+):
     """
     df: 캔들 DataFrame
         - 원본 df는 [0]이 최신, [마지막]이 과거 순서라고 가정.
@@ -126,10 +129,11 @@ def get_technical_indicators(df: pd.DataFrame | None, length: int):
     if df is None or len(df) < 120:
         raise ValueError("DataFrame must have at least 120 rows (or is None)")
 
-    # (1) df를 시간순(옛날→최신)으로 뒤집기
-    df = df.iloc[::-1].copy()
-    # df.reset_index(drop=True, inplace=True)
-    df = df.reset_index()  # drop=True 제거, timestamp를 열로 유지
+    if reverse:
+        # (1) df를 시간순(옛날→최신)으로 뒤집기
+        df = df.iloc[::-1].copy()
+        # df.reset_index(drop=True, inplace=True)
+        df = df.reset_index()  # drop=True 제거, timestamp를 열로 유지
 
     # (2) 지표 계산
     # 이동평균

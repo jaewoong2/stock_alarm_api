@@ -62,7 +62,7 @@ class ServiceModule(containers.DeclarativeContainer):
     discord_service = providers.Factory(DiscordService, settings=config.config)
 
     futures_service = providers.Factory(
-        futures_service.FuturesService, api_key="", secret="", openai_api_key=""
+        futures_service.FuturesService, settings=config.config
     )
 
 

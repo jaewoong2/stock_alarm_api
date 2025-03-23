@@ -1,6 +1,8 @@
 # 수정된 프롬프트
 import json
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel
 
 from myapi.domain.trading.coinone_schema import ActiveOrder
 
@@ -89,6 +91,75 @@ def generate_prompt(
     - Decide on BUY, SELL, HOLD, or CANCEL based on triggers and indicators.
     - Provide your short-term (~4 hours) price prediction ("UP", "DOWN", or "NEUTRAL").
     - Return only the JSON as specified, with no extra text.
+    """
+
+    return prompt, system_prompt
+
+
+def generate_futures_prompt(
+    market_data: Dict,
+    technical_indicators: Dict,
+    tehcnical_analysis: Dict,
+    balances_data: str,
+    target_currency: str = "BTC",
+    quote_currency: str = "USDT",
+    additional_context: str = "",
+    interval: str = "15m",  # 15분 캔들로 변경
+    position: str = "LONG",
+    leverage: int = 2,
+):
+    system_prompt = f"""
+    [system]
+    You are an AI specializing in short-term futures crypto trading on Binance.
+    Your main objective is to generate automated trading decisions (LONG, SHORT, HOLD, or CLOSE)
+    for a specified {quote_currency}/{target_currency} pair.
+
+    Your primary objective:
+    - Generate a trading decision based on partial or sometimes ambiguous data.
+    - Predict price movement for the **next 15-30 minutes** (up to 1 hour if confidence is high).
+    - Where data is incomplete, make reasonable assumptions and use your best judgment.
+    - Emphasize balanced risk management (avoid liquidation, seize good opportunities).
+    """
+
+    prompt = f"""
+    You are an AI specializing in short-term futures crypto trading on Binance. Your goal is to perform
+    automated trades using {quote_currency} to trade {target_currency}.
+    - Decide an appropriate action: "LONG", "SHORT", "HOLD", or "CLOSE".
+    - Predict price movement for the **next 15-30 minutes** (extend to 1 hour if confidence > 80%).
+
+    Maximize profit by "entering low and exiting high" (LONG) or "entering high and exiting low" (SHORT).
+    Follow these steps:
+    - Use all provided data to make an informed prediction.
+    - For each prediction, explain your reasoning based on the data.
+
+    ### 0. Steps
+        1. Evaluate the current market state using market_data (price, volume, high/low).
+        2. Assess technical_indicators (pivot points, Bollinger Bands, MACD, RSI, etc.).
+        3. Synthesize all findings and predict UP, DOWN, or NEUTRAL for the next 15-30 minutes, explaining your reasoning.
+        4. Provide a confidence score (0-100%). If <60%, default to NEUTRAL.
+        5. Avoid liquidation by suggesting TP and SL levels.
+
+    ### 1. Additional Rules
+    - LONG/SHORT Order: Minimum 1 USDT (price * quantity * leverage).
+    - Do not exceed available {quote_currency} balance.
+    - Use LIMIT orders by default.
+    - For LONG/SHORT, suggest TP and SL prices based on the predicted range.
+
+    ### 2. Input Data [{interval} interval]
+    - my position: {position} with leverage {leverage}x
+    - target_currency: {target_currency}
+    - market_data: {json.dumps(market_data, indent=2)}
+    - technical_indicators: {json.dumps(technical_indicators, indent=2)}
+    - technical_analysis: {json.dumps(tehcnical_analysis, indent=2)}
+    - current balances_data: {balances_data}
+
+    ### 3. Additional Context
+    - additional_context: {additional_context}
+
+    ### 4. Summary
+    - Decide on LONG, SHORT, HOLD, or CLOSE based on triggers and indicators.
+    - Provide a short-term price prediction ("UP", "DOWN", or "NEUTRAL") for the next 15-30 minutes.
+    - For LONG/SHORT, suggest TP and SL prices within the predicted timeframe.
     """
 
     return prompt, system_prompt

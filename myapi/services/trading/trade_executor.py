@@ -596,6 +596,7 @@ class TradeExecutor:
         orderbook = self.coinone_service.get_orderbook(
             quote_currency="KRW", target_currency=symbol
         )
+
         balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
         active_orders = self.coinone_service.get_active_orders(symbol.upper())
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")

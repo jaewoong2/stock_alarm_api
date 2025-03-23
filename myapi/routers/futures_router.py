@@ -6,14 +6,27 @@ from dependency_injector.wiring import inject, Provide
 from myapi.containers import Container
 from myapi.database import get_db
 from myapi.domain.futures.futures_schema import (
+    ExecuteFuturesRequest,
+    FuturesConfigRequest,
     FuturesCreate,
     FuturesResponse,
     TechnicalAnalysis,
+    TechnicalAnalysisRequest,
 )
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.futures_service import FuturesService
 
 router = APIRouter(prefix="/futures", tags=["futures"])
+
+
+@router.get("/balance", tags=["futures"])
+@inject
+async def get_futures_balance(
+    futures_service: FuturesService = Depends(
+        Provide[Container.services.futures_service]
+    ),
+):
+    return futures_service.fetch_balnce()
 
 
 @router.post("/", tags=["futures"], response_model=FuturesResponse)
@@ -68,40 +81,57 @@ async def get_technical_analysis(
     ),
 ):
     try:
-        return futures_service.perform_technical_analysis(symbol)
+        df = futures_service.fetch_ohlcv(symbol)
+        return futures_service.perform_technical_analysis(df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-@router.get("/openai-analysis/{symbol}")
+@router.post("/openai-analysis")
 @inject
 async def get_openai_analysis(
-    symbol: str,
+    data: TechnicalAnalysisRequest,
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
 ):
     try:
-        return futures_service.analyze_with_openai(symbol)
+        return futures_service.analyze_with_openai(
+            data.symbol, timeframe=data.interval, limit=data.size
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI analysis failed: {str(e)}")
 
 
-@router.post("/execute/{symbol}", tags=["futures"], response_model=FuturesResponse)
+@router.post("/execute", tags=["futures"])
 @inject
 async def execute_futures_with_ai(
-    symbol: str,
-    quantity: float = 0.001,
-    db: Session = Depends(get_db),
+    data: ExecuteFuturesRequest,
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
-    repo: FuturesRepository = Depends(
-        Provide[Container.repositories.futures_repository]
+):
+    try:
+        # return futures_service.get_positions(data.symbol)
+        return futures_service.execute_futures_with_suggestion(
+            data.symbol, data.target_currency, data.limit, data.timeframe
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Futures execution failed: {str(e)}"
+        )
+
+
+@router.post("/config", tags=["futures"])
+@inject
+async def set_futures_config(
+    data: FuturesConfigRequest,
+    futures_service: FuturesService = Depends(
+        Provide[Container.services.futures_service]
     ),
 ):
     try:
-        return futures_service.execute_futures_with_suggestion(symbol, quantity, repo)
+        return futures_service.set_position(data)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"

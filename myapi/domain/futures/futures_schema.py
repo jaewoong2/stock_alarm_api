@@ -1,6 +1,9 @@
+from decimal import Decimal
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, Dict
+
+from myapi.domain.ai.ai_schema import ActionType
 
 
 class FuturesVO(BaseModel):
@@ -77,6 +80,8 @@ class Ticker(BaseModel):
     ask: Optional[float]
     high: Optional[float]
     low: Optional[float]
+    open: Optional[float]
+    close: Optional[float]
 
 
 class TechnicalAnalysis(BaseModel):
@@ -85,7 +90,7 @@ class TechnicalAnalysis(BaseModel):
     pivot: Optional[float]
     support2: Optional[float]
     resistance2: Optional[float]
-    bollinger_bands: Optional[BollingerBands]
+    bollinger_bands: BollingerBands
     fibonacci_levels: Dict[str, float]  # 동적 키로 인해 Dict 유지
     macd_divergence: Optional[bool]
     macd_crossover: Optional[bool]
@@ -94,8 +99,79 @@ class TechnicalAnalysis(BaseModel):
     volume_trend: Optional[str]
 
 
-class OpenAISuggestion(BaseModel):
-    decision: str
+class FutureInvestMentOrderParams(BaseModel):
+    # if positionSide == LONG: has takeProfit
+    # if positionSide == SHORT: has stopPrice
+    positionSide: str
+    takeProfit: Optional[float]
+    stopPrice: Optional[float]
+
+
+class FuturesOrderRequest(BaseModel):
+    symbol: str
+    quantity: float
+    price: float
+    tp_price: float
+    sl_price: float
+    leverage: int
+
+
+class FutureOpenAISuggestion(BaseModel):
+    action: ActionType
     reasoning: str
-    tp: Optional[float]
-    sl: Optional[float]
+    order: FuturesOrderRequest
+
+
+class FuturesConfigRequest(BaseModel):
+
+    # margin_type: str = "ISOLATED"
+    symbol: str = "BTCUSDT"
+    leverage: int = 2
+    margin_type: str = "ISOLATED"
+
+
+class TechnicalAnalysisRequest(BaseModel):
+    symbol: str = "BTCUSDT"
+    interval: str = "1h"
+    size: int = 500
+
+
+class FuturesClosePositionRequest(BaseModel):
+    symbol: str
+    quantity: Optional[float] = None
+
+
+class FuturesBalancePositionInfo(BaseModel):
+    position: str  # "LONG" or "SHORT"
+    position_amt: float
+    entry_price: float
+    leverage: Optional[int]
+    unrealized_profit: float
+
+
+class FuturesBalance(BaseModel):
+    symbol: str
+    free: int | float | Decimal
+    used: int | float | Decimal
+    total: int | float | Decimal
+
+    positions: Optional[FuturesBalancePositionInfo]
+
+    @property
+    def available(self):
+        return float(self.free) - float(self.used)
+
+    @property
+    def description(self):
+        return f"[{self.symbol}]: {self.available} Available"
+
+
+class FuturesBalances(BaseModel):
+    balances: list[FuturesBalance]
+
+
+class ExecuteFuturesRequest(BaseModel):
+    symbol: str
+    target_currency: str = "BTC"
+    limit: int = 500
+    timeframe: str = "1h"
