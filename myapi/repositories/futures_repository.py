@@ -20,7 +20,7 @@ class FuturesRepository:
 
     def create_futures(
         self,
-        futures: FuturesCreate,
+        futures: FuturesVO,
         position_type: Optional[str] = None,
         take_profit: Optional[float] = None,
         stop_loss: Optional[float] = None,
@@ -33,6 +33,8 @@ class FuturesRepository:
                 side=futures.side,
                 position_type=position_type,
                 take_profit=take_profit,
+                order_id=futures.order_id,
+                parent_order_id=futures.parent_order_id,
                 stop_loss=stop_loss,
             )
             self.db_session.add(db_futures)

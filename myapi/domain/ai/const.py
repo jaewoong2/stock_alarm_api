@@ -107,6 +107,7 @@ def generate_futures_prompt(
     interval: str = "15m",  # 15분 캔들로 변경
     position: str = "LONG",
     leverage: int = 2,
+    minimum_usdt: float = 20.0,
 ):
     system_prompt = f"""
     [system]
@@ -140,7 +141,7 @@ def generate_futures_prompt(
         5. Avoid liquidation by suggesting TP and SL levels.
 
     ### 1. Additional Rules
-    - LONG/SHORT Order: Minimum 1 USDT (price * quantity * leverage).
+    - LONG/SHORT Order: Minimum {minimum_usdt} USDT (price * quantity).
     - Do not exceed available {quote_currency} balance.
     - Use LIMIT orders by default.
     - For LONG/SHORT, suggest TP and SL prices based on the predicted range.

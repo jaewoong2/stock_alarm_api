@@ -29,20 +29,6 @@ async def get_futures_balance(
     return futures_service.fetch_balnce()
 
 
-@router.post("/", tags=["futures"], response_model=FuturesResponse)
-@inject
-async def create_futures(
-    futures: FuturesCreate,
-    futures_service: FuturesService = Depends(
-        Provide[Container.services.futures_service]
-    ),
-    repo: FuturesRepository = Depends(
-        Provide[Container.repositories.futures_repository]
-    ),
-):
-    return repo.create_futures(futures)
-
-
 @router.get("/{symbol}", tags=["futures"], response_model=List[FuturesResponse])
 @inject
 async def get_futures(

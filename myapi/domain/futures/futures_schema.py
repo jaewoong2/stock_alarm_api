@@ -7,7 +7,7 @@ from myapi.domain.ai.ai_schema import ActionType
 
 
 class FuturesVO(BaseModel):
-    id: int
+    id: int | None
     #  = Column(Integer, primary_key=True, index=True)
     symbol: str
     #  = Column(String, index=True)
@@ -28,12 +28,17 @@ class FuturesVO(BaseModel):
     status: str
     #  = Column(String, default="open")  # "open", "closed", "canceled"
 
+    order_id: str
+    parent_order_id: str
+
 
 class FuturesBase(BaseModel):
     symbol: str
     price: float
     quantity: float
     side: str
+    order_id: str
+    parent_order_id: str
 
 
 class FuturesCreate(FuturesBase):
@@ -175,3 +180,23 @@ class ExecuteFuturesRequest(BaseModel):
     target_currency: str = "BTC"
     limit: int = 500
     timeframe: str = "1h"
+
+
+class PlaceFuturesOrder(BaseModel):
+    id: str
+    symbol: str
+    origQty: float
+    order_id: str
+    clientOrderId: str
+    side: str
+    avgPrice: Optional[float]
+    cumQuote: Optional[float]
+    triggerPrice: Optional[float]
+    stopPrice: Optional[float]
+
+
+class PlaceFuturesOrderResponse(BaseModel):
+    buy_order: Optional[PlaceFuturesOrder]
+    sell_order: Optional[PlaceFuturesOrder]
+    tp_order: PlaceFuturesOrder
+    sl_order: PlaceFuturesOrder

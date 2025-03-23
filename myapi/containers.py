@@ -1,3 +1,4 @@
+from asyncio import futures
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
@@ -62,7 +63,9 @@ class ServiceModule(containers.DeclarativeContainer):
     discord_service = providers.Factory(DiscordService, settings=config.config)
 
     futures_service = providers.Factory(
-        futures_service.FuturesService, settings=config.config
+        futures_service.FuturesService,
+        settings=config.config,
+        futures_repository=repositories.futures_repository,
     )
 
 

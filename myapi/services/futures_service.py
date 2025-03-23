@@ -1,4 +1,5 @@
 from os import system
+import time
 import ccxt
 import pandas as pd
 import numpy as np
@@ -9,8 +10,12 @@ from myapi.domain.futures.futures_schema import (
     FuturesBalancePositionInfo,
     FuturesBalances,
     FuturesConfigRequest,
+    FuturesCreate,
     FuturesOrderRequest,
     FuturesResponse,
+    FuturesVO,
+    PlaceFuturesOrder,
+    PlaceFuturesOrderResponse,
     TechnicalAnalysis,
     PivotPoints,
     BollingerBands,
@@ -18,11 +23,13 @@ from myapi.domain.futures.futures_schema import (
     Ticker,
     FutureOpenAISuggestion,
 )
+from myapi.domain.trading.trading_model import Trade
 from myapi.domain.trading.trading_schema import TechnicalIndicators
 from typing import Dict, List, Optional
 import logging
 from openai import OpenAI
 
+from myapi.repositories.futures_repository import FuturesRepository
 from myapi.utils.config import Settings
 from myapi.utils.indicators import get_technical_indicators
 
@@ -165,7 +172,7 @@ def create_analysis_prompt(
 
 
 class FuturesService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, futures_repository: FuturesRepository):
         self.exchange = ccxt.binance(
             config={
                 "apiKey": settings.BINANCE_FUTURES_API_KEY,
@@ -175,6 +182,7 @@ class FuturesService:
             }
         )
         self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.futures_repository = futures_repository
 
     def get_position(self, symbol: str):
         positions = self.exchange.fapiPrivateV2GetPositionRisk({"symbol": symbol})
@@ -320,6 +328,20 @@ class FuturesService:
     def get_current_futures_pirce(self, symbol: str):
         return self.exchange.fetch_ticker(symbol)
 
+    def get_market(self, symbol: str):
+        markets = self.exchange.load_markets()
+        market = markets[symbol + "/USDT"]
+        filters = market["info"]["filters"]
+
+        min_notional = float(
+            [f for f in filters if f["filterType"] == "NOTIONAL"][0]["minNotional"]
+        )
+        lot_size = float(
+            [f for f in filters if f["filterType"] == "LOT_SIZE"][0]["minQty"]
+        )
+
+        return min_notional, lot_size
+
     def analyze_with_openai(
         self, symbol: str, timeframe="1h", limit=500, target_currency="BTC"
     ) -> FutureOpenAISuggestion:
@@ -339,6 +361,8 @@ class FuturesService:
                 if balance.symbol == target_currency
             ][0]
 
+        min_notional, _ = self.get_market(symbol=target_currency)
+
         prompt, system_prompt = generate_futures_prompt(
             balances_data=(
                 balances.model_dump_json()
@@ -349,11 +373,12 @@ class FuturesService:
             interval=timeframe,
             market_data=currnt_price.model_dump(),
             technical_indicators=technical_indicators.model_dump(),
-            additional_context="",
+            additional_context=f"💰 Minimum USDT: {min_notional} USDT ()",
             target_currency=target_currency,
             position=balance.model_dump_json(),
             leverage=current_leverage or 0,
             quote_currency="USDT",
+            minimum_usdt=min_notional,
         )
 
         try:
@@ -417,7 +442,38 @@ class FuturesService:
 
             # 신규 long 포지션 생성
             logging.info(f"Set TP {tp} and SL {sl} for long position on {symbol}")
-            return self.place_long_order(suggestion.order)
+            orders = self.place_long_order(suggestion.order)
+            if orders.buy_order:
+                future = self.order_to_futures(
+                    order=orders.buy_order, parent_order_id=""
+                )
+                self.futures_repository.create_futures(
+                    futures=future, position_type="LONG"
+                )
+
+            if orders.tp_order and orders.buy_order:
+                future = self.order_to_futures(
+                    order=orders.tp_order, parent_order_id=orders.buy_order.order_id
+                )
+                self.futures_repository.create_futures(
+                    futures=future,
+                    position_type="TAKE_PROFIT",
+                    take_profit=tp,
+                    stop_loss=None,
+                )
+
+            if orders.sl_order and orders.buy_order:
+                future = self.order_to_futures(
+                    order=orders.sl_order, parent_order_id=orders.buy_order.order_id
+                )
+                self.futures_repository.create_futures(
+                    futures=future,
+                    position_type="STOP_LOSS",
+                    take_profit=None,
+                    stop_loss=sl,
+                )
+
+            return orders
 
         if decision == "SELL":
             if target_balance.positions and target_balance.positions.position == "LONG":
@@ -434,7 +490,39 @@ class FuturesService:
 
             # 신규 short 포지션 생성
             logging.info(f"Set TP {tp} and SL {sl} for short position on {symbol}")
-            return self.place_short_order(suggestion.order)
+            orders = self.place_short_order(suggestion.order)
+
+            if orders.sell_order:
+                future = self.order_to_futures(
+                    order=orders.sell_order, parent_order_id=""
+                )
+                self.futures_repository.create_futures(
+                    futures=future, position_type="SHORT"
+                )
+
+            if orders.tp_order and orders.sell_order:
+                future = self.order_to_futures(
+                    order=orders.tp_order, parent_order_id=orders.sell_order.order_id
+                )
+                self.futures_repository.create_futures(
+                    futures=future,
+                    position_type="TAKE_PROFIT",
+                    take_profit=tp,
+                    stop_loss=None,
+                )
+
+            if orders.sl_order and orders.sell_order:
+                future = self.order_to_futures(
+                    order=orders.sl_order, parent_order_id=orders.sell_order.order_id
+                )
+                self.futures_repository.create_futures(
+                    futures=future,
+                    position_type="STOP_LOSS",
+                    take_profit=None,
+                    stop_loss=sl,
+                )
+
+            return orders
 
         else:  # decision == "hold"
             return FuturesResponse(
@@ -448,6 +536,8 @@ class FuturesService:
                 take_profit=None,
                 stop_loss=None,
                 status="open",
+                order_id="",
+                parent_order_id="",
             )
 
     def perform_technical_analysis(self, df: pd.DataFrame):
@@ -511,7 +601,45 @@ class FuturesService:
             params={"stopPrice": order.sl_price, "reduceOnly": True},
         )
 
-        return {"buy_order": buy_order, "tp_order": tp_order, "sl_order": sl_order}
+        return PlaceFuturesOrderResponse(
+            sell_order=None,
+            buy_order=PlaceFuturesOrder(
+                id=buy_order["id"] if buy_order["id"] else "",
+                order_id=buy_order["info"]["orderId"],
+                symbol=buy_order["info"]["symbol"],
+                origQty=buy_order["info"]["origQty"],
+                avgPrice=buy_order["info"]["avgPrice"],
+                cumQuote=buy_order["info"]["cumQuote"],
+                clientOrderId=buy_order["info"]["clientOrderId"],
+                side=buy_order["info"]["side"],
+                triggerPrice=None,
+                stopPrice=None,
+            ),
+            tp_order=PlaceFuturesOrder(
+                id=tp_order["id"] if tp_order["id"] else "",
+                order_id=tp_order["info"]["orderId"],
+                symbol=tp_order["info"]["symbol"],
+                origQty=tp_order["info"]["origQty"],
+                avgPrice=tp_order["info"]["avgPrice"],
+                cumQuote=tp_order["info"]["cumQuote"],
+                clientOrderId=tp_order["info"]["clientOrderId"],
+                side=tp_order["info"]["side"],
+                triggerPrice=tp_order["info"]["stopPrice"],
+                stopPrice=tp_order["info"]["stopPrice"],
+            ),
+            sl_order=PlaceFuturesOrder(
+                id=sl_order["id"] if sl_order["id"] else "",
+                order_id=sl_order["info"]["orderId"],
+                symbol=sl_order["info"]["symbol"],
+                origQty=sl_order["info"]["origQty"],
+                avgPrice=sl_order["info"]["avgPrice"],
+                cumQuote=sl_order["info"]["cumQuote"],
+                clientOrderId=sl_order["info"]["clientOrderId"],
+                side=sl_order["info"]["side"],
+                triggerPrice=sl_order["info"]["stopPrice"],
+                stopPrice=sl_order["info"]["stopPrice"],
+            ),
+        )
 
     def place_short_order(self, order: FuturesOrderRequest):
         self.set_position(
@@ -548,7 +676,45 @@ class FuturesService:
             params={"stopPrice": order.sl_price, "reduceOnly": True},
         )
 
-        return {"sell_order": sell_order, "tp_order": tp_order, "sl_order": sl_order}
+        return PlaceFuturesOrderResponse(
+            buy_order=None,
+            sell_order=PlaceFuturesOrder(
+                id=sell_order["id"] if sell_order["id"] else "",
+                order_id=sell_order["info"]["orderId"],
+                symbol=sell_order["info"]["symbol"],
+                origQty=sell_order["info"]["origQty"],
+                avgPrice=sell_order["info"]["avgPrice"],
+                cumQuote=sell_order["info"]["cumQuote"],
+                clientOrderId=sell_order["info"]["clientOrderId"],
+                side=sell_order["info"]["side"],
+                triggerPrice=None,
+                stopPrice=None,
+            ),
+            tp_order=PlaceFuturesOrder(
+                id=tp_order["id"] if tp_order["id"] else "",
+                order_id=tp_order["info"]["orderId"],
+                symbol=tp_order["info"]["symbol"],
+                origQty=tp_order["info"]["origQty"],
+                avgPrice=tp_order["info"]["avgPrice"],
+                cumQuote=tp_order["info"]["cumQuote"],
+                clientOrderId=tp_order["info"]["clientOrderId"],
+                side=tp_order["info"]["side"],
+                triggerPrice=tp_order["info"]["stopPrice"],
+                stopPrice=tp_order["info"]["stopPrice"],
+            ),
+            sl_order=PlaceFuturesOrder(
+                id=sl_order["id"] if sl_order["id"] else "",
+                order_id=sl_order["info"]["orderId"],
+                symbol=sl_order["info"]["symbol"],
+                origQty=sl_order["info"]["origQty"],
+                avgPrice=sl_order["info"]["avgPrice"],
+                cumQuote=sl_order["info"]["cumQuote"],
+                clientOrderId=sl_order["info"]["clientOrderId"],
+                side=sl_order["info"]["side"],
+                triggerPrice=sl_order["info"]["stopPrice"],
+                stopPrice=sl_order["info"]["stopPrice"],
+            ),
+        )
 
     def cancel_order(self, order_id: str):
         order = self.exchange.cancel_order(order_id)
@@ -606,3 +772,21 @@ class FuturesService:
             symbol, "market", "buy", quantity or 0.0, None, {"reduceOnly": True}
         )
         return order
+
+    def order_to_futures(
+        self, order: PlaceFuturesOrder, parent_order_id: str, side: str = "TAKE_PROFIT"
+    ):
+        return FuturesVO(
+            id=None,
+            timestamp=datetime.now(),
+            status="open",
+            symbol=order.symbol,
+            price=order.avgPrice if order.avgPrice else 0.0,
+            quantity=order.origQty,
+            side=order.side,
+            position_type=side,
+            take_profit=order.triggerPrice if order.triggerPrice else 0.0,
+            stop_loss=order.stopPrice if order.stopPrice else 0.0,
+            order_id=order.order_id,
+            parent_order_id=parent_order_id,
+        )
