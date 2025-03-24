@@ -456,7 +456,7 @@ class FuturesService:
         ][0]
 
         if decision == "CANCLE":
-            self.cancel_all_orders(symbol)
+            return self.cancel_all_orders(symbol)
 
         if decision == "BUY":
             if (
