@@ -18,6 +18,10 @@ class FuturesRepository:
     ):
         self.db_session = db_session
 
+    def get_all_futures(self, symbol: str = "BTCUSDT"):
+        futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
+        return [FuturesVO.model_validate(f) for f in futures]
+
     def create_futures(
         self,
         futures: FuturesVO,
@@ -58,9 +62,18 @@ class FuturesRepository:
         )
         return FuturesVO(**row_to_dict(row)), row
 
-    def update_futures_status(self, futures: Futures, status: str) -> FuturesResponse:
+    def update_futures_status(self, order_id: str, status: str) -> FuturesResponse:
         try:
+            futures = (
+                self.db_session.query(Futures)
+                .filter(Futures.order_id == order_id)
+                .first()
+            )
+            if futures is None:
+                raise ValueError(f"No futures found with order_id: {order_id}")
+
             futures.status = status
+
             self.db_session.add(futures)
             self.db_session.commit()
             self.db_session.refresh(futures)

@@ -1,16 +1,18 @@
 from os import system
 import time
+from venv import logger
 import ccxt
 import pandas as pd
 import numpy as np
 from datetime import datetime
+
+from regex import D
 from myapi.domain.ai.const import generate_futures_prompt
 from myapi.domain.futures.futures_schema import (
     FuturesBalance,
     FuturesBalancePositionInfo,
     FuturesBalances,
     FuturesConfigRequest,
-    FuturesCreate,
     FuturesOrderRequest,
     FuturesResponse,
     FuturesVO,
@@ -32,6 +34,8 @@ from openai import OpenAI
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.utils.config import Settings
 from myapi.utils.indicators import get_technical_indicators
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_pivot_points(df: pd.DataFrame) -> PivotPoints:
@@ -333,7 +337,7 @@ class FuturesService:
         return self.exchange.fetch_ticker(symbol)
 
     def get_market(self, symbol: str):
-        markets = self.exchange.load_markets()
+        markets = self.exchange.load_markets(False, {"type": "future"})
         market = markets[symbol + "/USDT"]
         filters = market["info"]["filters"]
 
@@ -373,17 +377,20 @@ class FuturesService:
                 if isinstance(balances, FuturesBalances)
                 else ""
             ),
-            tehcnical_analysis=analysis.model_dump(),
+            technical_analysis=analysis.model_dump(),
             interval=timeframe,
             market_data=currnt_price.model_dump(),
             technical_indicators=technical_indicators.model_dump(),
-            additional_context=f"💰 Minimum USDT: {min(min_notional, 25)} USDT",
+            additional_context=f"",
             target_currency=target_currency,
             position=balance.model_dump_json(),
             leverage=current_leverage or 0,
             quote_currency="USDT",
             minimum_usdt=min_notional,
+            minimum_amount=min_amount,
         )
+
+        logger.info(f"Prompt: {prompt}")
 
         try:
             response = self.openai_client.beta.chat.completions.parse(
@@ -407,15 +414,34 @@ class FuturesService:
             logging.error(f"OpenAI API call failed: {e}")
             raise ValueError("Invalid OpenAI response") from e
 
+    def fetch_active_orders(self, symbol: str):
+        return self.exchange.fetch_open_orders(symbol)
+
+    def cancel_all_orders(self, symbol: str = "BTCUSDT"):
+        active_orders_api = self.fetch_active_orders(symbol)
+        active_orders_db = self.futures_repository.get_all_futures(symbol=symbol)
+
+        order_ids = [order.order_id for order in active_orders_db]
+
+        for order in active_orders_api:
+            if order["id"] in order_ids:
+                self.futures_repository.update_futures_status(
+                    order_id=order["id"], status="canceled"
+                )
+                self.exchange.cancel_order(order["id"].upper(), symbol)
+
     def execute_futures_with_suggestion(
         self, symbol: str, target_currency="BTC", limit=500, timeframe="1h"
     ):
+
         suggestion = self.analyze_with_openai(
             symbol=symbol,
             timeframe=timeframe,
             limit=limit,
             target_currency=target_currency,
         )
+
+        logger.info(f"Received suggestion: {suggestion.model_dump_json()}")
 
         decision = suggestion.action.upper()
         tp, sl = suggestion.order.tp_price, suggestion.order.sl_price
@@ -428,6 +454,9 @@ class FuturesService:
             for balance in balances.balances
             if balance.symbol == target_currency
         ][0]
+
+        if decision == "CANCLE":
+            self.cancel_all_orders(symbol)
 
         if decision == "BUY":
             if (

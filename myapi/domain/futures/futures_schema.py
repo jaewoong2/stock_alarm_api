@@ -1,35 +1,27 @@
 from decimal import Decimal
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 
 from myapi.domain.ai.ai_schema import ActionType
 
 
 class FuturesVO(BaseModel):
-    id: int | None
-    #  = Column(Integer, primary_key=True, index=True)
+    id: Union[int, None] = None
     symbol: str
-    #  = Column(String, index=True)
-    price: float | int
-    #  = Column(Float)
-    quantity: float | int
-    #  = Column(Float)
+    price: Union[float, int]
+    quantity: Union[float, int]
     side: str
-    #  = Column(String)  # "buy" or "sell"
-    timestamp: str | datetime
-    #  = Column(DateTime, default=datetime.utcnow)
+    timestamp: Union[str, datetime]
     position_type: str
-    #  = Column(String, nullable=True)  # "long" or "short"
-    take_profit: float | int
-    #  = Column(Float, nullable=True)
-    stop_loss: float | int
-    #  = Column(Float, nullable=True)
+    take_profit: Union[float, int, None] = None  # <--- None 허용
+    stop_loss: Union[float, int, None] = None  # <--- None 허용
     status: str
-    #  = Column(String, default="open")  # "open", "closed", "canceled"
-
     order_id: str
     parent_order_id: str
+
+    class Config:
+        from_attributes = True
 
 
 class FuturesBase(BaseModel):

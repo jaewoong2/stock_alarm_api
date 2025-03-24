@@ -96,73 +96,96 @@ def generate_prompt(
     return prompt, system_prompt
 
 
+def split_interval(interval: str):
+    """ """
+    if interval.endswith("m"):
+        return int(interval[:-1]), "minutes"
+    elif interval.endswith("h"):
+        return int(interval[:-1]), "hours"
+    elif interval.endswith("d"):
+        return int(interval[:-1]), "days"
+    else:
+        return 1, "hours"
+
+
+import json
+from typing import Dict
+
+
 def generate_futures_prompt(
     market_data: Dict,
     technical_indicators: Dict,
-    tehcnical_analysis: Dict,
+    technical_analysis: Dict,
     balances_data: str,
     target_currency: str = "BTC",
     quote_currency: str = "USDT",
     additional_context: str = "",
-    interval: str = "15m",  # 15분 캔들로 변경
-    position: str = "LONG",
+    interval: str = "15m",
+    position: str = "NONE",
     leverage: int = 2,
     minimum_usdt: float = 20.0,
+    minimum_amount: float = 0.001,
 ):
+    interval_, interval_str = split_interval(interval)
+
     system_prompt = f"""
     [system]
     You are an AI specializing in short-term futures crypto trading on Binance.
-    Your main objective is to generate automated trading decisions (LONG, SHORT, HOLD, or CLOSE)
-    for a specified {quote_currency}/{target_currency} pair.
+    Your goal is to generate automated trading decisions (LONG, SHORT, HOLD, CANCLE)
+    for {target_currency}/{quote_currency} pair based on current market data.
 
-    Your primary objective:
-    - Generate a trading decision based on partial or sometimes ambiguous data.
-    - Predict price movement for the **next 15-30 minutes** (up to 1 hour if confidence is high).
-    - Where data is incomplete, make reasonable assumptions and use your best judgment.
-    - Emphasize balanced risk management (avoid liquidation, seize good opportunities).
+    Objectives:
+    - Analyze provided data even if partial or ambiguous.
+    - Clearly define risk management and capital allocation.
+    - Predict movements for the next {interval_}-{interval_ * 2} {interval_str}, extend to {interval_ * 4} {interval_str} if confidence > 80%.
+    - Always prioritize avoiding liquidation and consistently profitable decisions.
     """
 
     prompt = f"""
-    You are an AI specializing in short-term futures crypto trading on Binance. Your goal is to perform
-    automated trades using {quote_currency} to trade {target_currency}.
-    - Decide an appropriate action: "LONG", "SHORT", "HOLD", or "CLOSE".
-    - Predict price movement for the **next 15-30 minutes** (extend to 1 hour if confidence > 80%).
+    You are an AI specializing in short-term futures crypto trading on Binance. Your task is to use {quote_currency} to trade {target_currency} efficiently.
 
-    Maximize profit by "entering low and exiting high" (LONG) or "entering high and exiting low" (SHORT).
-    Follow these steps:
-    - Use all provided data to make an informed prediction.
-    - For each prediction, explain your reasoning based on the data.
+    Steps to Follow:
+    1. Analyze market data thoroughly (current price, volume, highs/lows).
+    2. Review technical indicators: RSI, MACD, Bollinger Bands, ADX, Pivot Points.
+    3. Identify market state clearly (trending, ranging, high volatility, or low volatility).
+    4. Provide decision: "LONG", "SHORT", "HOLD", or "CANCLE" clearly based on criteria below.
+    5. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
+    6. Provide confidence score (0-100%). Default to NEUTRAL if below 60%.
+    7. Clearly define Take Profit (TP) and Stop Loss (SL) levels.
 
-    ### 0. Steps
-        1. Evaluate the current market state using market_data (price, volume, high/low).
-        2. Assess technical_indicators (pivot points, Bollinger Bands, MACD, RSI, etc.).
-        3. Synthesize all findings and predict UP, DOWN, or NEUTRAL for the next 15-30 minutes, explaining your reasoning.
-        4. Provide a confidence score (0-100%). If <60%, default to NEUTRAL.
-        5. Avoid liquidation by suggesting TP and SL levels.
+    Trading Criteria:
+    - LONG when RSI crosses above 50, MACD bullish cross, price above middle Bollinger Band.
+    - SHORT when RSI crosses below 50, MACD bearish cross, price below middle Bollinger Band.
+    - HOLD when market signals are mixed or unclear.
+    - CANCLE immediately if the trend reverses sharply or TP/SL conditions are met.
 
-    ### 1. Additional Rules
-    - LONG/SHORT Order: Minimum {min(minimum_usdt, 25) + 1} USDT (price * quantity).
-    - BTC Must Be (amount >= 0.0011BTC)
-    - Do not exceed available {quote_currency} balance.
-    - Use LIMIT orders by default.
-    - For LONG/SHORT, suggest TP and SL prices based on the predicted range.
-    - Do not Lose My money, Think about TP that Can Earn Money
+    Risk Management & Capital Allocation:
+    - TP: Aim minimum risk/reward ratio of 1:1.5.
+    - SL: Max loss 1%~1.5% from entry price, based on ATR volatility.
+    - Adjust TP/SL dynamically if volatility (ATR) changes significantly.
 
-    ### 2. Input Data [{interval} interval]
-    - my position: {position} with leverage {leverage}x
-    - target_currency: {target_currency}
-    - market_data: {json.dumps(market_data, indent=2)}
-    - technical_indicators: {json.dumps(technical_indicators, indent=2)}
-    - technical_analysis: {json.dumps(tehcnical_analysis, indent=2)}
-    - current balances_data: {balances_data}
+    Additional Rules:
+    - Minimum Order: {min(minimum_usdt, 25) + 1} USDT.
+    - Minimum Quantity: {minimum_amount * 1.2} {target_currency}.
+    - Default order type: LIMIT.
+    - Do not exceed available balance.
+    - Prioritize capital preservation.
 
-    ### 3. Additional Context
-    - additional_context: {additional_context}
+    Input Data [{interval} interval]:
+    - Current position: {position} with leverage {leverage}x.
+    - Market Data: {json.dumps(market_data, indent=2)}
+    - Technical Indicators: {json.dumps(technical_indicators, indent=2)}
+    - Technical Analysis: {json.dumps(technical_analysis, indent=2)}
+    - Balances: {balances_data}
 
-    ### 4. Summary
-    - Decide on LONG, SHORT, HOLD, or CLOSE based on triggers and indicators.
-    - Provide a short-term price prediction ("UP", "DOWN", or "NEUTRAL") for the next 15-30 minutes.
-    - For LONG/SHORT, suggest TP and SL prices within the predicted timeframe.
+    Additional Context:
+    {additional_context}
+
+    Final Output:
+    - Clear decision: LONG, SHORT, HOLD, or CANCLE.
+    - Short-term prediction: UP, DOWN, NEUTRAL.
+    - Confidence percentage (0-100%).
+    - Specific TP and SL targets clearly defined.
     """
 
     return prompt, system_prompt
