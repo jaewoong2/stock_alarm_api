@@ -185,7 +185,11 @@ class FuturesService:
         self.futures_repository = futures_repository
 
     def get_position(self, symbol: str):
-        positions = self.exchange.fapiPrivateV2GetPositionRisk({"symbol": symbol})
+        _symbol = symbol
+        if not _symbol.endswith("USDT"):
+            _symbol += "USDT"
+
+        positions = self.exchange.fapiPrivateV2GetPositionRisk({"symbol": _symbol})
 
         if positions and len(positions) > 0:
             current_leverage = int(positions[0].get("leverage", 0))
@@ -361,7 +365,7 @@ class FuturesService:
                 if balance.symbol == target_currency
             ][0]
 
-        min_notional, _ = self.get_market(symbol=target_currency)
+        min_notional, min_amount = self.get_market(symbol=target_currency)
 
         prompt, system_prompt = generate_futures_prompt(
             balances_data=(
@@ -373,7 +377,7 @@ class FuturesService:
             interval=timeframe,
             market_data=currnt_price.model_dump(),
             technical_indicators=technical_indicators.model_dump(),
-            additional_context=f"💰 Minimum USDT: {min_notional} USDT ()",
+            additional_context=f"💰 Minimum USDT: {min(min_notional, 25)} USDT",
             target_currency=target_currency,
             position=balance.model_dump_json(),
             leverage=current_leverage or 0,
@@ -642,13 +646,16 @@ class FuturesService:
         )
 
     def place_short_order(self, order: FuturesOrderRequest):
-        self.set_position(
-            FuturesConfigRequest(
-                symbol=order.symbol,
-                leverage=order.leverage,
-                margin_type="ISOLATED",
-            )
-        )
+        # self.set_position(
+        #     FuturesConfigRequest(
+        #         symbol=order.symbol,
+        #         leverage=order.leverage,
+        #         margin_type="ISOLATED",
+        #     )
+        # )
+
+        if not order.symbol.endswith("USDT"):
+            order.symbol += "USDT"
 
         sell_order = self.exchange.create_order(
             symbol=order.symbol,

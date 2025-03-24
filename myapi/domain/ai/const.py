@@ -141,10 +141,12 @@ def generate_futures_prompt(
         5. Avoid liquidation by suggesting TP and SL levels.
 
     ### 1. Additional Rules
-    - LONG/SHORT Order: Minimum {minimum_usdt} USDT (price * quantity).
+    - LONG/SHORT Order: Minimum {min(minimum_usdt, 25) + 1} USDT (price * quantity).
+    - BTC Must Be (amount >= 0.0011BTC)
     - Do not exceed available {quote_currency} balance.
     - Use LIMIT orders by default.
     - For LONG/SHORT, suggest TP and SL prices based on the predicted range.
+    - Do not Lose My money, Think about TP that Can Earn Money
 
     ### 2. Input Data [{interval} interval]
     - my position: {position} with leverage {leverage}x
