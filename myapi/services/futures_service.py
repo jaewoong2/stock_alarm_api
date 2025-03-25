@@ -9,10 +9,11 @@ import numpy as np
 from datetime import datetime
 
 from pydantic_core import Url
-from regex import D
+from regex import D, F
 import requests
 from myapi.domain.ai.const import generate_futures_prompt
 from myapi.domain.futures.futures_schema import (
+    FutureActionType,
     FuturesBalance,
     FuturesBalancePositionInfo,
     FuturesBalances,
@@ -466,20 +467,12 @@ class FuturesService:
                 self.exchange.cancel_order(order["id"].upper(), symbol)
 
     def execute_futures_with_suggestion(
-        self, symbol: str, target_currency="BTC", limit=500, timeframe="1h"
+        self,
+        symbol: str,
+        suggestion: FutureOpenAISuggestion,
+        target_currency="BTC",
     ):
-
-        suggestion = self.analyze_with_openai(
-            symbol=symbol,
-            timeframe=timeframe,
-            limit=limit,
-            target_currency=target_currency,
-        )
-
-        logger.info(f"Received suggestion: {suggestion.model_dump_json()}")
-
-        decision = suggestion.action.upper()
-        tp, sl = suggestion.order.tp_price, suggestion.order.sl_price
+        # 현재 시장 정보 및 잔고 정보 가져오기
         ticker = self.fetch_ticker(symbol)
         current_price = ticker.last
 
@@ -491,29 +484,68 @@ class FuturesService:
         ]
 
         target_balance = target_balance_[0] if len(target_balance_) > 0 else None
+        current_position = None
 
-        if decision == "CANCLE":
-            return self.cancel_all_orders(symbol)
+        # 현재 포지션 확인
+        if target_balance and target_balance.positions:
+            current_position = (
+                target_balance.positions.position
+            )  # "LONG", "SHORT", "NONE"
 
-        if decision == "BUY":
-            if (
-                target_balance
-                and target_balance.positions
-                and target_balance.positions.position == "SHORT"
-            ):
+        # 취소 액션 처리
+        if suggestion.action == FutureActionType.CANCLE:
+            logging.info(f"Cancelling all orders and positions for {symbol}")
+            self.cancel_all_orders(symbol)
+
+            # 열린 포지션 종료
+            if current_position == "LONG":
+                self.close_long_position(symbol)
+                logging.info(f"Closed long position for {symbol}")
+            elif current_position == "SHORT":
+                self.close_short_position(symbol)
+                logging.info(f"Closed short position for {symbol}")
+
+            return FuturesVO(
+                id=None,
+                timestamp=datetime.now(),
+                order_id="",
+                parent_order_id="",
+                symbol=symbol,
+                price=current_price,
+                quantity=0,
+                side="CANCLE",
+                position_type="CANCLE",
+                take_profit=None,
+                stop_loss=None,
+                status="closed",
+            )
+
+        # LONG 포지션 처리
+        elif suggestion.action == FutureActionType.LONG:
+            # 다른 포지션(SHORT)이 있는 경우 종료
+            if current_position == "SHORT":
+                logging.info(f"Closing existing short position for {symbol}")
                 self.exchange.create_limit_buy_order(
                     symbol,
-                    float(target_balance.used) or 0.0,
+                    float(target_balance.used) if target_balance is not None else 0.0,
                     suggestion.order.price,
                     params={"reduceOnly": True},
                 )
-                logging.info(
-                    f"Closed short position for {symbol} at {suggestion.order.price}"
-                )
+                # 기존 주문들 취소
+                self.cancel_all_orders(symbol)
 
-            # 신규 long 포지션 생성
-            logging.info(f"Set TP {tp} and SL {sl} for long position on {symbol}")
+            # 이미 LONG 포지션이 있으면 TP/SL만 업데이트 (기존 주문 취소 후 재생성)
+            if current_position == "LONG":
+                logging.info(f"Updating TP/SL for existing long position on {symbol}")
+                self.cancel_all_orders(symbol)  # 기존 TP/SL 주문 취소
+
+            # 신규 LONG 포지션 생성 또는 TP/SL 업데이트
+            logging.info(
+                f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for long position on {symbol}"
+            )
             orders = self.place_long_order(suggestion.order)
+
+            # 주문 정보 저장
             if orders.buy_order:
                 future = self.order_to_futures(
                     order=orders.buy_order, parent_order_id=""
@@ -529,7 +561,7 @@ class FuturesService:
                 self.futures_repository.create_futures(
                     futures=future,
                     position_type="TAKE_PROFIT",
-                    take_profit=tp,
+                    take_profit=suggestion.order.tp_price,
                     stop_loss=None,
                 )
 
@@ -541,32 +573,37 @@ class FuturesService:
                     futures=future,
                     position_type="STOP_LOSS",
                     take_profit=None,
-                    stop_loss=sl,
+                    stop_loss=suggestion.order.sl_price,
                 )
 
             return orders
 
-        if decision == "SELL":
-            if (
-                target_balance
-                and target_balance.positions
-                and target_balance.positions.position == "LONG"
-            ):
-                # 기존 long 포지션 청산
-                self.exchange.create_limit_buy_order(
+        # SHORT 포지션 처리
+        elif suggestion.action == FutureActionType.SHORT:
+            # 다른 포지션(LONG)이 있는 경우 종료
+            if current_position == "LONG":
+                logging.info(f"Closing existing long position for {symbol}")
+                self.exchange.create_limit_sell_order(
                     symbol,
-                    float(target_balance.used) or 0.0,
+                    float(target_balance.used) if target_balance is not None else 0.0,
                     suggestion.order.price,
                     params={"reduceOnly": True},
                 )
-                logging.info(
-                    f"Closed short position for {symbol} at {suggestion.order.price}"
-                )
+                # 기존 주문들 취소
+                self.cancel_all_orders(symbol)
 
-            # 신규 short 포지션 생성
-            logging.info(f"Set TP {tp} and SL {sl} for short position on {symbol}")
+            # 이미 SHORT 포지션이 있으면 TP/SL만 업데이트 (기존 주문 취소 후 재생성)
+            if current_position == "SHORT":
+                logging.info(f"Updating TP/SL for existing short position on {symbol}")
+                self.cancel_all_orders(symbol)  # 기존 TP/SL 주문 취소
+
+            # 신규 SHORT 포지션 생성 또는 TP/SL 업데이트
+            logging.info(
+                f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for short position on {symbol}"
+            )
             orders = self.place_short_order(suggestion.order)
 
+            # 주문 정보 저장
             if orders.sell_order:
                 future = self.order_to_futures(
                     order=orders.sell_order, parent_order_id=""
@@ -582,7 +619,7 @@ class FuturesService:
                 self.futures_repository.create_futures(
                     futures=future,
                     position_type="TAKE_PROFIT",
-                    take_profit=tp,
+                    take_profit=suggestion.order.tp_price,
                     stop_loss=None,
                 )
 
@@ -594,25 +631,26 @@ class FuturesService:
                     futures=future,
                     position_type="STOP_LOSS",
                     take_profit=None,
-                    stop_loss=sl,
+                    stop_loss=suggestion.order.sl_price,
                 )
 
             return orders
 
-        else:  # decision == "hold"
-            return FuturesResponse(
-                id=-1,
+        # HOLD 액션 처리
+        else:  # suggestion.action == FutureActionType.HOLD
+            return FuturesVO(
+                id=None,
+                timestamp=datetime.now(),
+                order_id="",
+                parent_order_id="",
                 symbol=symbol,
                 price=current_price,
                 quantity=0,
                 side="hold",
-                timestamp=datetime.now(),
-                position_type=None,
+                position_type="HOLD",
                 take_profit=None,
                 stop_loss=None,
-                status="open",
-                order_id="",
-                parent_order_id="",
+                status="closed",
             )
 
     def perform_technical_analysis(self, df: pd.DataFrame):
@@ -646,6 +684,31 @@ class FuturesService:
         #         margin_type="ISOLATED",
         #     )
         # )
+
+        # market_buy_order = binance.create_order(symbol, 'market', 'buy', amount)
+
+        # # create OCO order
+        # params = {
+        #         'symbol': binance.market(symbol)['id'],
+        #         'side': 'SELL',
+        #         'quantity': binance.amount_to_precision(symbol, amount),
+        #         'price': binance.price_to_precision(symbol, take_profit_price),
+        #         'stopPrice': binance.price_to_precision(symbol, stop_loss_price),
+        #         'stopLimitPrice': binance.price_to_precision(symbol, stop_loss_price*1.01),  # to ensure it executes
+        #         'stopLimitTimeInForce': 'GTC',
+        # }
+
+        oco_order = self.exchange.private_post_order_oco(
+            {
+                "symbol": order.symbol,
+                "side": "buy",
+                "quantity": order.quantity,
+                "price": order.price,
+                "stopPrice": order.sl_price,
+                "stopLimitPrice": order.sl_price,
+                "stopLimitTimeInForce": "GTC",
+            }
+        )
 
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"

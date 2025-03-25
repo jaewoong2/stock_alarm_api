@@ -14,6 +14,7 @@ from myapi.domain.futures.futures_schema import (
     TechnicalAnalysisRequest,
 )
 from myapi.repositories.futures_repository import FuturesRepository
+from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService
 
 router = APIRouter(prefix="/futures", tags=["futures"])
@@ -96,25 +97,39 @@ async def execute_futures_with_ai(
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
 ):
     try:
         # AI 분석 요청
+        suggestion = futures_service.analyze_with_openai(
+            symbol=data.symbol,
+            timeframe=data.timeframe,
+            limit=data.limit,
+            target_currency=data.target_currency,
+        )
 
         # 분석 결과 Logging / Discode 전송
+        discord_service.send_message(suggestion.model_dump_json())
 
         # AI 분석 결과를 바탕으로 선물 거래 실행
         # - 기존 거래
         #   - 같은 포지션 일 경우, (TP/SL) 수정
         #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
         #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
+        results = futures_service.execute_futures_with_suggestion(
+            symbol=data.symbol,
+            target_currency=data.target_currency,
+            suggestion=suggestion,
+        )
 
         # 선물 거래 결과 Logging / Discode 전송
+        if results:
+            discord_service.send_message(results.model_dump_json())
 
-        # 전체 결과 DB 저장
+        return results.model_dump()
 
-        return futures_service.execute_futures_with_suggestion(
-            data.symbol, data.target_currency, data.limit, data.timeframe
-        )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"
