@@ -685,59 +685,36 @@ class FuturesService:
         #     )
         # )
 
-        # market_buy_order = binance.create_order(symbol, 'market', 'buy', amount)
-
-        # # create OCO order
-        # params = {
-        #         'symbol': binance.market(symbol)['id'],
-        #         'side': 'SELL',
-        #         'quantity': binance.amount_to_precision(symbol, amount),
-        #         'price': binance.price_to_precision(symbol, take_profit_price),
-        #         'stopPrice': binance.price_to_precision(symbol, stop_loss_price),
-        #         'stopLimitPrice': binance.price_to_precision(symbol, stop_loss_price*1.01),  # to ensure it executes
-        #         'stopLimitTimeInForce': 'GTC',
-        # }
-
-        oco_order = self.exchange.private_post_order_oco(
-            {
-                "symbol": order.symbol,
-                "side": "buy",
-                "quantity": order.quantity,
-                "price": order.price,
-                "stopPrice": order.sl_price,
-                "stopLimitPrice": order.sl_price,
-                "stopLimitTimeInForce": "GTC",
-            }
-        )
-
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
 
+        # 시장가 매수 주문 생성
         buy_order = self.exchange.create_order(
             symbol=order.symbol,
-            type="limit",
+            type="market",
             side="buy",
             amount=order.quantity,
-            price=order.price,
         )
 
-        tp_order = self.exchange.create_order(
-            symbol=order.symbol,
-            type="TAKE_PROFIT_MARKET",  # type: ignore
-            side="sell",
-            amount=order.quantity,
-            price=None,
-            params={"stopPrice": order.tp_price, "reduceOnly": True},
-        )
+        # OCO 주문으로 TP와 SL 동시 설정
+        oco_params = {
+            "symbol": self.exchange.market(order.symbol)["id"],
+            "side": "SELL",
+            "quantity": self.exchange.amount_to_precision(order.symbol, order.quantity),
+            "price": self.exchange.price_to_precision(order.symbol, order.tp_price),
+            "stopPrice": self.exchange.price_to_precision(order.symbol, order.sl_price),
+            "stopLimitPrice": self.exchange.price_to_precision(
+                order.symbol, order.sl_price * 0.99
+            ),  # 약간 여유를 두어 실행 보장
+            "stopLimitTimeInForce": "GTC",
+            "reduceOnly": True,
+        }
 
-        sl_order = self.exchange.create_order(
-            symbol=order.symbol,
-            type="STOP_MARKET",  # type: ignore
-            side="sell",
-            amount=order.quantity,
-            price=None,
-            params={"stopPrice": order.sl_price, "reduceOnly": True},
-        )
+        oco_orders = self.exchange.private_post_order_oco(oco_params)
+
+        # OCO 주문에서 TP와 SL 주문 정보 추출
+        tp_order_info = oco_orders["orderReports"][0]  # TP 주문 정보
+        sl_order_info = oco_orders["orderReports"][1]  # SL 주문 정보
 
         return PlaceFuturesOrderResponse(
             sell_order=None,
@@ -754,28 +731,28 @@ class FuturesService:
                 stopPrice=None,
             ),
             tp_order=PlaceFuturesOrder(
-                id=tp_order["id"] if tp_order["id"] else "",
-                order_id=tp_order["info"]["orderId"],
-                symbol=tp_order["info"]["symbol"],
-                origQty=tp_order["info"]["origQty"],
-                avgPrice=tp_order["info"]["avgPrice"],
-                cumQuote=tp_order["info"]["cumQuote"],
-                clientOrderId=tp_order["info"]["clientOrderId"],
-                side=tp_order["info"]["side"],
-                triggerPrice=tp_order["info"]["stopPrice"],
-                stopPrice=tp_order["info"]["stopPrice"],
+                id=tp_order_info["orderId"],
+                order_id=tp_order_info["orderId"],
+                symbol=tp_order_info["symbol"],
+                origQty=tp_order_info["origQty"],
+                avgPrice=0,
+                cumQuote=0,
+                clientOrderId=tp_order_info["clientOrderId"],
+                side=tp_order_info["side"],
+                triggerPrice=order.tp_price,
+                stopPrice=None,
             ),
             sl_order=PlaceFuturesOrder(
-                id=sl_order["id"] if sl_order["id"] else "",
-                order_id=sl_order["info"]["orderId"],
-                symbol=sl_order["info"]["symbol"],
-                origQty=sl_order["info"]["origQty"],
-                avgPrice=sl_order["info"]["avgPrice"],
-                cumQuote=sl_order["info"]["cumQuote"],
-                clientOrderId=sl_order["info"]["clientOrderId"],
-                side=sl_order["info"]["side"],
-                triggerPrice=sl_order["info"]["stopPrice"],
-                stopPrice=sl_order["info"]["stopPrice"],
+                id=sl_order_info["orderId"],
+                order_id=sl_order_info["orderId"],
+                symbol=sl_order_info["symbol"],
+                origQty=sl_order_info["origQty"],
+                avgPrice=0,
+                cumQuote=0,
+                clientOrderId=sl_order_info["clientOrderId"],
+                side=sl_order_info["side"],
+                triggerPrice=None,
+                stopPrice=order.sl_price,
             ),
         )
 
@@ -791,31 +768,33 @@ class FuturesService:
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
 
+        # 시장가 매도 주문 생성
         sell_order = self.exchange.create_order(
             symbol=order.symbol,
-            type="limit",
+            type="market",
             side="sell",
             amount=order.quantity,
-            price=order.price,
         )
 
-        tp_order = self.exchange.create_order(
-            symbol=order.symbol,
-            type="TAKE_PROFIT_MARKET",  # type: ignore
-            side="buy",
-            amount=order.quantity,
-            price=None,
-            params={"stopPrice": order.tp_price, "reduceOnly": True},
-        )
+        # OCO 주문으로 TP와 SL 동시 설정
+        oco_params = {
+            "symbol": self.exchange.market(order.symbol)["id"],
+            "side": "BUY",
+            "quantity": self.exchange.amount_to_precision(order.symbol, order.quantity),
+            "price": self.exchange.price_to_precision(order.symbol, order.tp_price),
+            "stopPrice": self.exchange.price_to_precision(order.symbol, order.sl_price),
+            "stopLimitPrice": self.exchange.price_to_precision(
+                order.symbol, order.sl_price * 1.01
+            ),  # 약간 여유를 두어 실행 보장
+            "stopLimitTimeInForce": "GTC",
+            "reduceOnly": True,
+        }
 
-        sl_order = self.exchange.create_order(
-            symbol=order.symbol,
-            type="STOP_MARKET",  # type: ignore
-            side="buy",
-            amount=order.quantity,
-            price=None,
-            params={"stopPrice": order.sl_price, "reduceOnly": True},
-        )
+        oco_orders = self.exchange.private_post_order_oco(oco_params)
+
+        # OCO 주문에서 TP와 SL 주문 정보 추출
+        tp_order_info = oco_orders["orderReports"][0]  # TP 주문 정보
+        sl_order_info = oco_orders["orderReports"][1]  # SL 주문 정보
 
         return PlaceFuturesOrderResponse(
             buy_order=None,
@@ -832,28 +811,28 @@ class FuturesService:
                 stopPrice=None,
             ),
             tp_order=PlaceFuturesOrder(
-                id=tp_order["id"] if tp_order["id"] else "",
-                order_id=tp_order["info"]["orderId"],
-                symbol=tp_order["info"]["symbol"],
-                origQty=tp_order["info"]["origQty"],
-                avgPrice=tp_order["info"]["avgPrice"],
-                cumQuote=tp_order["info"]["cumQuote"],
-                clientOrderId=tp_order["info"]["clientOrderId"],
-                side=tp_order["info"]["side"],
-                triggerPrice=tp_order["info"]["stopPrice"],
-                stopPrice=tp_order["info"]["stopPrice"],
+                id=tp_order_info["orderId"],
+                order_id=tp_order_info["orderId"],
+                symbol=tp_order_info["symbol"],
+                origQty=tp_order_info["origQty"],
+                avgPrice=0,
+                cumQuote=0,
+                clientOrderId=tp_order_info["clientOrderId"],
+                side=tp_order_info["side"],
+                triggerPrice=order.tp_price,
+                stopPrice=None,
             ),
             sl_order=PlaceFuturesOrder(
-                id=sl_order["id"] if sl_order["id"] else "",
-                order_id=sl_order["info"]["orderId"],
-                symbol=sl_order["info"]["symbol"],
-                origQty=sl_order["info"]["origQty"],
-                avgPrice=sl_order["info"]["avgPrice"],
-                cumQuote=sl_order["info"]["cumQuote"],
-                clientOrderId=sl_order["info"]["clientOrderId"],
-                side=sl_order["info"]["side"],
-                triggerPrice=sl_order["info"]["stopPrice"],
-                stopPrice=sl_order["info"]["stopPrice"],
+                id=sl_order_info["orderId"],
+                order_id=sl_order_info["orderId"],
+                symbol=sl_order_info["symbol"],
+                origQty=sl_order_info["origQty"],
+                avgPrice=0,
+                cumQuote=0,
+                clientOrderId=sl_order_info["clientOrderId"],
+                side=sl_order_info["side"],
+                triggerPrice=None,
+                stopPrice=order.sl_price,
             ),
         )
 
