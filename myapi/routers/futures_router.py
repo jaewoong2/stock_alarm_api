@@ -98,7 +98,20 @@ async def execute_futures_with_ai(
     ),
 ):
     try:
-        # return futures_service.get_positions(data.symbol)
+        # AI 분석 요청
+
+        # 분석 결과 Logging / Discode 전송
+
+        # AI 분석 결과를 바탕으로 선물 거래 실행
+        # - 기존 거래
+        #   - 같은 포지션 일 경우, (TP/SL) 수정
+        #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
+        #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
+
+        # 선물 거래 결과 Logging / Discode 전송
+
+        # 전체 결과 DB 저장
+
         return futures_service.execute_futures_with_suggestion(
             data.symbol, data.target_currency, data.limit, data.timeframe
         )

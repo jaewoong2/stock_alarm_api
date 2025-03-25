@@ -1,12 +1,16 @@
+import base64
 from os import system
 import time
+from urllib.parse import quote, urlencode
 from venv import logger
 import ccxt
 import pandas as pd
 import numpy as np
 from datetime import datetime
 
+from pydantic_core import Url
 from regex import D
+import requests
 from myapi.domain.ai.const import generate_futures_prompt
 from myapi.domain.futures.futures_schema import (
     FuturesBalance,
@@ -32,10 +36,16 @@ import logging
 from openai import OpenAI
 
 from myapi.repositories.futures_repository import FuturesRepository
+from myapi.services.backdata_service import BackDataService
 from myapi.utils.config import Settings
 from myapi.utils.indicators import get_technical_indicators
 
 logger = logging.getLogger(__name__)
+
+
+# Function to encode the image url From web
+def encode_image(image_url: str):
+    return base64.b64encode(requests.get(image_url).content).decode("utf-8")
 
 
 def calculate_pivot_points(df: pd.DataFrame) -> PivotPoints:
@@ -176,7 +186,12 @@ def create_analysis_prompt(
 
 
 class FuturesService:
-    def __init__(self, settings: Settings, futures_repository: FuturesRepository):
+    def __init__(
+        self,
+        settings: Settings,
+        futures_repository: FuturesRepository,
+        backdata_service: BackDataService,
+    ):
         self.exchange = ccxt.binance(
             config={
                 "apiKey": settings.BINANCE_FUTURES_API_KEY,
@@ -187,6 +202,7 @@ class FuturesService:
         )
         self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.futures_repository = futures_repository
+        self.backdata_service = backdata_service
 
     def get_position(self, symbol: str):
         _symbol = symbol
@@ -360,14 +376,22 @@ class FuturesService:
         technical_indicators, _ = get_technical_indicators(
             df=candles_info, length=limit, reverse=False
         )
+        current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
+        plot_image_path = self.backdata_service.upload_plot_image(
+            df=candles_info, length=500, path=f"{symbol}_{current_time}.png"
+        )
+        encoded_image_url = encode_image(quote(plot_image_path, safe=":/"))
+
         currnt_price = self.fetch_ticker(symbol)
         balances = self.fetch_balnce(is_future=True, symbols=[target_currency, "USDT"])
-        if isinstance(balances, FuturesBalances):
-            balance = [
-                balance
-                for balance in balances.balances
-                if balance.symbol == target_currency
-            ][0]
+        target_balance = [
+            balance
+            for balance in balances.balances
+            if balance.symbol == target_currency
+        ]
+
+        balance = target_balance[0] if len(target_balance) > 0 else None
 
         min_notional, min_amount = self.get_market(symbol=target_currency)
 
@@ -383,7 +407,7 @@ class FuturesService:
             technical_indicators=technical_indicators.model_dump(),
             additional_context=f"",
             target_currency=target_currency,
-            position=balance.model_dump_json(),
+            position=balance.model_dump_json() if balance else "None",
             leverage=current_leverage or 0,
             quote_currency="USDT",
             minimum_usdt=min_notional,
@@ -394,10 +418,21 @@ class FuturesService:
 
         try:
             response = self.openai_client.beta.chat.completions.parse(
-                model="o3-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{encoded_image_url}",
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    },
                 ],
                 frequency_penalty=0.0,  # 반복 억제 정도
                 presence_penalty=0.0,  # 새로운 주제 도입 억제
@@ -449,18 +484,21 @@ class FuturesService:
         current_price = ticker.last
 
         balances = self.fetch_balnce(is_future=True, symbols=[target_currency, "USDT"])
-        target_balance = [
+        target_balance_ = [
             balance
             for balance in balances.balances
             if balance.symbol == target_currency
-        ][0]
+        ]
+
+        target_balance = target_balance_[0] if len(target_balance_) > 0 else None
 
         if decision == "CANCLE":
             return self.cancel_all_orders(symbol)
 
         if decision == "BUY":
             if (
-                target_balance.positions
+                target_balance
+                and target_balance.positions
                 and target_balance.positions.position == "SHORT"
             ):
                 self.exchange.create_limit_buy_order(
@@ -509,7 +547,11 @@ class FuturesService:
             return orders
 
         if decision == "SELL":
-            if target_balance.positions and target_balance.positions.position == "LONG":
+            if (
+                target_balance
+                and target_balance.positions
+                and target_balance.positions.position == "LONG"
+            ):
                 # 기존 long 포지션 청산
                 self.exchange.create_limit_buy_order(
                     symbol,

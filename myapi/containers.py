@@ -66,6 +66,7 @@ class ServiceModule(containers.DeclarativeContainer):
         futures_service.FuturesService,
         settings=config.config,
         futures_repository=repositories.futures_repository,
+        backdata_service=backdata_service,
     )
 
 
