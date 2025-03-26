@@ -483,14 +483,14 @@ class FuturesService:
                 if position and position.position.upper() == "SHORT":
                     self.exchange.create_market_buy_order(
                         symbol=symbol,
-                        amount=float(target_balance.used) or 0.0,
+                        amount=float(suggestion.order.quantity) or 0.0,
                         params={"reduceOnly": True},
                     )
 
                 if position and position.position.upper() == "LONG":
                     self.exchange.create_market_sell_order(
                         symbol=symbol,
-                        amount=float(target_balance.used) or 0.0,
+                        amount=float(suggestion.order.quantity) or 0.0,
                         params={"reduceOnly": True},
                     )
 
