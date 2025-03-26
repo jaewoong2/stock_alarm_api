@@ -13,6 +13,7 @@ from regex import D
 import requests
 from myapi.domain.ai.const import generate_futures_prompt
 from myapi.domain.futures.futures_schema import (
+    FuturesActionType,
     FuturesBalance,
     FuturesBalancePositionInfo,
     FuturesBalances,
@@ -289,8 +290,8 @@ class FuturesService:
 
         result["positions"] = {
             symbol: self.get_positions(symbol + "USDT")
-            for symbol in balances
-            if (symbol in symbols) and (symbol != "USDT")
+            for symbol in symbols
+            if symbol != "USDT"
         }
 
         return FuturesBalances(
@@ -367,7 +368,13 @@ class FuturesService:
         return min_notional, lot_size
 
     def analyze_with_openai(
-        self, symbol: str, timeframe="1h", limit=500, target_currency="BTC"
+        self,
+        symbol: str,
+        balances: Optional[FuturesBalances],
+        target_position: Optional[FuturesBalancePositionInfo],
+        timeframe="1h",
+        limit=500,
+        target_currency="BTC",
     ) -> FutureOpenAISuggestion:
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
@@ -384,14 +391,6 @@ class FuturesService:
         encoded_image_url = encode_image(quote(plot_image_path, safe=":/"))
 
         currnt_price = self.fetch_ticker(symbol)
-        balances = self.fetch_balnce(is_future=True, symbols=[target_currency, "USDT"])
-        target_balance = [
-            balance
-            for balance in balances.balances
-            if balance.symbol == target_currency
-        ]
-
-        balance = target_balance[0] if len(target_balance) > 0 else None
 
         min_notional, min_amount = self.get_market(symbol=target_currency)
 
@@ -407,7 +406,7 @@ class FuturesService:
             technical_indicators=technical_indicators.model_dump(),
             additional_context=f"",
             target_currency=target_currency,
-            position=balance.model_dump_json() if balance else "None",
+            position=target_position.model_dump_json() if target_position else "None",
             leverage=current_leverage or 0,
             quote_currency="USDT",
             minimum_usdt=min_notional,
@@ -453,7 +452,9 @@ class FuturesService:
         return self.exchange.fetch_open_orders(symbol)
 
     def cancel_all_orders(self, symbol: str = "BTCUSDT"):
+        # API 를 통해 현재 열려있는 Order 를 찾습니다.
         active_orders_api = self.fetch_active_orders(symbol)
+        # DB 를 통해 Order를 모두 찾습니다
         active_orders_db = self.futures_repository.get_all_futures(symbol=symbol)
 
         order_ids = [order.order_id for order in active_orders_db]
@@ -463,39 +464,39 @@ class FuturesService:
                 self.futures_repository.update_futures_status(
                     order_id=order["id"], status="canceled"
                 )
-                self.exchange.cancel_order(order["id"].upper(), symbol)
+                self.exchange.cancel_order(order["id"], symbol)
 
     def execute_futures_with_suggestion(
-        self, symbol: str, target_currency="BTC", limit=500, timeframe="1h"
+        self,
+        symbol: str,
+        suggestion: FutureOpenAISuggestion,
+        target_balance: Optional[FuturesBalance],
     ):
-
-        suggestion = self.analyze_with_openai(
-            symbol=symbol,
-            timeframe=timeframe,
-            limit=limit,
-            target_currency=target_currency,
-        )
-
         logger.info(f"Received suggestion: {suggestion.model_dump_json()}")
 
-        decision = suggestion.action.upper()
-        tp, sl = suggestion.order.tp_price, suggestion.order.sl_price
         ticker = self.fetch_ticker(symbol)
         current_price = ticker.last
 
-        balances = self.fetch_balnce(is_future=True, symbols=[target_currency, "USDT"])
-        target_balance_ = [
-            balance
-            for balance in balances.balances
-            if balance.symbol == target_currency
-        ]
+        if suggestion.action == FuturesActionType.CLOSE_ORDER:
+            if target_balance:
+                position = target_balance.positions
+                if position and position.position.upper() == "SHORT":
+                    self.exchange.create_market_buy_order(
+                        symbol=symbol,
+                        amount=float(target_balance.used) or 0.0,
+                        params={"reduceOnly": True},
+                    )
 
-        target_balance = target_balance_[0] if len(target_balance_) > 0 else None
+                if position and position.position.upper() == "LONG":
+                    self.exchange.create_market_sell_order(
+                        symbol=symbol,
+                        amount=float(target_balance.used) or 0.0,
+                        params={"reduceOnly": True},
+                    )
 
-        if decision == "CANCLE":
-            return self.cancel_all_orders(symbol)
+            self.cancel_all_orders(symbol)
 
-        if decision == "BUY":
+        if suggestion.action == FuturesActionType.LONG:
             if (
                 target_balance
                 and target_balance.positions
@@ -512,8 +513,12 @@ class FuturesService:
                 )
 
             # 신규 long 포지션 생성
-            logging.info(f"Set TP {tp} and SL {sl} for long position on {symbol}")
+            logging.info(
+                f"Set TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for long position on {symbol}"
+            )
+
             orders = self.place_long_order(suggestion.order)
+
             if orders.buy_order:
                 future = self.order_to_futures(
                     order=orders.buy_order, parent_order_id=""
@@ -524,12 +529,13 @@ class FuturesService:
 
             if orders.tp_order and orders.buy_order:
                 future = self.order_to_futures(
-                    order=orders.tp_order, parent_order_id=orders.buy_order.order_id
+                    order=orders.tp_order,
+                    parent_order_id=orders.buy_order.clientOrderId,
                 )
                 self.futures_repository.create_futures(
                     futures=future,
                     position_type="TAKE_PROFIT",
-                    take_profit=tp,
+                    take_profit=suggestion.order.tp_price,
                     stop_loss=None,
                 )
 
@@ -541,12 +547,12 @@ class FuturesService:
                     futures=future,
                     position_type="STOP_LOSS",
                     take_profit=None,
-                    stop_loss=sl,
+                    stop_loss=suggestion.order.sl_price,
                 )
 
             return orders
 
-        if decision == "SELL":
+        if suggestion.action == FuturesActionType.SHORT:
             if (
                 target_balance
                 and target_balance.positions
@@ -564,7 +570,9 @@ class FuturesService:
                 )
 
             # 신규 short 포지션 생성
-            logging.info(f"Set TP {tp} and SL {sl} for short position on {symbol}")
+            logging.info(
+                f"Set TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for short position on {symbol}"
+            )
             orders = self.place_short_order(suggestion.order)
 
             if orders.sell_order:
@@ -582,7 +590,7 @@ class FuturesService:
                 self.futures_repository.create_futures(
                     futures=future,
                     position_type="TAKE_PROFIT",
-                    take_profit=tp,
+                    take_profit=suggestion.order.tp_price,
                     stop_loss=None,
                 )
 
@@ -594,7 +602,7 @@ class FuturesService:
                     futures=future,
                     position_type="STOP_LOSS",
                     take_profit=None,
-                    stop_loss=sl,
+                    stop_loss=suggestion.order.sl_price,
                 )
 
             return orders
@@ -639,13 +647,6 @@ class FuturesService:
         )
 
     def place_long_order(self, order: FuturesOrderRequest):
-        # self.set_position(
-        #     FuturesConfigRequest(
-        #         symbol=order.symbol,
-        #         leverage=order.leverage,
-        #         margin_type="ISOLATED",
-        #     )
-        # )
 
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
@@ -717,14 +718,6 @@ class FuturesService:
         )
 
     def place_short_order(self, order: FuturesOrderRequest):
-        # self.set_position(
-        #     FuturesConfigRequest(
-        #         symbol=order.symbol,
-        #         leverage=order.leverage,
-        #         margin_type="ISOLATED",
-        #     )
-        # )
-
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
 

@@ -1,22 +1,24 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from typing import List
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.database import get_db
 from myapi.domain.futures.futures_schema import (
     ExecuteFuturesRequest,
     FuturesConfigRequest,
-    FuturesCreate,
     FuturesResponse,
     TechnicalAnalysis,
     TechnicalAnalysisRequest,
 )
 from myapi.repositories.futures_repository import FuturesRepository
+from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService
 
 router = APIRouter(prefix="/futures", tags=["futures"])
+
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/balance", tags=["futures"])
@@ -82,8 +84,19 @@ async def get_openai_analysis(
     ),
 ):
     try:
+        balance_position = futures_service.fetch_balnce()
+        target_currency = data.symbol.split("USDT")[0]
         return futures_service.analyze_with_openai(
-            data.symbol, timeframe=data.interval, limit=data.size
+            symbol=data.symbol,
+            timeframe=data.interval,
+            limit=data.size,
+            target_currency=target_currency,
+            balances=balance_position,
+            target_position=(
+                balance_position.balances[0].positions
+                if balance_position.balances and len(balance_position.balances) > 0
+                else None
+            ),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI analysis failed: {str(e)}")
@@ -96,25 +109,58 @@ async def execute_futures_with_ai(
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
+    discord_Service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
 ):
     try:
+        # 선물 거래 대상 통화
+        target_currency = data.symbol.split("USDT")[0]
+        # 현재 선물 계좌 정보
+        balance_position = futures_service.fetch_balnce(
+            is_future=True, symbols=[target_currency, "USDT"]
+        )
+        target_balance = (
+            balance_position.balances[0] if len(balance_position.balances) > 0 else None
+        )
+
+        logger.info(f"balance_position: {balance_position.model_dump_json()}")
+        logger.info(
+            f"target_balance: {target_balance.model_dump_json() if target_balance else None}"
+        )
+
         # AI 분석 요청
+        suggestion = futures_service.analyze_with_openai(
+            symbol=data.symbol,
+            timeframe=data.timeframe,
+            limit=data.limit,
+            target_currency=target_currency,
+            balances=balance_position,
+            target_position=(target_balance.positions if target_balance else None),
+        )
 
         # 분석 결과 Logging / Discode 전송
+        discord_Service.send_message(suggestion.model_dump_json())
 
         # AI 분석 결과를 바탕으로 선물 거래 실행
         # - 기존 거래
         #   - 같은 포지션 일 경우, (TP/SL) 수정
         #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
         #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
+        result = futures_service.execute_futures_with_suggestion(
+            symbol=data.symbol,
+            suggestion=suggestion,
+            target_balance=target_balance,
+        )
 
         # 선물 거래 결과 Logging / Discode 전송
+        if result:
+            discord_Service.send_message(result.model_dump_json())
 
         # 전체 결과 DB 저장
 
-        return futures_service.execute_futures_with_suggestion(
-            data.symbol, data.target_currency, data.limit, data.timeframe
-        )
+        return result
+
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"

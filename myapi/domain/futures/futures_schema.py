@@ -1,4 +1,5 @@
 from decimal import Decimal
+from enum import Enum
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, Dict, Union
@@ -113,8 +114,15 @@ class FuturesOrderRequest(BaseModel):
     leverage: int
 
 
+class FuturesActionType(str, Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+    HOLD = "HOLD"
+    CLOSE_ORDER = "CLOSE_ORDER"
+
+
 class FutureOpenAISuggestion(BaseModel):
-    action: ActionType
+    action: FuturesActionType
     reasoning: str
     order: FuturesOrderRequest
 
@@ -168,8 +176,7 @@ class FuturesBalances(BaseModel):
 
 
 class ExecuteFuturesRequest(BaseModel):
-    symbol: str
-    target_currency: str = "BTC"
+    symbol: str = "BTCUSDT"
     limit: int = 500
     timeframe: str = "1h"
 

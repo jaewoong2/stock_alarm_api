@@ -18,6 +18,14 @@ class FuturesRepository:
     ):
         self.db_session = db_session
 
+    def get_children_orders(self, parent_order_id: str) -> List[FuturesResponse]:
+        futures = (
+            self.db_session.query(Futures)
+            .filter(Futures.parent_order_id == parent_order_id)
+            .all()
+        )
+        return [FuturesResponse.model_validate(f) for f in futures]
+
     def get_all_futures(self, symbol: str = "BTCUSDT"):
         futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
         return [FuturesVO.model_validate(f) for f in futures]
