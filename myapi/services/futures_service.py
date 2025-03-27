@@ -367,15 +367,16 @@ class FuturesService:
 
         return min_notional, lot_size
 
-    def analyze_with_openai(
+    def generate_technical_prompts(
         self,
         symbol: str,
         balances: Optional[FuturesBalances],
         target_position: Optional[FuturesBalancePositionInfo],
+        addtion_context: str = "",
         timeframe="1h",
         limit=500,
         target_currency="BTC",
-    ) -> FutureOpenAISuggestion:
+    ):
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
         analysis = self.perform_technical_analysis(df=candles_info)
@@ -404,7 +405,7 @@ class FuturesService:
             interval=timeframe,
             market_data=currnt_price.model_dump(),
             technical_indicators=technical_indicators.model_dump(),
-            additional_context=f"",
+            additional_context=addtion_context,
             target_currency=target_currency,
             position=target_position.model_dump_json() if target_position else "None",
             leverage=current_leverage or 0,
@@ -415,38 +416,7 @@ class FuturesService:
 
         logger.info(f"Prompt: {prompt}")
 
-        try:
-            response = self.openai_client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded_image_url}",
-                                },
-                            },
-                            {"type": "text", "text": prompt},
-                        ],
-                    },
-                ],
-                frequency_penalty=0.0,  # 반복 억제 정도
-                presence_penalty=0.0,  # 새로운 주제 도입 억제
-                response_format=FutureOpenAISuggestion,
-            )
-
-            content = response.choices[0].message.parsed
-
-            if content is None:
-                raise ValueError("OpenAI response content is None")
-
-            return content
-        except Exception as e:
-            logging.error(f"OpenAI API call failed: {e}")
-            raise ValueError("Invalid OpenAI response") from e
+        return prompt, system_prompt, encoded_image_url
 
     def fetch_active_orders(self, symbol: str):
         return self.exchange.fetch_open_orders(symbol)
