@@ -1,12 +1,13 @@
 # services/ai_service.py
-from typing import Dict, List, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar
+from click import Option
 from fastapi import HTTPException
 import openai
 import json
 
 from pydantic import BaseModel
 
-from myapi.domain.ai.ai_schema import TradingResponse
+from myapi.domain.ai.ai_schema import ChatModel, MessageContent, TradingResponse
 from myapi.domain.ai.const import generate_prompt
 from myapi.domain.trading.coinone_schema import ActiveOrder
 from myapi.utils.config import Settings
@@ -262,6 +263,67 @@ class AIService:
         )
 
         result_str = response.choices[0].message.content
+
+        if not result_str:
+            raise ValueError("The response is empty. Please provide a valid response.")
+
+        try:
+            return result_str
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e
+
+    def completions_parse(
+        self,
+        system_prompt: str,
+        prompt: str,
+        image_url: Optional[str],
+        schema: Type[T],
+        chat_model: ChatModel = ChatModel.O3_MINI,
+        temperature: float = 0.2,
+        top_p: float = 1.0,
+    ) -> T:
+        """
+        Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.
+        """
+
+        client = openai.OpenAI(
+            api_key=self.open_api_key,
+        )
+
+        user_content: Any = [
+            {
+                "type": "text",
+                "text": prompt,
+            }
+        ]
+
+        if image_url:
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url,
+                    },
+                },
+            )
+
+        response = client.beta.chat.completions.parse(
+            model=chat_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": user_content,
+                },
+            ],
+            response_format=schema,
+            frequency_penalty=0.0,  # 반복 억제 정도
+            presence_penalty=0.0,  # 새로운 주제 도입 억제
+        )
+
+        result_str = response.choices[0].message.parsed
 
         if not result_str:
             raise ValueError("The response is empty. Please provide a valid response.")

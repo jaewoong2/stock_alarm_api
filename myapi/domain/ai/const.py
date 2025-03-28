@@ -173,8 +173,8 @@ def generate_futures_prompt(
     - TP: Minimum risk/reward ratio of 1:2 (e.g., if SL is 1%, TP is 2%).
     - SL: Max loss 1%~1.5% of entry price, adjusted using 1.5x ATR for high volatility (> 300) or 1x ATR for low volatility (< 200).
     - Adjust TP/SL dynamically if ATR changes by >20% post-entry.
-    - Minimum Order: {min(minimum_usdt, 25) + 1} USDT.
-    - Minimum Quantity: {minimum_amount * 1.2} {target_currency}.
+    - ** Minimum Order: {max(minimum_usdt * leverage, 25) + 1} USDT **
+    - Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.2} {target_currency}.
     - Default order type: LIMIT.
     - Do not exceed available balance.
     - Prioritize capital preservation.

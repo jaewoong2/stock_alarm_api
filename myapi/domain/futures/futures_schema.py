@@ -114,15 +114,15 @@ class FuturesOrderRequest(BaseModel):
     leverage: int
 
 
-class FutureActionType(str, Enum):
+class FuturesActionType(str, Enum):
     LONG = "LONG"
     SHORT = "SHORT"
     HOLD = "HOLD"
-    CANCLE = "CANCLE"
+    CLOSE_ORDER = "CLOSE_ORDER"
 
 
 class FutureOpenAISuggestion(BaseModel):
-    action: FutureActionType
+    action: FuturesActionType
     reasoning: str
     order: FuturesOrderRequest
 
@@ -176,8 +176,7 @@ class FuturesBalances(BaseModel):
 
 
 class ExecuteFuturesRequest(BaseModel):
-    symbol: str
-    target_currency: str = "BTC"
+    symbol: str = "BTCUSDT"
     limit: int = 500
     timeframe: str = "1h"
 
