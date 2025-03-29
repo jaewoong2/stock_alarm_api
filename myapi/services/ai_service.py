@@ -1,13 +1,12 @@
 # services/ai_service.py
 from typing import Any, Dict, List, Optional, Type, TypeVar
-from click import Option
 from fastapi import HTTPException
 import openai
 import json
 
 from pydantic import BaseModel
 
-from myapi.domain.ai.ai_schema import ChatModel, MessageContent, TradingResponse
+from myapi.domain.ai.ai_schema import ChatModel, TradingResponse
 from myapi.domain.ai.const import generate_prompt
 from myapi.domain.trading.coinone_schema import ActiveOrder
 from myapi.utils.config import Settings
@@ -281,8 +280,6 @@ class AIService:
         image_url: Optional[str],
         schema: Type[T],
         chat_model: ChatModel = ChatModel.O3_MINI,
-        temperature: float = 0.2,
-        top_p: float = 1.0,
     ) -> T:
         """
         Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.

@@ -1,3 +1,4 @@
+import dis
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
@@ -8,6 +9,7 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.futures.futures_schema import (
     ExecuteFuturesRequest,
     FutureOpenAISuggestion,
+    FuturesBalance,
     FuturesConfigRequest,
     FuturesResponse,
     TechnicalAnalysis,
@@ -16,7 +18,7 @@ from myapi.domain.futures.futures_schema import (
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.ai_service import AIService
 from myapi.services.discord_service import DiscordService
-from myapi.services.futures_service import FuturesService
+from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 
 router = APIRouter(prefix="/futures", tags=["futures"])
 
@@ -124,35 +126,61 @@ async def execute_futures_with_ai(
         balance_position = futures_service.fetch_balnce(
             is_future=True, symbols=[target_currency, "USDT"]
         )
-        target_balance = (
-            balance_position.balances[0] if len(balance_position.balances) > 0 else None
-        )
+
+        target_balance = None
+
+        target_balances = [
+            balance
+            for balance in balance_position.balances
+            if balance.symbol == target_currency
+        ]
+
+        if len(target_balances) > 0:
+            target_balance = target_balances[0]
+
+        if (
+            target_balance
+            and target_balance.positions
+            and target_balance.positions.position_amt == 0
+        ):
+            futures_service.cancle_order(data.symbol)
+
+        if not target_balance:
+            futures_service.cancle_order(data.symbol)
 
         logger.info(f"balance_position: {balance_position.model_dump_json()}")
         logger.info(
             f"target_balance: {target_balance.model_dump_json() if target_balance else None}"
         )
 
-        # AI 분석 요청을 위한 프롬프트 생성
-        prompt, system_prompt, base64_image_url = (
-            futures_service.generate_technical_prompts(
-                symbol=data.symbol,
-                timeframe=data.timeframe,
-                limit=data.limit,
-                target_currency=target_currency,
-                balances=balance_position,
-                target_position=(target_balance.positions if target_balance else None),
-            )
+        _, _, base64_image_url = futures_service.generate_technical_prompts(
+            symbol=data.symbol,
+            timeframe=data.image_timeframe,
+            limit=data.limit,
+            target_currency=target_currency,
+            balances=balance_position,
+            target_position=(target_balance.positions if target_balance else None),
         )
 
         image_suggestion = ai_service.completions_parse(
-            system_prompt=system_prompt,
-            prompt="Analysis the chart and suggest the best action Think step by step",
+            system_prompt="You are an AI specializing in short-term futures Crypto Trading",
+            prompt=generate_prompt_for_image(
+                interval=data.image_timeframe, symbol=data.symbol, length=data.limit
+            ),
             schema=FutureOpenAISuggestion,
             chat_model=ChatModel.GPT_4O_MINI,
             image_url=f"data:image/jpeg;base64,{base64_image_url}",
-            temperature=0.0,
-            top_p=0.0,
+        )
+
+        # AI 분석 요청을 위한 프롬프트 생성
+        prompt, system_prompt, _ = futures_service.generate_technical_prompts(
+            symbol=data.symbol,
+            timeframe=data.timeframe,
+            limit=data.limit,
+            target_currency=target_currency,
+            balances=balance_position,
+            target_position=(target_balance.positions if target_balance else None),
+            addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
         )
 
         # AI 분석 요청
@@ -162,8 +190,6 @@ async def execute_futures_with_ai(
             schema=FutureOpenAISuggestion,
             chat_model=ChatModel.O3_MINI,
             image_url=None,
-            temperature=0.0,
-            top_p=0.0,
         )
 
         # 분석 결과 Logging / Discode 전송
@@ -181,13 +207,19 @@ async def execute_futures_with_ai(
             target_balance=target_balance,
         )
 
+        if result == None:
+            return {"message": "No action taken."}
+
+        response, error_message = result
+
         # 선물 거래 결과 Logging / Discode 전송
-        if result:
-            discord_service.send_message(result.model_dump_json())
+        if response:
+            discord_service.send_message(response.model_dump_json())
 
-        return results.model_dump()
+        if error_message:
+            discord_service.send_message(error_message)
 
-        return result
+        return response
 
     except Exception as e:
         raise HTTPException(

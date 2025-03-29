@@ -5,6 +5,7 @@ from mangum import Mangum
 from starlette.middleware.cors import CORSMiddleware
 
 from myapi import containers
+from myapi.exceptions.futures_exceptions import register_exception_handlers
 from myapi.exceptions.index import ServiceException
 from myapi.routers import coinone_router, futures_router, kakao_router, trading_router
 from myapi.utils.config import init_logging
@@ -29,6 +30,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+register_exception_handlers(app)
 
 
 # Exception handler for ServiceException

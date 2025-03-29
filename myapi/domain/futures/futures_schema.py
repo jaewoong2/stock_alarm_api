@@ -95,6 +95,7 @@ class TechnicalAnalysis(BaseModel):
     macd_crossunder: Optional[bool]
     rsi_divergence: Optional[bool]
     volume_trend: Optional[str]
+    ha_analysis: Optional[Dict]
 
 
 class FutureInvestMentOrderParams(BaseModel):
@@ -125,6 +126,7 @@ class FutureOpenAISuggestion(BaseModel):
     action: FuturesActionType
     reasoning: str
     order: FuturesOrderRequest
+    detaild_summary: str
 
 
 class FuturesConfigRequest(BaseModel):
@@ -168,7 +170,7 @@ class FuturesBalance(BaseModel):
 
     @property
     def description(self):
-        return f"[{self.symbol}]: {self.available} Available"
+        return f"[{self.symbol}]: {self.available} Available For Trading"
 
 
 class FuturesBalances(BaseModel):
@@ -179,6 +181,7 @@ class ExecuteFuturesRequest(BaseModel):
     symbol: str = "BTCUSDT"
     limit: int = 500
     timeframe: str = "1h"
+    image_timeframe: str = "1h"
 
 
 class PlaceFuturesOrder(BaseModel):
@@ -199,3 +202,15 @@ class PlaceFuturesOrderResponse(BaseModel):
     sell_order: Optional[PlaceFuturesOrder]
     tp_order: PlaceFuturesOrder
     sl_order: PlaceFuturesOrder
+
+
+class HeikinAshiAnalysis(BaseModel):
+    total_candles: int
+    num_bull: int
+    num_bear: int
+    num_doji: int
+    consecutive_bull: int
+    consecutive_bear: int
+    avg_upper_tail: float
+    avg_lower_tail: float
+    interpretation: Optional[str] = None

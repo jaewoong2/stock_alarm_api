@@ -17,3 +17,4 @@ SQLAlchemy==2.0.35
 starlette==0.46.1
 yfinance==0.2.52
 psycopg2-binary==2.9.9
+regex==2024.11.6

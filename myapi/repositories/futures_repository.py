@@ -26,6 +26,23 @@ class FuturesRepository:
         )
         return [FuturesResponse.model_validate(f) for f in futures]
 
+    def get_parents_orders(self, symbol: str) -> List[FuturesResponse]:
+        _symbol = symbol
+
+        if not symbol.endswith("USDT"):
+            _symbol = f"{symbol}USDT"
+
+        futures = (
+            self.db_session.query(Futures)
+            .filter(
+                Futures.parent_order_id == "",
+                Futures.status != "open",
+                Futures.symbol == _symbol,
+            )
+            .all()
+        )
+        return [FuturesResponse.model_validate(f) for f in futures]
+
     def get_all_futures(self, symbol: str = "BTCUSDT"):
         futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
         return [FuturesVO.model_validate(f) for f in futures]

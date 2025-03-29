@@ -1,8 +1,7 @@
 # 수정된 프롬프트
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from pydantic import BaseModel
 
 from myapi.domain.trading.coinone_schema import ActiveOrder
 
@@ -108,10 +107,6 @@ def split_interval(interval: str):
         return 1, "hours"
 
 
-import json
-from typing import Dict
-
-
 def generate_futures_prompt(
     market_data: Dict,
     technical_indicators: Dict,
@@ -129,7 +124,6 @@ def generate_futures_prompt(
     interval_, interval_str = split_interval(interval)
 
     system_prompt = f"""
-    [system]
     You are an AI specializing in short-term futures crypto trading on Binance.
     Your goal is to generate automated trading decisions (LONG, SHORT, HOLD, CANCLE)
     for {target_currency}/{quote_currency} pair based on current market data.
@@ -153,28 +147,13 @@ def generate_futures_prompt(
     6. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
     7. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
 
-    Refined Trading Criteria:
-    - LONG when:
-    - RSI < 30 (oversold) or RSI crosses above 40 with momentum confirmation (MACD line approaching signal line upward or price breaking above MA_short_9).
-    - Price is near BB_Lower or support levels, and ADX < 40 (avoid strong downtrends).
-    - Volume increases on upward candles.
-    - SHORT when:
-    - RSI > 70 (overbought) or RSI crosses below 60 with momentum confirmation (MACD line approaching signal line downward or price breaking below MA_short_9).
-    - Price is near BB_Upper or resistance levels, and ADX < 40 (avoid strong uptrends).
-    - Volume increases on downward candles.
-    - HOLD when:
-    - RSI between 30-70 with no clear momentum (MACD flat or diverging from price).
-    - Price oscillates around MA_short_9 or pivot with low ATR (< 200).
-    - CANCEL immediately if:
-    - Trend reverses sharply (ADX spikes > 40 in opposite direction).
-    - TP/SL is hit, or price breaks key Fibonacci levels unexpectedly.
-
     Risk Management & Capital Allocation:
     - TP: Minimum risk/reward ratio of 1:2 (e.g., if SL is 1%, TP is 2%).
     - SL: Max loss 1%~1.5% of entry price, adjusted using 1.5x ATR for high volatility (> 300) or 1x ATR for low volatility (< 200).
     - Adjust TP/SL dynamically if ATR changes by >20% post-entry.
     - ** Minimum Order: {max(minimum_usdt * leverage, 25) + 1} USDT **
-    - Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.2} {target_currency}.
+    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.2} {target_currency} **.
+    - if you are confidence, you can use more more money. !important
     - Default order type: LIMIT.
     - Do not exceed available balance.
     - Prioritize capital preservation.
@@ -182,7 +161,6 @@ def generate_futures_prompt(
     Additional Rules:
     - Weight oversold/overbought RSI conditions heavily in ranging markets (ADX < 25).
     - Use Fibonacci levels (e.g., 38.2%, 61.8%) as secondary TP/SL targets.
-    - Incorporate volume trends to confirm momentum (e.g., rising volume strengthens signal).
     
     Input Data [{interval} interval]:
     - Current position: {position} with leverage {leverage}x.
@@ -199,6 +177,7 @@ def generate_futures_prompt(
     - Short-term prediction: UP, DOWN, NEUTRAL.
     - Confidence percentage (0-100%).
     - Specific TP and SL targets clearly defined.
+    - Provide the rationale for your autonomous decision.
     """
 
     return prompt, system_prompt

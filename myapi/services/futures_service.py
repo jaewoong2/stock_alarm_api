@@ -1,15 +1,11 @@
 import base64
-from os import system
-import time
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 from venv import logger
 import ccxt
 import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from pydantic_core import Url
-from regex import D, F
 import requests
 from myapi.domain.ai.const import generate_futures_prompt
 from myapi.domain.futures.futures_schema import (
@@ -19,8 +15,8 @@ from myapi.domain.futures.futures_schema import (
     FuturesBalances,
     FuturesConfigRequest,
     FuturesOrderRequest,
-    FuturesResponse,
     FuturesVO,
+    HeikinAshiAnalysis,
     PlaceFuturesOrder,
     PlaceFuturesOrderResponse,
     TechnicalAnalysis,
@@ -36,12 +32,35 @@ from typing import Dict, List, Optional
 import logging
 from openai import OpenAI
 
+from myapi.exceptions.futures_exceptions import (
+    ExchangeConnectionException,
+    InvalidSuggestionException,
+    OrderCancellationException,
+    OrderCreationException,
+    PositionCloseException,
+)
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.backdata_service import BackDataService
 from myapi.utils.config import Settings
 from myapi.utils.indicators import get_technical_indicators
 
 logger = logging.getLogger(__name__)
+
+
+def generate_prompt_for_image(interval: str, symbol: str, length: int) -> str:
+    return f"""
+        The image below is a {interval} candle chart of {symbol} (With {length} length).
+        with MA (3, 21, 50), Bollinger Band (BB_500), RSI, MACD, and ADX shown.
+        
+        I'm looking for opportunities to enter the Long/Short position in the short term.
+        Looking to maintain a risk-reward ratio of 1:2 or higher.
+
+        Question:
+            - Analyze the chart and provide a detailed analysis of the current market situation technically.
+            - Based on current chart indicators, which position entry (long/short) looks favorable, and why?
+            - To what extent is it reasonable to set up a line of hands and blades?
+            - Please let me know what additional factors of market volatility should be noted.
+        """
 
 
 # Function to encode the image url From web
@@ -114,7 +133,7 @@ def calculate_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
         avg_gain[i] = np.mean(gain[i - period : i])
         avg_loss[i] = np.mean(loss[i - period : i])
     rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss != 0)
-    rsi = 100 - (100 / (1 + np.nan_to_num(rs)))
+    rsi = 100 - (100 / (1 + np.nan_to_num(rs, nan=0.0)))
     return pd.Series(rsi, index=df.index)
 
 
@@ -157,6 +176,142 @@ def analyze_volume(df: pd.DataFrame) -> str:
         return "weak"
     else:
         return "neutral"
+
+
+def calculate_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    df에는 최소한 'open', 'high', 'low', 'close' 컬럼이 존재해야 함.
+    하이킨 아시(Heikin Ashi) 캔들 정보를 계산한 뒤,
+    HA_Open, HA_High, HA_Low, HA_Close 컬럼을 추가하여 반환합니다.
+    """
+
+    # 원본 df를 복사해서 사용(기존 df 보호)
+    ha_df = df.copy()
+
+    # 1) HA_Close 공식: (Open + High + Low + Close) / 4
+    ha_df["HA_Close"] = (
+        ha_df["open"] + ha_df["high"] + ha_df["low"] + ha_df["close"]
+    ) / 4.0
+
+    # 우선 모든 HA_Open을 0으로 초기화
+    ha_df["HA_Open"] = 0.0
+
+    # 첫 번째 캔들(0번 인덱스)의 HA_Open 초기값 설정
+    # 일반적으로 (현재봉 open + 현재봉 close)/2 로 많이 사용
+    ha_df["open"] = pd.to_numeric(ha_df["open"], errors="coerce")
+    ha_df["close"] = pd.to_numeric(ha_df["close"], errors="coerce")
+
+    ha_df.loc[ha_df.index[0], "HA_Open"] = (
+        pd.to_numeric(ha_df.loc[ha_df.index[0], "open"], errors="coerce")
+        + pd.to_numeric(ha_df.loc[ha_df.index[0], "close"], errors="coerce")
+    ) / 2.0
+
+    # 2) 이후 캔들부터는 HA_Open = (이전 HA_Open + 이전 HA_Close) / 2
+    for i in range(1, len(ha_df)):
+        ha_df.loc[ha_df.index[i], "HA_Open"] = (
+            pd.to_numeric(ha_df.loc[ha_df.index[i - 1], "HA_Open"], errors="coerce")
+            + pd.to_numeric(ha_df.loc[ha_df.index[i - 1], "HA_Close"], errors="coerce")
+        ) / 2.0
+
+    # 3) HA_High = max(일반봉 High, HA_Open, HA_Close)
+    ha_df["HA_High"] = ha_df[["high", "HA_Open", "HA_Close"]].max(axis=1)
+
+    # 4) HA_Low = min(일반봉 Low, HA_Open, HA_Close)
+    ha_df["HA_Low"] = ha_df[["low", "HA_Open", "HA_Close"]].min(axis=1)
+
+    return ha_df
+
+
+def analyze_heikin_ashi_model(
+    ha_df: pd.DataFrame, lookback: int = 5
+) -> HeikinAshiAnalysis:
+    """
+    Analyze the last `lookback` Heikin Ashi candles and return the result as a Pydantic BaseModel (HeikinAshiAnalysis).
+    Interpretation strings are provided in English.
+    """
+    # 1) Get the subset of recent candles
+    recent_df = ha_df.iloc[-lookback:].copy()
+
+    # 2) Determine bullish/bearish candles
+    recent_df["is_bull"] = recent_df["HA_Close"] > recent_df["HA_Open"]
+    recent_df["is_bear"] = recent_df["HA_Close"] < recent_df["HA_Open"]
+
+    # 3) Identify Doji candles
+    body_size = (recent_df["HA_Close"] - recent_df["HA_Open"]).abs()
+    candle_range = recent_df["HA_High"] - recent_df["HA_Low"]
+    # If the body is less than 10% of the entire candle range, consider it a Doji
+    recent_df["doji"] = (candle_range > 0) & ((body_size / candle_range) < 0.1)
+
+    # 4) Calculate upper/lower tails
+    recent_df["upper_tail"] = recent_df["HA_High"] - recent_df[
+        ["HA_Open", "HA_Close"]
+    ].max(axis=1)
+    recent_df["lower_tail"] = (
+        recent_df[["HA_Open", "HA_Close"]].min(axis=1) - recent_df["HA_Low"]
+    )
+
+    # ===== Basic Statistics =====
+    num_bull = int(recent_df["is_bull"].sum())
+    num_bear = int(recent_df["is_bear"].sum())
+    num_doji = int(recent_df["doji"].sum())
+
+    # (a) Consecutive Bull/Bear
+    consecutive_bull = 0
+    consecutive_bear = 0
+
+    # Count consecutive bullish candles from the most recent
+    for i in reversed(range(len(recent_df))):
+        if recent_df["is_bull"].iloc[i]:
+            consecutive_bull += 1
+            # Stop if we see a bear candle just before
+            if i < len(recent_df) - 1 and recent_df["is_bear"].iloc[i + 1]:
+                break
+        else:
+            break
+
+    # Count consecutive bearish candles
+    for i in reversed(range(len(recent_df))):
+        if recent_df["is_bear"].iloc[i]:
+            consecutive_bear += 1
+            if i < len(recent_df) - 1 and recent_df["is_bull"].iloc[i + 1]:
+                break
+        else:
+            break
+
+    # (b) Average upper/lower tail lengths
+    avg_upper_tail = recent_df["upper_tail"].mean() if len(recent_df) > 0 else 0.0
+    avg_lower_tail = recent_df["lower_tail"].mean() if len(recent_df) > 0 else 0.0
+
+    # (c) Simple interpretation in English
+    interpretation = None
+    if consecutive_bull > 2 and avg_lower_tail < avg_upper_tail:
+        interpretation = (
+            "A strong bullish trend may be in place: multiple consecutive bullish HA candles "
+            "with relatively small lower tails."
+        )
+    elif consecutive_bear > 2 and avg_upper_tail < avg_lower_tail:
+        interpretation = (
+            "A strong bearish trend may be in place: multiple consecutive bearish HA candles "
+            "with relatively small upper tails."
+        )
+    elif num_doji > 0:
+        interpretation = f"{num_doji} Doji candle(s) detected, indicating uncertainty or a potential trend reversal."
+    else:
+        interpretation = "No distinct pattern of consecutive candles found. Trend signals are not strongly indicated."
+
+    # (d) Build the Pydantic model
+    result = HeikinAshiAnalysis(
+        total_candles=lookback,
+        num_bull=num_bull,
+        num_bear=num_bear,
+        num_doji=num_doji,
+        consecutive_bull=consecutive_bull,
+        consecutive_bear=consecutive_bear,
+        avg_upper_tail=avg_upper_tail,
+        avg_lower_tail=avg_lower_tail,
+        interpretation=interpretation,
+    )
+    return result
 
 
 def create_analysis_prompt(
@@ -274,19 +429,15 @@ class FuturesService:
             "balances": None,
         }
 
+        # params.symbols
+        params["symbols"] = symbols
+
         if is_future:
             params["type"] = "future"
 
         balances = self.exchange.fetch_balance(params)
 
-        # for position in balances["info"].get("positions", []):
-        #     if position["symbol"] in symbols:
-        #         posi = self.get_positions(position["symbol"])
-        #         result["positions"][position["symbol"]] = posi
-
-        result["balances"] = {
-            symbol: balances[symbol] for symbol in balances if symbol in symbols
-        }
+        result["balances"] = {"USDT": balances["USDT"]}
 
         result["positions"] = {
             symbol: self.get_positions(symbol + "USDT")
@@ -298,16 +449,28 @@ class FuturesService:
             balances=[
                 FuturesBalance(
                     symbol=symbol,
-                    free=float(result["balances"][symbol]["free"] or 0),
-                    used=float(result["balances"][symbol]["used"] or 0),
-                    total=float(result["balances"][symbol]["total"] or 0),
+                    free=(
+                        float(result["balances"][symbol]["free"] or 0)
+                        if symbol in result["balances"]
+                        else 0
+                    ),
+                    used=(
+                        float(result["balances"][symbol]["used"] or 0)
+                        if symbol in result["balances"]
+                        else 0
+                    ),
+                    total=(
+                        float(result["balances"][symbol]["total"] or 0)
+                        if symbol in result["balances"]
+                        else 0
+                    ),
                     positions=(
                         result["positions"][symbol]
                         if symbol in result["positions"]
                         else None
                     ),
                 )
-                for symbol in result["balances"]
+                for symbol in symbols
             ]
         )
 
@@ -421,6 +584,32 @@ class FuturesService:
     def fetch_active_orders(self, symbol: str):
         return self.exchange.fetch_open_orders(symbol)
 
+    def cancle_order(self, symbol: str):
+        """
+        포지션이 없는 경우, 관련 된 모든 주문을 취소합니다.
+        """
+
+        # API 를 통해 현재 열려있는 Order 를 찾습니다.
+        active_orders_api = self.fetch_active_orders(symbol)
+        # DB 에서 Parents Order 를 찾습니다.
+        parents_orders = self.futures_repository.get_parents_orders(symbol)
+        # DB 에서 Parents Order Id와 일치하는 것을 찾습니다.
+        for order in parents_orders:
+            children_orders = self.futures_repository.get_children_orders(
+                parent_order_id=order.order_id
+            )
+            self.futures_repository.update_futures_status(
+                order_id=order.order_id, status="canceled"
+            )
+            for children_order in children_orders:
+                self.futures_repository.update_futures_status(
+                    order_id=children_order.order_id, status="canceled"
+                )
+                if children_order.order_id in [
+                    api_order.get("clientOrderId") for api_order in active_orders_api
+                ]:
+                    self.exchange.cancel_order(children_order.order_id, symbol)
+
     def cancel_all_orders(self, symbol: str = "BTCUSDT"):
         # API 를 통해 현재 열려있는 Order 를 찾습니다.
         active_orders_api = self.fetch_active_orders(symbol)
@@ -442,156 +631,313 @@ class FuturesService:
         suggestion: FutureOpenAISuggestion,
         target_balance: Optional[FuturesBalance],
     ):
+        """
+        주어진 제안에 따라 선물 거래를 실행합니다.
+
+        Returns:
+            Tuple[Any, Optional[str]]: (결과 객체, 오류 메시지(있는 경우))
+        """
         logger.info(f"Received suggestion: {suggestion.model_dump_json()}")
 
-        ticker = self.fetch_ticker(symbol)
-        current_price = ticker.last
+        try:
+            # 입력값 검증
+            if not suggestion or not suggestion.action:
+                raise InvalidSuggestionException("No valid action in suggestion")
 
-        if suggestion.action == FuturesActionType.CLOSE_ORDER:
-            if target_balance:
-                position = target_balance.positions
-                if position and position.position.upper() == "SHORT":
-                    self.exchange.create_market_buy_order(
-                        symbol=symbol,
-                        amount=float(suggestion.order.quantity) or 0.0,
-                        params={"reduceOnly": True},
+            if not symbol:
+                raise InvalidSuggestionException("Symbol is required")
+
+            # 현재 가격 조회
+            try:
+                ticker = self.fetch_ticker(symbol)
+                current_price = ticker.last
+            except Exception as e:
+                logger.error(f"Failed to fetch ticker for {symbol}: {str(e)}")
+                raise ExchangeConnectionException(f"Failed to fetch ticker: {str(e)}")
+
+            # CLOSE_ORDER 액션 처리
+            if suggestion.action == FuturesActionType.CLOSE_ORDER:
+                try:
+                    if target_balance and target_balance.positions:
+                        position = target_balance.positions
+                        quantity = (
+                            float(suggestion.order.quantity)
+                            if suggestion.order and suggestion.order.quantity
+                            else 0.0
+                        )
+
+                        # 포지션 유형에 따라 적절한 청산 로직 실행
+                        if position.position.upper() == "SHORT":
+                            logger.info(
+                                f"Closing SHORT position for {symbol} with amount {quantity}"
+                            )
+                            self.exchange.create_market_buy_order(
+                                symbol=symbol,
+                                amount=quantity,
+                                params={"reduceOnly": True},
+                            )
+                            logger.info(
+                                f"Successfully closed SHORT position for {symbol}"
+                            )
+
+                        elif position.position.upper() == "LONG":
+                            logger.info(
+                                f"Closing LONG position for {symbol} with amount {quantity}"
+                            )
+                            self.exchange.create_market_sell_order(
+                                symbol=symbol,
+                                amount=quantity,
+                                params={"reduceOnly": True},
+                            )
+                            logger.info(
+                                f"Successfully closed LONG position for {symbol}"
+                            )
+                        else:
+                            logger.warning(f"No position to close for {symbol}")
+
+                    # 미체결 주문 취소
+                    try:
+                        self.cancel_all_orders(symbol)
+                        logger.info(
+                            f"Successfully canceled all open orders for {symbol}"
+                        )
+                    except Exception as cancel_err:
+                        logger.error(f"Failed to cancel orders: {str(cancel_err)}")
+                        raise OrderCancellationException(
+                            f"Failed to cancel orders: {str(cancel_err)}"
+                        )
+
+                    return (
+                        FuturesVO(
+                            id=None,
+                            timestamp=datetime.now(),
+                            order_id="",
+                            parent_order_id="",
+                            symbol=symbol,
+                            price=current_price,
+                            quantity=0,
+                            side="close",
+                            position_type="CLOSE",
+                            take_profit=None,
+                            stop_loss=None,
+                            status="closed",
+                        ),
+                        None,
                     )
 
-                if position and position.position.upper() == "LONG":
-                    self.exchange.create_market_sell_order(
-                        symbol=symbol,
-                        amount=float(suggestion.order.quantity) or 0.0,
-                        params={"reduceOnly": True},
+                except ccxt.NetworkError as e:
+                    logger.error(f"Network error while closing position: {str(e)}")
+                    raise ExchangeConnectionException(f"Network error: {str(e)}")
+                except ccxt.ExchangeError as e:
+                    logger.error(f"Exchange error while closing position: {str(e)}")
+                    raise PositionCloseException(f"Exchange error: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Unexpected error while closing position: {str(e)}")
+                    raise PositionCloseException(f"Unexpected error: {str(e)}")
+
+            # LONG 액션 처리
+            elif suggestion.action == FuturesActionType.LONG:
+                # 기존 SHORT 포지션이 있으면 청산
+                if (
+                    target_balance
+                    and target_balance.positions
+                    and target_balance.positions.position == "SHORT"
+                ):
+                    logger.info(
+                        f"Closing existing SHORT position before opening LONG for {symbol}"
+                    )
+                    try:
+                        self.exchange.create_limit_buy_order(
+                            symbol,
+                            (
+                                abs(float(target_balance.positions.position_amt))
+                                if target_balance.positions.position_amt is not None
+                                else 0.0
+                            ),
+                            suggestion.order.price,
+                            params={"reduceOnly": True},
+                        )
+                        logger.info(
+                            f"Successfully created order to close SHORT position"
+                        )
+
+                        # 기존 주문 취소
+                        self.cancel_all_orders(symbol)
+                        logger.info(
+                            f"Successfully canceled existing orders for {symbol}"
+                        )
+                    except Exception as close_err:
+                        logger.error(f"Error closing SHORT position: {str(close_err)}")
+                        # 오류는 기록하지만 계속 진행 - 완전한 실패 대신 부분적 실행 허용
+
+                # 신규 LONG 포지션 생성
+                logger.info(
+                    f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for LONG position on {symbol}"
+                )
+
+                try:
+                    orders = self.place_long_order(suggestion.order)
+                except Exception as order_err:
+                    logger.error(f"Failed to place LONG order: {str(order_err)}")
+                    raise OrderCreationException(
+                        f"Failed to place LONG order: {str(order_err)}"
                     )
 
-            self.cancel_all_orders(symbol)
+                # DB에 주문 정보 저장
+                try:
+                    if orders.buy_order:
+                        future = self.order_to_futures(
+                            order=orders.buy_order, parent_order_id=""
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future, position_type="LONG"
+                        )
+                        logger.info(f"Successfully saved LONG order to database")
 
-        if suggestion.action == FuturesActionType.LONG:
-            if (
-                target_balance
-                and target_balance.positions
-                and target_balance.positions.position == "SHORT"
-            ):
-                self.exchange.create_limit_buy_order(
-                    symbol,
-                    float(target_balance.used) if target_balance is not None else 0.0,
-                    suggestion.order.price,
-                    params={"reduceOnly": True},
+                    if orders.tp_order and orders.buy_order:
+                        future = self.order_to_futures(
+                            order=orders.tp_order,
+                            parent_order_id=orders.buy_order.clientOrderId,
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future,
+                            position_type="TAKE_PROFIT",
+                            take_profit=suggestion.order.tp_price,
+                            stop_loss=None,
+                        )
+                        logger.info(f"Successfully saved TP order to database")
+
+                    if orders.sl_order and orders.buy_order:
+                        future = self.order_to_futures(
+                            order=orders.sl_order,
+                            parent_order_id=orders.buy_order.order_id,
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future,
+                            position_type="STOP_LOSS",
+                            take_profit=None,
+                            stop_loss=suggestion.order.sl_price,
+                        )
+                        logger.info(f"Successfully saved SL order to database")
+                except Exception as db_err:
+                    logger.error(f"Failed to save order to database: {str(db_err)}")
+                    # DB 저장 실패는 기록하지만 주문 자체는 이미 완료되었으므로 계속 진행
+
+                return orders, None
+
+            # SHORT 액션 처리
+            elif suggestion.action == FuturesActionType.SHORT:
+                # 기존 LONG 포지션이 있으면 청산
+                if (
+                    target_balance
+                    and target_balance.positions
+                    and target_balance.positions.position == "LONG"
+                ):
+                    logger.info(
+                        f"Closing existing LONG position before opening SHORT for {symbol}"
+                    )
+                    try:
+                        self.exchange.create_limit_buy_order(
+                            symbol,
+                            (
+                                abs(float(target_balance.positions.position_amt))
+                                if target_balance.positions.position_amt is not None
+                                else 0.0
+                            ),
+                            suggestion.order.price,
+                            params={"reduceOnly": True},
+                        )
+                        logger.info(
+                            f"Successfully created order to close LONG position"
+                        )
+
+                        # 기존 주문 취소
+                        self.cancel_all_orders(symbol)
+                        logger.info(
+                            f"Successfully canceled existing orders for {symbol}"
+                        )
+                    except Exception as close_err:
+                        logger.error(f"Error closing LONG position: {str(close_err)}")
+                        # 오류는 기록하지만 계속 진행 - 완전한 실패 대신 부분적 실행 허용
+
+                # 신규 SHORT 포지션 생성
+                logger.info(
+                    f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for SHORT position on {symbol}"
                 )
-                # 기존 주문들 취소
-                self.cancel_all_orders(symbol)
 
-            # 신규 long 포지션 생성
-            logging.info(
-                f"Set TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for long position on {symbol}"
+                try:
+                    orders = self.place_short_order(suggestion.order)
+                except Exception as order_err:
+                    logger.error(f"Failed to place SHORT order: {str(order_err)}")
+                    raise OrderCreationException(
+                        f"Failed to place SHORT order: {str(order_err)}"
+                    )
+
+                # DB에 주문 정보 저장
+                try:
+                    if orders.sell_order:
+                        future = self.order_to_futures(
+                            order=orders.sell_order, parent_order_id=""
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future, position_type="SHORT"
+                        )
+                        logger.info(f"Successfully saved SHORT order to database")
+
+                    if orders.tp_order and orders.sell_order:
+                        future = self.order_to_futures(
+                            order=orders.tp_order,
+                            parent_order_id=orders.sell_order.clientOrderId,
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future,
+                            position_type="TAKE_PROFIT",
+                            take_profit=suggestion.order.tp_price,
+                            stop_loss=None,
+                        )
+                        logger.info(f"Successfully saved TP order to database")
+
+                    if orders.sl_order and orders.sell_order:
+                        future = self.order_to_futures(
+                            order=orders.sl_order,
+                            parent_order_id=orders.sell_order.clientOrderId,
+                        )
+                        self.futures_repository.create_futures(
+                            futures=future,
+                            position_type="STOP_LOSS",
+                            take_profit=None,
+                            stop_loss=suggestion.order.sl_price,
+                        )
+                        logger.info(f"Successfully saved SL order to database")
+                except Exception as db_err:
+                    logger.error(f"Failed to save order to database: {str(db_err)}")
+                    # DB 저장 실패는 기록하지만 주문 자체는 이미 완료되었으므로 계속 진행
+
+                return orders, None
+
+        except InvalidSuggestionException as e:
+            logger.error(f"Invalid suggestion: {str(e)}")
+            return None, f"Invalid suggestion: {str(e)}"
+        except ExchangeConnectionException as e:
+            logger.error(f"Exchange connection error: {str(e)}")
+            return None, f"Exchange connection error: {str(e)}"
+        except OrderCreationException as e:
+            logger.error(f"Order creation error: {str(e)}")
+            return None, f"Order creation error: {str(e)}"
+        except OrderCancellationException as e:
+            logger.error(f"Order cancellation error: {str(e)}")
+            return None, f"Order cancellation error: {str(e)}"
+        except PositionCloseException as e:
+            logger.error(f"Position close error: {str(e)}")
+            return None, f"Position close error: {str(e)}"
+        except ccxt.BaseError as e:
+            logger.error(f"CCXT error: {str(e)}")
+            return None, f"CCXT error: {str(e)}"
+        except Exception as e:
+            logger.error(
+                f"Unexpected error in execute_futures_with_suggestion: {str(e)}"
             )
-
-            orders = self.place_long_order(suggestion.order)
-
-            if orders.buy_order:
-                future = self.order_to_futures(
-                    order=orders.buy_order, parent_order_id=""
-                )
-                self.futures_repository.create_futures(
-                    futures=future, position_type="LONG"
-                )
-
-            if orders.tp_order and orders.buy_order:
-                future = self.order_to_futures(
-                    order=orders.tp_order,
-                    parent_order_id=orders.buy_order.clientOrderId,
-                )
-                self.futures_repository.create_futures(
-                    futures=future,
-                    position_type="TAKE_PROFIT",
-                    take_profit=suggestion.order.tp_price,
-                    stop_loss=None,
-                )
-
-            if orders.sl_order and orders.buy_order:
-                future = self.order_to_futures(
-                    order=orders.sl_order, parent_order_id=orders.buy_order.order_id
-                )
-                self.futures_repository.create_futures(
-                    futures=future,
-                    position_type="STOP_LOSS",
-                    take_profit=None,
-                    stop_loss=suggestion.order.sl_price,
-                )
-
-            return orders
-
-        if suggestion.action == FuturesActionType.SHORT:
-            if (
-                target_balance
-                and target_balance.positions
-                and target_balance.positions.position == "LONG"
-            ):
-                # 기존 long 포지션 청산
-                self.exchange.create_limit_buy_order(
-                    symbol,
-                    float(target_balance.used) if target_balance is not None else 0.0,
-                    suggestion.order.price,
-                    params={"reduceOnly": True},
-                )
-                # 기존 주문들 취소
-                self.cancel_all_orders(symbol)
-
-            # 신규 short 포지션 생성
-            logging.info(
-                f"Set TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for short position on {symbol}"
-            )
-            orders = self.place_short_order(suggestion.order)
-
-            # 주문 정보 저장
-            if orders.sell_order:
-                future = self.order_to_futures(
-                    order=orders.sell_order, parent_order_id=""
-                )
-                self.futures_repository.create_futures(
-                    futures=future, position_type="SHORT"
-                )
-
-            if orders.tp_order and orders.sell_order:
-                future = self.order_to_futures(
-                    order=orders.tp_order, parent_order_id=orders.sell_order.order_id
-                )
-                self.futures_repository.create_futures(
-                    futures=future,
-                    position_type="TAKE_PROFIT",
-                    take_profit=suggestion.order.tp_price,
-                    stop_loss=None,
-                )
-
-            if orders.sl_order and orders.sell_order:
-                future = self.order_to_futures(
-                    order=orders.sl_order, parent_order_id=orders.sell_order.order_id
-                )
-                self.futures_repository.create_futures(
-                    futures=future,
-                    position_type="STOP_LOSS",
-                    take_profit=None,
-                    stop_loss=suggestion.order.sl_price,
-                )
-
-            return orders
-
-        # HOLD 액션 처리
-        else:  # suggestion.action == FutureActionType.HOLD
-            return FuturesVO(
-                id=None,
-                timestamp=datetime.now(),
-                order_id="",
-                parent_order_id="",
-                symbol=symbol,
-                price=current_price,
-                quantity=0,
-                side="hold",
-                position_type="HOLD",
-                take_profit=None,
-                stop_loss=None,
-                status="closed",
-            )
+            return None, f"Unexpected error: {str(e)}"
 
     def perform_technical_analysis(self, df: pd.DataFrame):
         pivots = calculate_pivot_points(df)
@@ -600,6 +946,8 @@ class FuturesService:
         macd_data = calculate_macd(df)
         macd_series = pd.Series([macd_data.macd] * len(df), index=df.index)
         rsi = calculate_rsi(df)
+        ha_df = calculate_heikin_ashi(df)
+        ha_analysis = analyze_heikin_ashi_model(ha_df)
 
         return TechnicalAnalysis(
             support=pivots.support1,
@@ -614,6 +962,7 @@ class FuturesService:
             macd_crossunder=macd_data.crossunder,
             rsi_divergence=detect_divergence_advanced(df, rsi),
             volume_trend=analyze_volume(df),
+            ha_analysis=ha_analysis.model_dump(),
         )
 
     def place_long_order(self, order: FuturesOrderRequest):
@@ -621,33 +970,31 @@ class FuturesService:
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
 
-        # 시장가 매수 주문 생성
         buy_order = self.exchange.create_order(
             symbol=order.symbol,
-            type="market",
+            type="limit",
             side="buy",
             amount=order.quantity,
+            price=order.price,
         )
 
-        # OCO 주문으로 TP와 SL 동시 설정
-        oco_params = {
-            "symbol": self.exchange.market(order.symbol)["id"],
-            "side": "SELL",
-            "quantity": self.exchange.amount_to_precision(order.symbol, order.quantity),
-            "price": self.exchange.price_to_precision(order.symbol, order.tp_price),
-            "stopPrice": self.exchange.price_to_precision(order.symbol, order.sl_price),
-            "stopLimitPrice": self.exchange.price_to_precision(
-                order.symbol, order.sl_price * 0.99
-            ),  # 약간 여유를 두어 실행 보장
-            "stopLimitTimeInForce": "GTC",
-            "reduceOnly": True,
-        }
+        tp_order = self.exchange.create_order(
+            symbol=order.symbol,
+            type="TAKE_PROFIT_MARKET",  # type: ignore
+            side="sell",
+            amount=order.quantity,
+            price=None,
+            params={"stopPrice": order.tp_price, "reduceOnly": True},
+        )
 
-        oco_orders = self.exchange.private_post_order_oco(oco_params)
-
-        # OCO 주문에서 TP와 SL 주문 정보 추출
-        tp_order_info = oco_orders["orderReports"][0]  # TP 주문 정보
-        sl_order_info = oco_orders["orderReports"][1]  # SL 주문 정보
+        sl_order = self.exchange.create_order(
+            symbol=order.symbol,
+            type="STOP_MARKET",  # type: ignore
+            side="sell",
+            amount=order.quantity,
+            price=None,
+            params={"stopPrice": order.sl_price, "reduceOnly": True},
+        )
 
         return PlaceFuturesOrderResponse(
             sell_order=None,
@@ -664,28 +1011,28 @@ class FuturesService:
                 stopPrice=None,
             ),
             tp_order=PlaceFuturesOrder(
-                id=tp_order_info["orderId"],
-                order_id=tp_order_info["orderId"],
-                symbol=tp_order_info["symbol"],
-                origQty=tp_order_info["origQty"],
-                avgPrice=0,
-                cumQuote=0,
-                clientOrderId=tp_order_info["clientOrderId"],
-                side=tp_order_info["side"],
-                triggerPrice=order.tp_price,
-                stopPrice=None,
+                id=tp_order["id"] if tp_order["id"] else "",
+                order_id=tp_order["info"]["orderId"],
+                symbol=tp_order["info"]["symbol"],
+                origQty=tp_order["info"]["origQty"],
+                avgPrice=tp_order["info"]["avgPrice"],
+                cumQuote=tp_order["info"]["cumQuote"],
+                clientOrderId=tp_order["info"]["clientOrderId"],
+                side=tp_order["info"]["side"],
+                triggerPrice=tp_order["info"]["stopPrice"],
+                stopPrice=tp_order["info"]["stopPrice"],
             ),
             sl_order=PlaceFuturesOrder(
-                id=sl_order_info["orderId"],
-                order_id=sl_order_info["orderId"],
-                symbol=sl_order_info["symbol"],
-                origQty=sl_order_info["origQty"],
-                avgPrice=0,
-                cumQuote=0,
-                clientOrderId=sl_order_info["clientOrderId"],
-                side=sl_order_info["side"],
-                triggerPrice=None,
-                stopPrice=order.sl_price,
+                id=sl_order["id"] if sl_order["id"] else "",
+                order_id=sl_order["info"]["orderId"],
+                symbol=sl_order["info"]["symbol"],
+                origQty=sl_order["info"]["origQty"],
+                avgPrice=sl_order["info"]["avgPrice"],
+                cumQuote=sl_order["info"]["cumQuote"],
+                clientOrderId=sl_order["info"]["clientOrderId"],
+                side=sl_order["info"]["side"],
+                triggerPrice=sl_order["info"]["stopPrice"],
+                stopPrice=sl_order["info"]["stopPrice"],
             ),
         )
 
@@ -693,33 +1040,31 @@ class FuturesService:
         if not order.symbol.endswith("USDT"):
             order.symbol += "USDT"
 
-        # 시장가 매도 주문 생성
         sell_order = self.exchange.create_order(
             symbol=order.symbol,
-            type="market",
+            type="limit",
             side="sell",
             amount=order.quantity,
+            price=order.price,
         )
 
-        # OCO 주문으로 TP와 SL 동시 설정
-        oco_params = {
-            "symbol": self.exchange.market(order.symbol)["id"],
-            "side": "BUY",
-            "quantity": self.exchange.amount_to_precision(order.symbol, order.quantity),
-            "price": self.exchange.price_to_precision(order.symbol, order.tp_price),
-            "stopPrice": self.exchange.price_to_precision(order.symbol, order.sl_price),
-            "stopLimitPrice": self.exchange.price_to_precision(
-                order.symbol, order.sl_price * 1.01
-            ),  # 약간 여유를 두어 실행 보장
-            "stopLimitTimeInForce": "GTC",
-            "reduceOnly": True,
-        }
+        tp_order = self.exchange.create_order(
+            symbol=order.symbol,
+            type="TAKE_PROFIT_MARKET",  # type: ignore
+            side="buy",
+            amount=order.quantity,
+            price=None,
+            params={"stopPrice": order.tp_price, "reduceOnly": True},
+        )
 
-        oco_orders = self.exchange.private_post_order_oco(oco_params)
-
-        # OCO 주문에서 TP와 SL 주문 정보 추출
-        tp_order_info = oco_orders["orderReports"][0]  # TP 주문 정보
-        sl_order_info = oco_orders["orderReports"][1]  # SL 주문 정보
+        sl_order = self.exchange.create_order(
+            symbol=order.symbol,
+            type="STOP_MARKET",  # type: ignore
+            side="buy",
+            amount=order.quantity,
+            price=None,
+            params={"stopPrice": order.sl_price, "reduceOnly": True},
+        )
 
         return PlaceFuturesOrderResponse(
             buy_order=None,
@@ -736,28 +1081,28 @@ class FuturesService:
                 stopPrice=None,
             ),
             tp_order=PlaceFuturesOrder(
-                id=tp_order_info["orderId"],
-                order_id=tp_order_info["orderId"],
-                symbol=tp_order_info["symbol"],
-                origQty=tp_order_info["origQty"],
-                avgPrice=0,
-                cumQuote=0,
-                clientOrderId=tp_order_info["clientOrderId"],
-                side=tp_order_info["side"],
-                triggerPrice=order.tp_price,
-                stopPrice=None,
+                id=tp_order["id"] if tp_order["id"] else "",
+                order_id=tp_order["info"]["orderId"],
+                symbol=tp_order["info"]["symbol"],
+                origQty=tp_order["info"]["origQty"],
+                avgPrice=tp_order["info"]["avgPrice"],
+                cumQuote=tp_order["info"]["cumQuote"],
+                clientOrderId=tp_order["info"]["clientOrderId"],
+                side=tp_order["info"]["side"],
+                triggerPrice=tp_order["info"]["stopPrice"],
+                stopPrice=tp_order["info"]["stopPrice"],
             ),
             sl_order=PlaceFuturesOrder(
-                id=sl_order_info["orderId"],
-                order_id=sl_order_info["orderId"],
-                symbol=sl_order_info["symbol"],
-                origQty=sl_order_info["origQty"],
-                avgPrice=0,
-                cumQuote=0,
-                clientOrderId=sl_order_info["clientOrderId"],
-                side=sl_order_info["side"],
-                triggerPrice=None,
-                stopPrice=order.sl_price,
+                id=sl_order["id"] if sl_order["id"] else "",
+                order_id=sl_order["info"]["orderId"],
+                symbol=sl_order["info"]["symbol"],
+                origQty=sl_order["info"]["origQty"],
+                avgPrice=sl_order["info"]["avgPrice"],
+                cumQuote=sl_order["info"]["cumQuote"],
+                clientOrderId=sl_order["info"]["clientOrderId"],
+                side=sl_order["info"]["side"],
+                triggerPrice=sl_order["info"]["stopPrice"],
+                stopPrice=sl_order["info"]["stopPrice"],
             ),
         )
 
@@ -766,9 +1111,9 @@ class FuturesService:
         return order
 
     def get_positions(self, symbol: str):
-        positons = self.exchange.fetch_positions([symbol])
+        positions = self.exchange.fetch_positions([symbol])
 
-        if not positons or len(positons) == 0:
+        if not positions or len(positions) == 0:
             return FuturesBalancePositionInfo(
                 position="NONE",
                 position_amt=0,
@@ -777,11 +1122,11 @@ class FuturesService:
                 unrealized_profit=0,
             )
         return FuturesBalancePositionInfo(
-            position=positons[0]["side"].upper(),
-            position_amt=positons[0]["info"]["positionAmt"],
-            entry_price=positons[0]["entryPrice"],
-            leverage=positons[0]["leverage"] or None,
-            unrealized_profit=positons[0]["unrealizedPnl"],
+            position=positions[0]["side"].upper(),
+            position_amt=positions[0]["info"]["positionAmt"],
+            entry_price=positions[0]["entryPrice"],
+            leverage=positions[0]["leverage"] or None,
+            unrealized_profit=positions[0]["unrealizedPnl"],
         )
 
     def close_long_position(self, symbol: str, quantity: Optional[float] = None):
@@ -832,6 +1177,6 @@ class FuturesService:
             position_type=side,
             take_profit=order.triggerPrice if order.triggerPrice else 0.0,
             stop_loss=order.stopPrice if order.stopPrice else 0.0,
-            order_id=order.order_id,
+            order_id=order.clientOrderId,
             parent_order_id=parent_order_id,
         )
