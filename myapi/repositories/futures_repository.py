@@ -63,8 +63,6 @@ class FuturesRepository:
         if symbol is not None:
             query = query.filter(Futures.symbol == symbol)
 
-        query = query.filter(Futures.status == "open")
-
         futures = [FuturesVO.model_validate(f) for f in query.all()]
 
         answers: Dict[str, List[FuturesVO]] = {}

@@ -1181,54 +1181,148 @@ class FuturesService:
             parent_order_id=parent_order_id,
         )
 
-    def cancle_sibling_order(self, symbol: str):
+    def cancel_sibling_order(self, symbol: str):
         """
-        저장된 주문을 찾아, 현재 활성화된 주문이 존재 하지 않으면
+        형제 주문(sibling orders) 관리 기능입니다.
+
+        TP(Take Profit)와 SL(Stop Loss) 주문은 쌍으로 작동하므로,
+        한 주문이 체결되거나 취소되면 다른 주문도 취소해야 합니다.
+        이 메서드는 활성화된 주문 목록을 확인하고 필요시 미체결된 형제 주문을 취소합니다.
+
+        Args:
+            symbol (str): 취소할 주문의 심볼 (예: 'BTCUSDT')
+
+        Raises:
+            OrderCancellationException: 주문 취소 중 오류가 발생한 경우
         """
-        # API 를 통해 현재 열려있는 Order 를 찾습니다.
-        active_orders_api = self.fetch_active_orders(symbol)
-        # DB 에서 Parents Order 를 찾습니다.
-        children_orders = self.futures_repository.get_futures_siblings(symbol=symbol)
+        try:
+            # API 를 통해 현재 열려있는 Order 를 찾습니다.
+            active_orders_api = self.fetch_active_orders(symbol)
 
-        current_active_orders_ids = [
-            api_order.get("id", "") for api_order in active_orders_api
-        ]
+            # DB 에서 형제 관계의 주문들을 조회합니다.
+            sibling_orders_map = self.futures_repository.get_futures_siblings(
+                symbol=symbol
+            )
 
-        # DB 에서 Parents Order Id와 일치하는 것을 찾습니다.
-        for parent_order_id in children_orders:
-            sibling_orders = children_orders[parent_order_id]
+            # 활성화된 주문 ID 목록
+            active_order_ids = [
+                api_order.get("id", "") for api_order in active_orders_api
+            ]
+            logger.info(f"Active orders for {symbol}: {len(active_order_ids)}")
 
-            if len(sibling_orders) == 0:
-                # No sibling orders found
-                continue
+            # 각 부모 주문 ID에 대해 형제 주문 처리
+            for _, sibling_orders in sibling_orders_map.items():
+                if len(sibling_orders) == 0:
+                    # 형제 주문이 없음
+                    continue
 
-            if len(sibling_orders) == 1:
-                # Only one sibling order, no need to cancel
-                cancle_order = sibling_orders[0]
-                self.futures_repository.update_futures_status(
-                    order_id=cancle_order.order_id, status="canceled"
-                )
-                if cancle_order.order_id in current_active_orders_ids:
-                    self.exchange.cancel_order(cancle_order.order_id, symbol)
-                continue
+                if len(sibling_orders) == 1:
+                    # 하나의 주문만 있는 경우 (형제가 없음)
+                    single_order = sibling_orders[0]
 
-            left_order_id = sibling_orders[0].order_id
-            right_order_id = sibling_orders[1].order_id
+                    # DB에서 취소 상태로 업데이트
+                    self.futures_repository.update_futures_status(
+                        order_id=single_order.order_id, status="canceled"
+                    )
 
-            if left_order_id not in current_active_orders_ids:
-                self.futures_repository.update_futures_status(
-                    order_id=right_order_id, status="canceled"
-                )
-                self.futures_repository.update_futures_status(
-                    order_id=left_order_id, status="canceled"
-                )
-                self.exchange.cancel_order(right_order_id, symbol)
+                    # 실제 활성 주문인 경우만 취소 요청
+                    if single_order.order_id in active_order_ids:
+                        try:
+                            self.exchange.cancel_order(single_order.order_id, symbol)
+                            logger.info(
+                                f"Canceled single order: {single_order.order_id}"
+                            )
+                        except ccxt.OrderNotFound:
+                            logger.warning(
+                                f"Order {single_order.order_id} already canceled or executed"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to cancel order {single_order.order_id}: {str(e)}"
+                            )
+                    continue
 
-            if right_order_id not in current_active_orders_ids:
-                self.futures_repository.update_futures_status(
-                    order_id=left_order_id, status="canceled"
-                )
-                self.futures_repository.update_futures_status(
-                    order_id=right_order_id, status="canceled"
-                )
-                self.exchange.cancel_order(left_order_id, symbol)
+                # 형제 주문이 2개인 경우 (TP와 SL)
+                left_order = sibling_orders[0]
+                right_order = sibling_orders[1]
+                left_order_id = left_order.order_id
+                right_order_id = right_order.order_id
+
+                # 왼쪽 주문이 활성화되어 있지 않으면 오른쪽 주문 취소
+                if (
+                    left_order_id not in active_order_ids
+                    and right_order_id in active_order_ids
+                ):
+                    logger.info(
+                        f"Left order {left_order_id} not active, canceling right order {right_order_id}"
+                    )
+                    try:
+                        # 먼저 오른쪽 주문을 실제로 취소
+                        self.exchange.cancel_order(right_order_id, symbol)
+
+                        # 취소 성공한 경우에만 DB 업데이트
+                        self.futures_repository.update_futures_status(
+                            order_id=right_order_id, status="canceled"
+                        )
+                        self.futures_repository.update_futures_status(
+                            order_id=left_order_id, status="canceled"
+                        )
+                        logger.info(
+                            f"Successfully canceled right order {right_order_id}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to cancel right order {right_order_id}: {str(e)}"
+                        )
+                        # 특정 예외 처리가 필요하다면 추가
+
+                # 오른쪽 주문이 활성화되어 있지 않으면 왼쪽 주문 취소
+                elif (
+                    right_order_id not in active_order_ids
+                    and left_order_id in active_order_ids
+                ):
+                    logger.info(
+                        f"Right order {right_order_id} not active, canceling left order {left_order_id}"
+                    )
+                    try:
+                        # 먼저 왼쪽 주문을 실제로 취소
+                        self.exchange.cancel_order(left_order_id, symbol)
+
+                        # 취소 성공한 경우에만 DB 업데이트
+                        self.futures_repository.update_futures_status(
+                            order_id=left_order_id, status="canceled"
+                        )
+                        self.futures_repository.update_futures_status(
+                            order_id=right_order_id, status="canceled"
+                        )
+                        logger.info(f"Successfully canceled left order {left_order_id}")
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to cancel left order {left_order_id}: {str(e)}"
+                        )
+
+                # 둘 다 활성화되어 있지 않은 경우
+                elif (
+                    left_order_id not in active_order_ids
+                    and right_order_id not in active_order_ids
+                ):
+                    logger.info(
+                        f"Both orders not active: {left_order_id}, {right_order_id}"
+                    )
+                    # DB 상태만 업데이트
+                    self.futures_repository.update_futures_status(
+                        order_id=left_order_id, status="canceled"
+                    )
+                    self.futures_repository.update_futures_status(
+                        order_id=right_order_id, status="canceled"
+                    )
+
+        except ccxt.NetworkError as e:
+            logger.error(f"Network error while canceling sibling orders: {str(e)}")
+            raise OrderCancellationException(f"Network error: {str(e)}")
+        except ccxt.ExchangeError as e:
+            logger.error(f"Exchange error while canceling sibling orders: {str(e)}")
+            raise OrderCancellationException(f"Exchange error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in cancel_sibling_order: {str(e)}")
+            raise OrderCancellationException(f"Unexpected error: {str(e)}")

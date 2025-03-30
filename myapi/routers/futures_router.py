@@ -147,7 +147,7 @@ async def execute_futures_with_ai(
         if not target_balance:
             futures_service.cancle_order(data.symbol)
 
-        futures_service.cancle_sibling_order(symbol=data.symbol)
+        futures_service.cancel_sibling_order(symbol=data.symbol)
 
         logger.info(f"balance_position: {balance_position.model_dump_json()}")
         logger.info(

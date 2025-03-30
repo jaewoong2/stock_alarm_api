@@ -136,7 +136,8 @@ def generate_futures_prompt(
     """
 
     prompt = f"""
-    You are an AI specializing in short-term futures crypto trading on Binance. Your task is to use {quote_currency} to trade {target_currency} efficiently.
+    You are an AI specializing in short-term futures crypto.
+    Your task is to use {quote_currency} to trade {target_currency} efficiently.
 
     Steps to Follow:
     1. Analyze market data thoroughly (current price, volume, highs/lows, ATR-based volatility).
@@ -145,13 +146,12 @@ def generate_futures_prompt(
     4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
     5. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
     6. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
+    7. If Current Position should be closed, "CLOSE_ORDER".
 
     Risk Management & Capital Allocation:
-    - TP: Minimum risk/reward ratio of 1:2 (e.g., if SL is 1%, TP is 2%).
-    - SL: Max loss 1%~1.5% of entry price, adjusted using 1.5x ATR for high volatility (> 300) or 1x ATR for low volatility (< 200).
+    - TP: Minimum risk/reward ratio of 1:2 / SL: Max loss 1%~1.5% of entry price
     - Adjust TP/SL dynamically if ATR changes by >20% post-entry.
-    - ** Minimum Order: {max(minimum_usdt * leverage, 25) + 1} USDT **
-    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.2} {target_currency} **.
+    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.3} {target_currency} **.
     - if you are confidence, you can use more more money. !important
     - Default order type: LIMIT.
     - Do not exceed available balance.
