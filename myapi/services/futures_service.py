@@ -571,7 +571,6 @@ class FuturesService:
             position=target_position.description if target_position else "None",
             leverage=current_leverage or 0,
             quote_currency="USDT",
-            minimum_usdt=min_notional,
             minimum_amount=min_amount,
         )
 
@@ -746,16 +745,15 @@ class FuturesService:
                         f"Closing existing SHORT position before opening LONG for {symbol}"
                     )
                     try:
-                        self.exchange.create_limit_buy_order(
-                            symbol,
-                            (
-                                abs(float(target_balance.positions.position_amt))
-                                if target_balance.positions.position_amt is not None
-                                else 0.0
-                            ),
-                            suggestion.order.price,
+                        self.exchange.create_order(
+                            symbol=symbol,
+                            type="limit",
+                            side="buy",
+                            amount=target_balance.positions.position_amt,
+                            price=suggestion.order.price,
                             params={"reduceOnly": True},
                         )
+
                         logger.info(
                             f"Successfully created order to close SHORT position"
                         )
@@ -836,16 +834,15 @@ class FuturesService:
                         f"Closing existing LONG position before opening SHORT for {symbol}"
                     )
                     try:
-                        self.exchange.create_limit_buy_order(
-                            symbol,
-                            (
-                                abs(float(target_balance.positions.position_amt))
-                                if target_balance.positions.position_amt is not None
-                                else 0.0
-                            ),
-                            suggestion.order.price,
+                        self.exchange.create_order(
+                            symbol=symbol,
+                            type="limit",
+                            side="sell",
+                            amount=target_balance.positions.position_amt,
+                            price=suggestion.order.price,
                             params={"reduceOnly": True},
                         )
+
                         logger.info(
                             f"Successfully created order to close LONG position"
                         )

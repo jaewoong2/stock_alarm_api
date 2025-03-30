@@ -118,7 +118,6 @@ def generate_futures_prompt(
     interval: str = "15m",
     position: str = "NONE",
     leverage: int = 2,
-    minimum_usdt: float = 20.0,
     minimum_amount: float = 0.001,
 ):
     interval_, interval_str = split_interval(interval)
