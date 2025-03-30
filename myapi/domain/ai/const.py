@@ -72,15 +72,15 @@ def generate_prompt(
     ### 2. Input Data >> It is {interval} interval Input Data
     - quote_currency: {quote_currency}
     - target_currency: {target_currency}
-    - market_data: {json.dumps(market_data, indent=2)}
-    - technical_indicators: {json.dumps(technical_indicators, indent=2)}
+    - market_data: {market_data}
+    - technical_indicators: {technical_indicators}
     - previous_trade_info: {previous_trade_info}
     - my current balances_data: {balances_data}
     - sentiment_data: {sentiment_data}
     - news_data: {news_data}
     - orderbook_data: {orderbook_data}
     - arbitrage_signal: {arbitrage_signal}
-    - trade_history: {json.dumps(trade_history, indent=2)}
+    - trade_history: {trade_history}
     - current_active_orders: {"\n".join([order.description for order in current_active_orders]) if current_active_orders else "None"}
 
     ### 3. Additional Context
@@ -108,9 +108,9 @@ def split_interval(interval: str):
 
 
 def generate_futures_prompt(
-    market_data: Dict,
-    technical_indicators: Dict,
-    technical_analysis: Dict,
+    market_data: str,
+    technical_indicators: str,
+    technical_analysis: str,
     balances_data: str,
     target_currency: str = "BTC",
     quote_currency: str = "USDT",
@@ -141,11 +141,10 @@ def generate_futures_prompt(
     Steps to Follow:
     1. Analyze market data thoroughly (current price, volume, highs/lows, ATR-based volatility).
     2. Review technical indicators: RSI, MACD, Bollinger Bands, ADX, Pivot Points, Fibonacci levels, and moving averages.
-    3. Identify market state clearly (trending, ranging, high volatility, or low volatility) using ADX (trending if >25, strong if >40), ATR, and volume trends.
-    4. Provide decision: "LONG", "SHORT", "HOLD", or "CANCEL" based on refined criteria below.
-    5. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
-    6. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
-    7. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
+    3. Provide decision: "LONG", "SHORT", "HOLD", or "CANCEL" based on refined criteria below.
+    4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
+    5. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
+    6. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
 
     Risk Management & Capital Allocation:
     - TP: Minimum risk/reward ratio of 1:2 (e.g., if SL is 1%, TP is 2%).
@@ -164,9 +163,9 @@ def generate_futures_prompt(
     
     Input Data [{interval} interval]:
     - Current position: {position} with leverage {leverage}x.
-    - Market Data: {json.dumps(market_data, indent=2)}
-    - Technical Indicators: {json.dumps(technical_indicators, indent=2)}
-    - Technical Analysis: {json.dumps(technical_analysis, indent=2)}
+    - Market Data: {market_data}
+    - Technical Indicators: {technical_indicators}
+    - Technical Analysis: {technical_analysis}
     - Balances: {balances_data}
 
     Additional Context:

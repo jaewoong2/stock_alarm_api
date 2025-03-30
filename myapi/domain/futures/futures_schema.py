@@ -20,6 +20,7 @@ class FuturesVO(BaseModel):
     status: str
     order_id: str
     parent_order_id: str
+    client_order_id: Optional[str]
 
     class Config:
         from_attributes = True
@@ -31,6 +32,7 @@ class FuturesBase(BaseModel):
     quantity: float
     side: str
     order_id: str
+    client_order_id: Optional[str]
     parent_order_id: str
 
 
@@ -63,6 +65,17 @@ class BollingerBands(BaseModel):
     upper_band: float
     lower_band: float
 
+    @property
+    def description(self):
+        """
+        Returns a description about Bollinger Bands.
+        """
+        return (
+            f"Middle Band: {self.middle_band}, "
+            f"Upper Band: {self.upper_band}, "
+            f"Lower Band: {self.lower_band}"
+        )
+
 
 class MACDResult(BaseModel):
     macd: float
@@ -81,6 +94,20 @@ class Ticker(BaseModel):
     open: Optional[float]
     close: Optional[float]
 
+    @property
+    def description(self):
+        """
+        Returns a description about ticker.
+        """
+        return (
+            "Current Market Data"
+            f"Last: {self.last}, "
+            f"High: {self.high}, "
+            f"Low: {self.low}, "
+            f"Open: {self.open}, "
+            f"Close: {self.close}"
+        )
+
 
 class TechnicalAnalysis(BaseModel):
     support: Optional[float]
@@ -96,6 +123,35 @@ class TechnicalAnalysis(BaseModel):
     rsi_divergence: Optional[bool]
     volume_trend: Optional[str]
     ha_analysis: Optional[Dict]
+
+    @property
+    def description(self):
+        """
+        Returns a description about all of the technical analysis.
+        """
+
+        fibonacci_levels = ", ".join(
+            [f"{key}: {value}" for key, value in self.fibonacci_levels.items()]
+        )
+
+        ha_analysis = (
+            ", ".join([f"{key}: {value}" for key, value in self.ha_analysis.items()])
+            if self.ha_analysis
+            else "No Heikin Ashi Analysis"
+        )
+
+        return (
+            f"Support: {self.support}, Resistance: {self.resistance}, "
+            f"Pivot: {self.pivot}, Second_Support: {self.support2}, Second_Resistance: {self.resistance2}"
+            f"Bollinger Bands: {self.bollinger_bands.description}, "
+            f"Fibonacci Levels: {fibonacci_levels}, "
+            f"MACD Divergence: {self.macd_divergence}, "
+            f"MACD Crossover: {self.macd_crossover}, "
+            f"MACD Crossunder: {self.macd_crossunder}, "
+            f"RSI Divergence: {self.rsi_divergence}, "
+            f"Volume Trend: {self.volume_trend}, "
+            f"HA Analysis: {ha_analysis}"
+        )
 
 
 class FutureInvestMentOrderParams(BaseModel):
@@ -155,6 +211,15 @@ class FuturesBalancePositionInfo(BaseModel):
     leverage: Optional[int]
     unrealized_profit: float
 
+    @property
+    def description(self):
+        return (
+            f"[{self.position}]: {self.position_amt} Position Amount, "
+            f"{self.entry_price} Entry Price, "
+            f"{self.leverage} Leverage, "
+            f"{self.unrealized_profit} Unrealized Profit"
+        )
+
 
 class FuturesBalance(BaseModel):
     symbol: str
@@ -170,11 +235,19 @@ class FuturesBalance(BaseModel):
 
     @property
     def description(self):
+        if self.positions:
+            if self.positions.position_amt > 0:
+                return self.positions.description
+
         return f"[{self.symbol}]: {self.available} Available For Trading"
 
 
 class FuturesBalances(BaseModel):
     balances: list[FuturesBalance]
+
+    @property
+    def description(self):
+        return "\n".join([balance.description for balance in self.balances])
 
 
 class ExecuteFuturesRequest(BaseModel):

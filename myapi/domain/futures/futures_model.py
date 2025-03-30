@@ -20,4 +20,5 @@ class Futures(Base):
     # status = Column(String, default="open")  # "open", "closed", "canceled"
     status: Mapped[str] = mapped_column(String(50), default="open")
     order_id = Column(String, nullable=True, index=True, unique=True)
+    client_order_id = Column(String, nullable=True, unique=True)
     parent_order_id = Column(String, nullable=True)

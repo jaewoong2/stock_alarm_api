@@ -560,17 +560,15 @@ class FuturesService:
 
         prompt, system_prompt = generate_futures_prompt(
             balances_data=(
-                balances.model_dump_json()
-                if isinstance(balances, FuturesBalances)
-                else ""
+                balances.description if isinstance(balances, FuturesBalances) else ""
             ),
-            technical_analysis=analysis.model_dump(),
+            technical_analysis=analysis.description,
             interval=timeframe,
-            market_data=currnt_price.model_dump(),
-            technical_indicators=technical_indicators.model_dump(),
+            market_data=currnt_price.description,
+            technical_indicators=technical_indicators.description,
             additional_context=addtion_context,
             target_currency=target_currency,
-            position=target_position.model_dump_json() if target_position else "None",
+            position=target_position.description if target_position else "None",
             leverage=current_leverage or 0,
             quote_currency="USDT",
             minimum_usdt=min_notional,
@@ -606,7 +604,7 @@ class FuturesService:
                     order_id=children_order.order_id, status="canceled"
                 )
                 if children_order.order_id in [
-                    api_order.get("clientOrderId") for api_order in active_orders_api
+                    api_order.get("id") for api_order in active_orders_api
                 ]:
                     self.exchange.cancel_order(children_order.order_id, symbol)
 
@@ -637,7 +635,7 @@ class FuturesService:
         Returns:
             Tuple[Any, Optional[str]]: (결과 객체, 오류 메시지(있는 경우))
         """
-        logger.info(f"Received suggestion: {suggestion.model_dump_json()}")
+        logger.info(f"Received suggestion: {suggestion.model_dump()}")
 
         try:
             # 입력값 검증
@@ -721,6 +719,7 @@ class FuturesService:
                             take_profit=None,
                             stop_loss=None,
                             status="closed",
+                            client_order_id="",
                         ),
                         None,
                     )
@@ -797,7 +796,7 @@ class FuturesService:
                     if orders.tp_order and orders.buy_order:
                         future = self.order_to_futures(
                             order=orders.tp_order,
-                            parent_order_id=orders.buy_order.clientOrderId,
+                            parent_order_id=orders.buy_order.order_id,
                         )
                         self.futures_repository.create_futures(
                             futures=future,
@@ -887,7 +886,7 @@ class FuturesService:
                     if orders.tp_order and orders.sell_order:
                         future = self.order_to_futures(
                             order=orders.tp_order,
-                            parent_order_id=orders.sell_order.clientOrderId,
+                            parent_order_id=orders.sell_order.order_id,
                         )
                         self.futures_repository.create_futures(
                             futures=future,
@@ -900,7 +899,7 @@ class FuturesService:
                     if orders.sl_order and orders.sell_order:
                         future = self.order_to_futures(
                             order=orders.sl_order,
-                            parent_order_id=orders.sell_order.clientOrderId,
+                            parent_order_id=orders.sell_order.order_id,
                         )
                         self.futures_repository.create_futures(
                             futures=future,
@@ -1177,6 +1176,59 @@ class FuturesService:
             position_type=side,
             take_profit=order.triggerPrice if order.triggerPrice else 0.0,
             stop_loss=order.stopPrice if order.stopPrice else 0.0,
-            order_id=order.clientOrderId,
+            order_id=order.order_id,
+            client_order_id=order.clientOrderId,
             parent_order_id=parent_order_id,
         )
+
+    def cancle_sibling_order(self, symbol: str):
+        """
+        저장된 주문을 찾아, 현재 활성화된 주문이 존재 하지 않으면
+        """
+        # API 를 통해 현재 열려있는 Order 를 찾습니다.
+        active_orders_api = self.fetch_active_orders(symbol)
+        # DB 에서 Parents Order 를 찾습니다.
+        children_orders = self.futures_repository.get_futures_siblings(symbol=symbol)
+
+        current_active_orders_ids = [
+            api_order.get("id", "") for api_order in active_orders_api
+        ]
+
+        # DB 에서 Parents Order Id와 일치하는 것을 찾습니다.
+        for parent_order_id in children_orders:
+            sibling_orders = children_orders[parent_order_id]
+
+            if len(sibling_orders) == 0:
+                # No sibling orders found
+                continue
+
+            if len(sibling_orders) == 1:
+                # Only one sibling order, no need to cancel
+                cancle_order = sibling_orders[0]
+                self.futures_repository.update_futures_status(
+                    order_id=cancle_order.order_id, status="canceled"
+                )
+                if cancle_order.order_id in current_active_orders_ids:
+                    self.exchange.cancel_order(cancle_order.order_id, symbol)
+                continue
+
+            left_order_id = sibling_orders[0].order_id
+            right_order_id = sibling_orders[1].order_id
+
+            if left_order_id not in current_active_orders_ids:
+                self.futures_repository.update_futures_status(
+                    order_id=right_order_id, status="canceled"
+                )
+                self.futures_repository.update_futures_status(
+                    order_id=left_order_id, status="canceled"
+                )
+                self.exchange.cancel_order(right_order_id, symbol)
+
+            if right_order_id not in current_active_orders_ids:
+                self.futures_repository.update_futures_status(
+                    order_id=left_order_id, status="canceled"
+                )
+                self.futures_repository.update_futures_status(
+                    order_id=right_order_id, status="canceled"
+                )
+                self.exchange.cancel_order(left_order_id, symbol)

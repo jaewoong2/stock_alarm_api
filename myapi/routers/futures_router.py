@@ -9,7 +9,6 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.futures.futures_schema import (
     ExecuteFuturesRequest,
     FutureOpenAISuggestion,
-    FuturesBalance,
     FuturesConfigRequest,
     FuturesResponse,
     TechnicalAnalysis,
@@ -148,6 +147,8 @@ async def execute_futures_with_ai(
         if not target_balance:
             futures_service.cancle_order(data.symbol)
 
+        futures_service.cancle_sibling_order(symbol=data.symbol)
+
         logger.info(f"balance_position: {balance_position.model_dump_json()}")
         logger.info(
             f"target_balance: {target_balance.model_dump_json() if target_balance else None}"
@@ -241,3 +242,6 @@ async def set_futures_config(
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"
         )
+
+
+# Client_order_id -> Order_id 로 수정

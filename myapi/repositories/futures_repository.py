@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Dict, List, Optional
 import logging
 
 from myapi.domain.futures.futures_model import Futures
@@ -18,12 +18,19 @@ class FuturesRepository:
     ):
         self.db_session = db_session
 
-    def get_children_orders(self, parent_order_id: str) -> List[FuturesResponse]:
-        futures = (
-            self.db_session.query(Futures)
-            .filter(Futures.parent_order_id == parent_order_id)
-            .all()
-        )
+    def get_children_orders(
+        self, parent_order_id: Optional[str] = None
+    ) -> List[FuturesResponse]:
+        query = self.db_session.query(Futures)
+        if parent_order_id is None:
+            # parent_order_id가 None인 경우, 모든 자식 주문을 가져옵니다.
+            futures = query.filter(Futures.parent_order_id != "").all()
+        else:
+            # 특정 parent_order_id에 해당하는 자식 주문을 가져옵니다.
+            futures = query.filter(
+                Futures.parent_order_id == parent_order_id,
+            ).all()
+
         return [FuturesResponse.model_validate(f) for f in futures]
 
     def get_parents_orders(self, symbol: str) -> List[FuturesResponse]:
@@ -43,8 +50,42 @@ class FuturesRepository:
         )
         return [FuturesResponse.model_validate(f) for f in futures]
 
-    def get_all_futures(self, symbol: str = "BTCUSDT"):
-        futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
+    def get_futures_siblings(
+        self, parent_order_id: Optional[str] = None, symbol: Optional[str] = None
+    ):
+        """
+        주어진 parent_order_id와 symbol을 가진 선물 거래의 형제 거래를 조회합니다.
+        """
+        query = self.db_session.query(Futures)
+
+        if parent_order_id is not None:
+            query = query.filter(Futures.parent_order_id == parent_order_id)
+        if symbol is not None:
+            query = query.filter(Futures.symbol == symbol)
+
+        query = query.filter(Futures.status == "open")
+
+        futures = [FuturesVO.model_validate(f) for f in query.all()]
+
+        answers: Dict[str, List[FuturesVO]] = {}
+
+        for future in futures:
+            if future.parent_order_id not in answers:
+                answers[future.parent_order_id] = []
+
+            if future.parent_order_id != "":
+                answers[future.parent_order_id].append(future)
+
+        return answers
+
+    def get_all_futures(self, symbol: Optional[str] = None):
+        if symbol:
+            futures = (
+                self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
+            )
+        else:
+            futures = self.db_session.query(Futures).all()
+
         return [FuturesVO.model_validate(f) for f in futures]
 
     def create_futures(
@@ -63,6 +104,7 @@ class FuturesRepository:
                 position_type=position_type,
                 take_profit=take_profit,
                 order_id=futures.order_id,
+                client_order_id=futures.client_order_id,
                 parent_order_id=futures.parent_order_id,
                 stop_loss=stop_loss,
             )
