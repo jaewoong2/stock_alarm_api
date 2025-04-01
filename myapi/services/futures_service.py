@@ -1196,7 +1196,6 @@ class FuturesService:
         )
 
     def cancel_sibling_order_by_active_order(self, symbol: str):
-
         try:
             # API 를 통해 현재 열려있는 Order 를 찾습니다.
             active_orders_api = self.fetch_active_orders(symbol)
@@ -1205,8 +1204,41 @@ class FuturesService:
             active_order_ids = [
                 api_order.get("id", "") for api_order in active_orders_api
             ]
+            for order_id in active_order_ids:
+                if not order_id:
+                    continue
 
-            self.futures_repository.get_futures_siblings()
+                sibling_order = self.futures_repository.get_future_sibling(
+                    order_id=order_id
+                )
+
+                # 형제 주문이 없으면 이상한 주문
+                if not sibling_order:
+                    continue
+
+                # 형제 노드가 액티브 주문에 포함되어 있으면 현재 Position 존재 (취소 안함)
+                if sibling_order.order_id in active_order_ids:
+                    continue
+
+                # 형제 노드가 액티브 주문에 포함 되어 있지 않으면 포지션 종료 상태
+                # -> 현재 Order 제거 (DB Cancled)
+                self.futures_repository.update_futures_status(
+                    order_id=sibling_order.order_id, status="canceled"
+                )
+
+                try:
+                    # -> 현재 Order 제거 (Close)
+                    self.exchange.cancel_order(sibling_order.order_id, symbol)
+                    logger.info(f"Canceled single order: {sibling_order.order_id}")
+                except ccxt.OrderNotFound:
+                    logger.warning(
+                        f"Order {sibling_order.order_id} already canceled or executed"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to cancel order {sibling_order.order_id}: {str(e)}"
+                    )
+
         except Exception as e:
             logger.error(f"Failed to fetch active orders: {str(e)}")
             raise
