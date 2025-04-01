@@ -287,3 +287,51 @@ class HeikinAshiAnalysis(BaseModel):
     avg_upper_tail: float
     avg_lower_tail: float
     interpretation: Optional[str] = None
+
+
+# SimplifiedFundingRate 클래스 정의
+class SimplifiedFundingRate(BaseModel):
+    symbol: str
+    funding_rate: float
+    timestamp: int
+    datetime: str | datetime
+    mark_price: float
+    next_funding_time: str
+
+    # 펀딩 비율을 기반으로 롱 포지션 과다 여부 판단
+    @property
+    def is_long_overcrowded(self) -> bool:
+        """펀딩 비율이 0.01(1%) 이상이면 롱 포지션이 과다하다고 판단"""
+        return self.funding_rate > 0.01
+
+    # 펀딩 비율을 기반으로 숏 포지션 과다 여부 판단
+    @property
+    def is_short_overcrowded(self) -> bool:
+        """펀딩 비율이 -0.01(-1%) 이하이면 숏 포지션이 과다하다고 판단"""
+        return self.funding_rate < -0.01
+
+    # 거래 신호 생성
+    @property
+    def trade_signal(self) -> str:
+        """롱/숏 과다 여부에 따라 매수/매도 신호 생성"""
+        if self.is_long_overcrowded:
+            return "SHORT"  # 롱 과다 -> 반전 매도 신호
+        elif self.is_short_overcrowded:
+            return "LONG"  # 숏 과다 -> 반전 매수 신호
+        return "HOLD"  # 중립
+
+    @property
+    def description(self):
+        """
+        Returns a description about the funding rate.
+        """
+        return (
+            f"Funding Rate: {self.funding_rate},\n"
+            f"Mark Price: {self.mark_price},\n "
+            f"Trade Signal: {self.trade_signal},\n"
+            f"Overcrowded Long: {self.is_long_overcrowded},\n"
+            f"Overcrowded Short: {self.is_short_overcrowded},\n"
+        )
+
+    class Config:
+        from_attributes = True

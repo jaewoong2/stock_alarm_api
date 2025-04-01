@@ -19,6 +19,7 @@ from myapi.domain.futures.futures_schema import (
     HeikinAshiAnalysis,
     PlaceFuturesOrder,
     PlaceFuturesOrderResponse,
+    SimplifiedFundingRate,
     TechnicalAnalysis,
     PivotPoints,
     BollingerBands,
@@ -554,9 +555,22 @@ class FuturesService:
         )
         encoded_image_url = encode_image(quote(plot_image_path, safe=":/"))
 
-        currnt_price = self.fetch_ticker(symbol)
+        current_price = self.fetch_ticker(symbol)
 
-        min_notional, min_amount = self.get_market(symbol=target_currency)
+        _, min_amount = self.get_market(symbol=target_currency)
+
+        funding_rate = self.fetch_funding_rate(symbol)
+
+        maximum_amount = 0.0
+
+        if balances:
+            usdt_balance = [
+                balance for balance in balances.balances if balance.symbol == "USDT"
+            ]
+
+            if len(usdt_balance) > 0:
+                usdt_balance = usdt_balance[0]
+                maximum_amount = float(usdt_balance.free) / current_price.last
 
         prompt, system_prompt = generate_futures_prompt(
             balances_data=(
@@ -564,7 +578,7 @@ class FuturesService:
             ),
             technical_analysis=analysis.description,
             interval=timeframe,
-            market_data=currnt_price.description,
+            market_data=current_price.description,
             technical_indicators=technical_indicators.description,
             additional_context=addtion_context,
             target_currency=target_currency,
@@ -572,9 +586,12 @@ class FuturesService:
             leverage=current_leverage or 0,
             quote_currency="USDT",
             minimum_amount=min_amount,
+            maximum_amount=maximum_amount,
+            funding_rate=funding_rate.description,
         )
+        prompt_log = {"prompt": prompt}
 
-        logger.info(f"Prompt: {prompt}")
+        logger.info(f"Prompt: {prompt_log}")
 
         return prompt, system_prompt, encoded_image_url
 
@@ -1323,3 +1340,36 @@ class FuturesService:
         except Exception as e:
             logger.error(f"Unexpected error in cancel_sibling_order: {str(e)}")
             raise OrderCancellationException(f"Unexpected error: {str(e)}")
+
+    def fetch_funding_rate(self, symbol: str = "BTCUSDT"):
+        funding_rate = self.exchange.fetch_funding_rate(symbol=symbol)
+        return SimplifiedFundingRate(
+            symbol=(
+                str(funding_rate["symbol"])
+                if funding_rate["symbol"] is not None
+                else ""
+            ),
+            timestamp=(
+                funding_rate["timestamp"]
+                if funding_rate["timestamp"] is not None
+                else 0
+            ),
+            funding_rate=(
+                float(funding_rate["fundingRate"])
+                if funding_rate["fundingRate"] is not None
+                else 0.0
+            ),
+            datetime=(
+                funding_rate["datetime"] if funding_rate["datetime"] is not None else ""
+            ),
+            mark_price=(
+                float(funding_rate["markPrice"])
+                if funding_rate["markPrice"] is not None
+                else 0.0
+            ),
+            next_funding_time=(
+                funding_rate["nextFundingDatetime"]
+                if funding_rate["nextFundingDatetime"] is not None
+                else ""
+            ),
+        )

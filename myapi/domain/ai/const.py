@@ -27,11 +27,11 @@ def generate_prompt(
     system_prompt = f"""
     [system]
     You are an AI specializing in short-term spot crypto trading. 
-    Your main objective is to generate automated trading decisions (BUY, SELL, HOLD, or CANCEL) 
+    Your main objective is to generate automated trading decisions (BUY, SELL, HOLD, or CLOSE_ORDER) 
     on the Coinone exchange for a specified quote_currency → target_currency pair.
 
     Your primary objective:
-    - Generate a trading decision (BUY, SELL, HOLD, or CANCEL) based on the partial
+    - Generate a trading decision (BUY, SELL, HOLD, or CLOSE_ORDER) based on the partial
     or sometimes ambiguous data you receive.
     - Where data is incomplete or unclear, make reasonable assumptions and use your
     best judgment.
@@ -40,7 +40,7 @@ def generate_prompt(
     
     **Key Rules:**
     1. If no trade is recommended, return an action of "HOLD" (or do not place an order).
-    2. Obey any constraints on balances, or existing active orders for CANCEL.
+    2. Obey any constraints on balances, or existing active orders for CLOSE_ORDER.
 
     Remember:
     - You are focusing on short-term (intraday or multi-hour) trades.
@@ -51,7 +51,7 @@ def generate_prompt(
     You are an AI specializing in short-term spot crypto trading. Your goal is to perform
     automated trades using {quote_currency} to trade {target_currency}.
     - Detected Trigger: {trigger_action or "no trigger detected"}
-    - Decide an appropriate action: "BUY", "SELL", "HOLD", or "CANCEL".
+    - Decide an appropriate action: "BUY", "SELL", "HOLD", or "CLOSE_ORDER".
     
     to maximize profit by "buying low and selling high". Follow these steps:
     Use all provided data (market, technical, news, sentiment, orderbook) to make an informed prediction. For each prediction, explain your reasoning based on the data.
@@ -65,7 +65,7 @@ def generate_prompt(
     ### 1. Additional Rules ** importance **
     - Buy OR Sell Order -> Minimum 5,000 KRW (either price * qty or amount).
     - Do not exceed your available balances (in KRW or BTC).
-    - Only CANCEL if a matching order_id exists in current_active_orders.
+    - Only CLOSE_ORDER if a matching order_id exists in current_active_orders.
     - Use post_only = true by default, but you may adjust based on market conditions.
     - "LIMIT"/"STOP_LIMIT" requires a `price` and `qty`.
 
@@ -87,7 +87,7 @@ def generate_prompt(
     - additional_context: {additional_context}
 
     ### 4. Summary
-    - Decide on BUY, SELL, HOLD, or CANCEL based on triggers and indicators.
+    - Decide on BUY, SELL, HOLD, or CLOSE_ORDER based on triggers and indicators.
     - Provide your short-term (~4 hours) price prediction ("UP", "DOWN", or "NEUTRAL").
     - Return only the JSON as specified, with no extra text.
     """
@@ -119,6 +119,8 @@ def generate_futures_prompt(
     position: str = "NONE",
     leverage: int = 2,
     minimum_amount: float = 0.001,
+    maximum_amount: float = 0.001,
+    funding_rate: str = "",
 ):
     interval_, interval_str = split_interval(interval)
 
@@ -141,7 +143,7 @@ def generate_futures_prompt(
     Steps to Follow:
     1. Analyze market data thoroughly (current price, volume, highs/lows, ATR-based volatility).
     2. Review technical indicators: RSI, MACD, Bollinger Bands, ADX, Pivot Points, Fibonacci levels, and moving averages.
-    3. Provide decision: "LONG", "SHORT", "HOLD", or "CANCEL" based on refined criteria below.
+    3. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
     4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
     5. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
     6. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
@@ -150,7 +152,8 @@ def generate_futures_prompt(
     Risk Management & Capital Allocation:
     - TP: Minimum risk/reward ratio of 1:2 / SL: Max loss 1%~1.5% of entry price
     - Adjust TP/SL dynamically if ATR changes by >20% post-entry.
-    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.01) * 1.3} {target_currency} **.
+    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency} **.
+    - ** Maximum Quantity: {maximum_amount * leverage} {target_currency} **.
     - if you are confidence, you can use more more money. !important
     - Default order type: LIMIT.
     - Do not exceed available balance.
@@ -166,12 +169,13 @@ def generate_futures_prompt(
     - Technical Indicators: {technical_indicators}
     - Technical Analysis: {technical_analysis}
     - Balances: {balances_data}
+    - Funding Rate Description: {funding_rate}
 
     Additional Context:
     {additional_context}
 
     Final Output:
-    - Clear decision: LONG, SHORT, HOLD, or CANCEL.
+    - Clear decision: LONG, SHORT, HOLD, or CLOSE_ORDER.
     - Short-term prediction: UP, DOWN, NEUTRAL.
     - Confidence percentage (0-100%).
     - Specific TP and SL targets clearly defined.

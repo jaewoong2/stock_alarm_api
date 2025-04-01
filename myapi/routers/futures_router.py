@@ -149,9 +149,9 @@ async def execute_futures_with_ai(
 
         futures_service.cancel_sibling_order(symbol=data.symbol)
 
-        logger.info(f"balance_position: {balance_position.model_dump_json()}")
+        logger.info(f"balance_position: {balance_position.model_dump()}")
         logger.info(
-            f"target_balance: {target_balance.model_dump_json() if target_balance else None}"
+            f"target_balance: {target_balance.model_dump() if target_balance else None}"
         )
 
         _, _, base64_image_url = futures_service.generate_technical_prompts(

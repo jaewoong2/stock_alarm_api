@@ -121,4 +121,4 @@ class ImageUrlMessage(TypedDict):
     image_url: Dict[str, str]
 
 
-MessageContent = Dict[Any, Any]
+MessageContent = Dict[Any, Any] | ImageUrlMessage | TextMessage
