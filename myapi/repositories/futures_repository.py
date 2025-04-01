@@ -61,7 +61,7 @@ class FuturesRepository:
         )
 
         if current_order is None:
-            raise ValueError(f"No futures found with order_id: {order_id}")
+            return None
 
         future = (
             self.db_session.query(Futures)
@@ -176,3 +176,12 @@ class FuturesRepository:
             self.db_session.rollback()
             logging.error(f"DB futures update failed: {e}")
             raise
+
+
+"""
+Market Data가 뭔가 안맞는거 같음
+
+캔들 값이 맞는지 확인 할 것
+
+
+"""
