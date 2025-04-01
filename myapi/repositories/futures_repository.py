@@ -50,6 +50,35 @@ class FuturesRepository:
         )
         return [FuturesResponse.model_validate(f) for f in futures]
 
+    def get_future_sibling(self, order_id: str):
+        """
+        주어진 order_id에 해당하는 선물 거래의 형제 거래를 조회합니다.
+        """
+        current_order = (
+            self.db_session.query(Futures)
+            .filter(Futures.order_id == order_id)
+            .one_or_none()
+        )
+
+        if current_order is None:
+            raise ValueError(f"No futures found with order_id: {order_id}")
+
+        future = (
+            self.db_session.query(Futures)
+            .filter(
+                Futures.parent_order_id == current_order.parent_order_id,
+                Futures.order_id != order_id,
+                Futures.symbol == current_order.symbol,
+            )
+            .one_or_none()
+        )
+
+        if future:
+            return FuturesVO.model_validate(future)
+
+        return None
+        # return [FuturesResponse.model_validate(f) for f in futures]
+
     def get_futures_siblings(
         self, parent_order_id: Optional[str] = None, symbol: Optional[str] = None
     ):

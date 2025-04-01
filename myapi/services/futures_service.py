@@ -1195,6 +1195,22 @@ class FuturesService:
             parent_order_id=parent_order_id,
         )
 
+    def cancel_sibling_order_by_active_order(self, symbol: str):
+
+        try:
+            # API 를 통해 현재 열려있는 Order 를 찾습니다.
+            active_orders_api = self.fetch_active_orders(symbol)
+
+            # 활성화된 주문 ID 목록
+            active_order_ids = [
+                api_order.get("id", "") for api_order in active_orders_api
+            ]
+
+            self.futures_repository.get_futures_siblings()
+        except Exception as e:
+            logger.error(f"Failed to fetch active orders: {str(e)}")
+            raise
+
     def cancel_sibling_order(self, symbol: str):
         """
         형제 주문(sibling orders) 관리 기능입니다.
