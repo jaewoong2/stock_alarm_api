@@ -176,12 +176,3 @@ class FuturesRepository:
             self.db_session.rollback()
             logging.error(f"DB futures update failed: {e}")
             raise
-
-
-"""
-Market Data가 뭔가 안맞는거 같음
-
-캔들 값이 맞는지 확인 할 것
-
-
-"""

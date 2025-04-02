@@ -99,14 +99,7 @@ class Ticker(BaseModel):
         """
         Returns a description about ticker.
         """
-        return (
-            "Current Market Data"
-            f"Last: {self.last}, "
-            f"High: {self.high}, "
-            f"Low: {self.low}, "
-            f"Open: {self.open}, "
-            f"Close: {self.close}"
-        )
+        return f"Current Symbol Price: {self.close}"
 
 
 class TechnicalAnalysis(BaseModel):
@@ -335,3 +328,124 @@ class SimplifiedFundingRate(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MeanTechnicalIndicators(BaseModel):
+    MA_short_9: float
+    MA_long_21: float
+    MA_long_120: float
+    RSI_14: float
+    MACD: float
+    MACD_Signal: float
+    BB_Upper: float
+    BB_Lower: float
+    ADX: float
+    ATR_14: float
+    Latest_Close: float
+    Latest_Open: float
+    volatility: float
+    high: float
+    close_mean: float
+    rsi_slope: float
+    ma9_slope: float
+    plus_di_avg: float
+    minus_di_avg: float
+    volume_avg: float
+
+    @property
+    def description(self) -> str:
+        return f"""
+        Total Mean Technical Indicators:
+            MA_short_9: {self.MA_short_9}
+            MA_long_21: {self.MA_long_21}
+            MA_long_120: {self.MA_long_120}
+            RSI_14: {self.RSI_14}
+            MACD: {self.MACD}
+            MACD_Signal: {self.MACD_Signal}
+            BB_Upper: {self.BB_Upper}
+            BB_Lower: {self.BB_Lower}
+            ADX: {self.ADX}
+            ATR_14: {self.ATR_14}
+            Latest_Close: {self.Latest_Close}
+            Latest_Open: {self.Latest_Open}
+            volatility: {self.volatility}
+            high: {self.high}
+            close_mean: {self.close_mean}
+            rsi_slope: {self.rsi_slope}
+            ma9_slope: {self.ma9_slope}
+            plus_di_avg: {self.plus_di_avg}
+            minus_di_avg: {self.minus_di_avg}
+            volume_avg: {self.volume_avg}
+        """
+
+    @property
+    def inetrpretation(self):
+        # 4) 값에 따라 동적으로 해석해 주는 로직
+        interpretation_data = {}
+
+        # (1) RSI: 과매수/과매도 구간 판별
+        if self.RSI_14 > 70:
+            rsi_comment = "과매수 구간(RSI > 70) - 매수세가 강하거나 과열일 수 있음"
+        elif self.RSI_14 < 30:
+            rsi_comment = "과매도 구간(RSI < 30) - 매도세가 강거나 저평가일 수 있음"
+        else:
+            rsi_comment = "중립 구간(30 ≤ RSI ≤ 70)"
+        interpretation_data["RSI_14"] = f"RSI 평균: {self.RSI_14}, 해석: {rsi_comment}"
+
+        # (2) +DI vs -DI
+        if self.plus_di_avg > self.minus_di_avg:
+            dmi_comment = (
+                f"상승 추세 우위(+DI {self.plus_di_avg} > -DI {self.minus_di_avg}). "
+                "가격 상승 모멘텀이 우세할 수 있음."
+            )
+        elif self.plus_di_avg < self.minus_di_avg:
+            dmi_comment = (
+                f"하락 추세 우위(+DI {self.plus_di_avg} < -DI {self.minus_di_avg}). "
+                "가격 하락 모멘텀이 우세할 수 있음."
+            )
+        else:
+            dmi_comment = (
+                f"균형 상태(+DI {self.plus_di_avg} ≈ -DI {self.minus_di_avg}). "
+                "뚜렷한 추세 우위 없음."
+            )
+        interpretation_data["DMI"] = dmi_comment
+
+        # (3) MACD와 시그널
+        if self.MACD > 0:
+            if self.MACD > self.MACD_Signal:
+                macd_comment = "양(+) MACD가 시그널 상회 -> 상승 추세가 강할 가능성"
+            else:
+                macd_comment = "양(+) MACD가 시그널 하회 -> 단기 조정/둔화 가능성"
+        else:
+            if self.MACD < self.MACD_Signal:
+                macd_comment = "음(-) MACD가 시그널 아래 -> 하락 추세 강화 가능성"
+            else:
+                macd_comment = (
+                    "음(-) MACD가 시그널 위 -> 하락 추세 둔화/반등 시도 가능성"
+                )
+        interpretation_data["MACD"] = (
+            f"MACD 평균: {self.MACD}, MACD 시그널 평균: {self.MACD_Signal}, 해석: {macd_comment}"
+        )
+
+        # (4) ADX 해석 (추세 강도 확인)
+        if self.ADX < 20:
+            adx_comment = "약한 추세(ADX < 20). 뚜렷한 방향성 부족."
+        elif self.ADX < 40:
+            adx_comment = "보통 수준 추세(20 ≤ ADX < 40)."
+        else:
+            adx_comment = "강한 추세(ADX ≥ 40). 추세 방향성을 적극 고려."
+        interpretation_data["ADX"] = f"ADX 평균: {self.ADX}, 해석: {adx_comment}"
+
+        # (5) ATR(14) 해석 (단순 변동성 체크)
+        if self.ATR_14 > 2.0:
+            atr_comment = "고변동성 구간(ATR > 2.0)으로 변동폭이 큼."
+        else:
+            atr_comment = "보통/저변동성 구간(ATR ≤ 2.0)."
+        interpretation_data["ATR_14"] = f"ATR 평균: {self.ATR_14}, 해석: {atr_comment}"
+
+        # Combine all interpretation data into a single string
+        interpretations = "\n".join(
+            f"{key}: {value}" for key, value in interpretation_data.items()
+        )
+
+        return interpretations

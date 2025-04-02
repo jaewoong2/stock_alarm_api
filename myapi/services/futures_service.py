@@ -545,7 +545,7 @@ class FuturesService:
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
         analysis = self.perform_technical_analysis(df=candles_info)
 
-        technical_indicators, _ = get_technical_indicators(
+        technical_indicators, _, mean_indicators = get_technical_indicators(
             df=candles_info, length=limit, reverse=False
         )
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
@@ -579,7 +579,8 @@ class FuturesService:
             technical_analysis=analysis.description,
             interval=timeframe,
             market_data=current_price.description,
-            technical_indicators=technical_indicators.description,
+            latest_technical_indicators=technical_indicators.description,
+            mean_technical_indicators=mean_indicators.description,
             additional_context=addtion_context,
             target_currency=target_currency,
             position=target_position.description if target_position else "None",

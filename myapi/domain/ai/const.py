@@ -109,7 +109,8 @@ def split_interval(interval: str):
 
 def generate_futures_prompt(
     market_data: str,
-    technical_indicators: str,
+    latest_technical_indicators: str,
+    mean_technical_indicators: str,
     technical_analysis: str,
     balances_data: str,
     target_currency: str = "BTC",
@@ -142,21 +143,18 @@ def generate_futures_prompt(
 
     Steps to Follow:
     1. Analyze market data thoroughly (current price, volume, highs/lows, ATR-based volatility).
-    2. Review technical indicators: RSI, MACD, Bollinger Bands, ADX, Pivot Points, Fibonacci levels, and moving averages.
-    3. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
-    4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
-    5. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
-    6. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on ATR and Fibonacci levels.
-    7. If Current Position should be closed, "CLOSE_ORDER".
+    2. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
+    3. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
+    4. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
+    5. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on Input Data.
+    6. If Current Position should be closed, "CLOSE_ORDER".
 
     Risk Management & Capital Allocation:
     - TP: Minimum risk/reward ratio of 1:2 / SL: Max loss 1%~1.5% of entry price
-    - Adjust TP/SL dynamically if ATR changes by >20% post-entry.
+    - Think Earn Many Money, Not Lose Money
     - ** Minimum Quantity: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency} **.
     - ** Maximum Quantity: {maximum_amount * leverage} {target_currency} **.
-    - if you are confidence, you can use more more money. !important
-    - Default order type: LIMIT.
-    - Do not exceed available balance.
+    - if you are confidence, you can use more more money. !important!
     - Prioritize capital preservation.
 
     Additional Rules:
@@ -166,20 +164,13 @@ def generate_futures_prompt(
     Input Data [{interval} interval]:
     - Current position: {position} with leverage {leverage}x.
     - Market Data: {market_data}
-    - Technical Indicators: {technical_indicators}
+    - Mean Technical Indicators With Latest 24 Candles: {mean_technical_indicators}
+    - Latest 1 Candle Technical Indicators: {latest_technical_indicators}
     - Technical Analysis: {technical_analysis}
     - Balances: {balances_data}
     - Funding Rate Description: {funding_rate}
 
-    Additional Context:
-    {additional_context}
-
-    Final Output:
-    - Clear decision: LONG, SHORT, HOLD, or CLOSE_ORDER.
-    - Short-term prediction: UP, DOWN, NEUTRAL.
-    - Confidence percentage (0-100%).
-    - Specific TP and SL targets clearly defined.
-    - Provide the rationale for your autonomous decision.
+    Additional Context: {additional_context}
     """
 
     return prompt, system_prompt

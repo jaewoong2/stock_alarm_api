@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 
+from myapi.domain.futures.futures_schema import MeanTechnicalIndicators
 from myapi.domain.trading.trading_schema import TechnicalIndicators
 
 
@@ -14,6 +15,69 @@ matplotlib.use(
     "Agg", force=True
 )  # GUI 백엔드 대신 Agg 사용 (반드시 import plt 전에 호출)
 import mplfinance as mpf
+
+
+def summarize_market_data(df: pd.DataFrame, n: int = 24):
+    """
+    df: 시계열 순서대로 정렬된 (오래된 -> 최신) 데이터프레임
+    n: 최근 n개 구간을 활용해 통계를 구할 범위
+    return: (TechnicalIndicators, {각 지표에 대한 동적 해석})
+    """
+
+    # 1) 최근 n개 구간만 추출
+    df_recent = df.tail(n)
+
+    # 2) n개 구간의 평균/표준편차 등 계산
+    ma_short_9 = round(df_recent["MA_9"].mean(), 2)
+    ma_long_21 = round(df_recent["MA_21"].mean(), 2)
+    ma_long_120 = round(df_recent["MA_120"].mean(), 2)
+    rsi_14 = round(df_recent["RSI_14"].mean(), 2)
+    macd = round(df_recent["MACD"].mean(), 2)
+    macd_signal = round(df_recent["MACD_Signal"].mean(), 2)
+    bb_upper = round(df_recent["BB_Upper"].mean(), 2)
+    bb_lower = round(df_recent["BB_Lower"].mean(), 2)
+    adx = round(df_recent["adx"].mean(), 2)
+    atr_14 = round(df_recent["ATR_14"].mean(), 2)
+    latest_close = round(df_recent["close"].mean(), 2)
+    latest_open = round(df_recent["open"].mean(), 2)
+    volatility = round(df_recent["close"].std(), 2)
+    high = round(df_recent["high"].mean(), 2)
+
+    # extra 필드
+    close_mean = round(df_recent["close"].mean(), 2)
+    rsi_slope = round(
+        (df_recent["RSI_14"].iloc[-1] - df_recent["RSI_14"].iloc[0]) / n, 2
+    )
+    ma9_slope = round((df_recent["MA_9"].iloc[-1] - df_recent["MA_9"].iloc[0]) / n, 2)
+    plus_di_avg = round(df_recent["+di"].mean(), 2)
+    minus_di_avg = round(df_recent["-di"].mean(), 2)
+    volume_avg = round(df_recent["volume"].mean(), 2)
+
+    # 3) TechnicalIndicators 인스턴스 생성
+    indicators = MeanTechnicalIndicators(
+        MA_short_9=ma_short_9,
+        MA_long_21=ma_long_21,
+        MA_long_120=ma_long_120,
+        RSI_14=rsi_14,
+        MACD=macd,
+        MACD_Signal=macd_signal,
+        BB_Upper=bb_upper,
+        BB_Lower=bb_lower,
+        ADX=adx,
+        ATR_14=atr_14,
+        Latest_Close=latest_close,
+        Latest_Open=latest_open,
+        volatility=volatility,
+        high=high,
+        close_mean=close_mean,
+        rsi_slope=rsi_slope,
+        ma9_slope=ma9_slope,
+        plus_di_avg=plus_di_avg,
+        minus_di_avg=minus_di_avg,
+        volume_avg=volume_avg,
+    )
+
+    return indicators
 
 
 def calculate_moving_average(df: pd.DataFrame, window: int) -> pd.Series:
@@ -169,6 +233,8 @@ def get_technical_indicators(
     # (3) 뒤집은 상태에서 '마지막 행'이 곧 최신 데이터
     latest = df.iloc[-1]
 
+    mean_indicators = summarize_market_data(df, 24)
+
     # (4) 결과를 딕셔너리로 반환
     result = {
         "MA_short_9": round(latest["MA_9"], 2),
@@ -189,7 +255,7 @@ def get_technical_indicators(
         "high": round(latest["high"], 2),
     }
 
-    return TechnicalIndicators(**result), df
+    return TechnicalIndicators(**result), df, mean_indicators
 
 
 def plot_with_indicators(df: pd.DataFrame, length: int):

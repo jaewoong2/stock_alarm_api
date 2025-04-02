@@ -207,13 +207,14 @@ async def execute_futures_with_ai(
             suggestion=technical_suggestion,
             target_balance=target_balance,
         )
+        # result = None
 
         if result == None:
             return {"message": "No action taken."}
 
         response, error_message = result
 
-        # 선물 거래 결과 Logging / Discode 전송
+        # # 선물 거래 결과 Logging / Discode 전송
         if response:
             discord_service.send_message(response.model_dump_json())
 
