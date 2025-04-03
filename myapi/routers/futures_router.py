@@ -154,24 +154,24 @@ async def execute_futures_with_ai(
             f"target_balance: {target_balance.model_dump() if target_balance else None}"
         )
 
-        _, _, base64_image_url = futures_service.generate_technical_prompts(
-            symbol=data.symbol,
-            timeframe=data.image_timeframe,
-            limit=data.limit,
-            target_currency=target_currency,
-            balances=balance_position,
-            target_position=(target_balance.positions if target_balance else None),
-        )
+        # _, _, base64_image_url = futures_service.generate_technical_prompts(
+        #     symbol=data.symbol,
+        #     timeframe=data.image_timeframe,
+        #     limit=data.limit,
+        #     target_currency=target_currency,
+        #     balances=balance_position,
+        #     target_position=(target_balance.positions if target_balance else None),
+        # )
 
-        image_suggestion = ai_service.completions_parse(
-            system_prompt="You are an AI specializing in short-term futures Crypto Trading",
-            prompt=generate_prompt_for_image(
-                interval=data.image_timeframe, symbol=data.symbol, length=data.limit
-            ),
-            schema=FutureOpenAISuggestion,
-            chat_model=ChatModel.GPT_4O_MINI,
-            image_url=f"data:image/jpeg;base64,{base64_image_url}",
-        )
+        # image_suggestion = ai_service.completions_parse(
+        #     system_prompt="You are an AI specializing in short-term futures Crypto Trading",
+        #     prompt=generate_prompt_for_image(
+        #         interval=data.image_timeframe, symbol=data.symbol, length=data.limit
+        #     ),
+        #     schema=FutureOpenAISuggestion,
+        #     chat_model=ChatModel.GPT_4O_MINI,
+        #     image_url=f"data:image/jpeg;base64,{base64_image_url}",
+        # )
 
         # AI 분석 요청을 위한 프롬프트 생성
         prompt, system_prompt, _ = futures_service.generate_technical_prompts(
@@ -181,7 +181,7 @@ async def execute_futures_with_ai(
             target_currency=target_currency,
             balances=balance_position,
             target_position=(target_balance.positions if target_balance else None),
-            addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
+            # addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
         )
 
         # AI 분석 요청
@@ -189,13 +189,13 @@ async def execute_futures_with_ai(
             system_prompt=system_prompt,
             prompt=prompt,
             schema=FutureOpenAISuggestion,
-            chat_model=ChatModel.O3_MINI,
+            chat_model=ChatModel.O1,
             image_url=None,
         )
 
         # 분석 결과 Logging / Discode 전송
         discord_service.send_message(technical_suggestion.model_dump_json())
-        discord_service.send_message(image_suggestion.model_dump_json())
+        # discord_service.send_message(image_suggestion.model_dump_json())
 
         # AI 분석 결과를 바탕으로 선물 거래 실행
         # - 기존 거래

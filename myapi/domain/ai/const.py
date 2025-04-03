@@ -115,7 +115,7 @@ def generate_futures_prompt(
     balances_data: str,
     target_currency: str = "BTC",
     quote_currency: str = "USDT",
-    additional_context: str = "",
+    additional_context: str = "None",
     interval: str = "15m",
     position: str = "NONE",
     leverage: int = 2,
@@ -126,15 +126,14 @@ def generate_futures_prompt(
     interval_, interval_str = split_interval(interval)
 
     system_prompt = f"""
-    You are an AI specializing in short-term futures crypto trading on Binance.
-    Your goal is to generate automated trading decisions (LONG, SHORT, HOLD, CANCLE)
+    You are an AI specializing in short-term futures crypto trading.
+    Your Goal is to generate automated trading decisions (LONG, SHORT, HOLD, CLOSE_ORDER)
     for {target_currency}/{quote_currency} pair based on current market data.
 
-    Objectives:
-    - Analyze provided data even if partial or ambiguous.
-    - Clearly define risk management and capital allocation.
-    - Predict movements for the next {interval_}-{interval_ * 2} {interval_str}, extend to {interval_ * 4} {interval_str} if confidence > 80%.
-    - Always prioritize avoiding liquidation and consistently profitable decisions.
+    Key Objectives:
+    1. Analyze provided data thoroughly, even if partial or ambiguous.
+    2. Predict movements for the next {interval_}-{interval_ * 2} {interval_str}, possibly extending to {interval_ * 4} {interval_str} if confidence > 80%.
+    3. Always prioritize avoiding liquidation and consistently profitable decisions
     """
 
     prompt = f"""
@@ -151,6 +150,7 @@ def generate_futures_prompt(
 
     Risk Management & Capital Allocation:
     - TP: Minimum risk/reward ratio of 1:2 / SL: Max loss 1%~1.5% of entry price
+    - TP/SL shoud be set by reachable prices and reached at least 2 hours
     - Think Earn Many Money, Not Lose Money
     - ** Minimum Quantity: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency} **.
     - ** Maximum Quantity: {maximum_amount * leverage} {target_currency} **.
@@ -160,6 +160,22 @@ def generate_futures_prompt(
     Additional Rules:
     - Weight oversold/overbought RSI conditions heavily in ranging markets (ADX < 25).
     - Use Fibonacci levels (e.g., 38.2%, 61.8%) as secondary TP/SL targets.
+    
+    - "Please provide a clear step-by-step reasoning process to reach your final decision:
+     1) Summarize the key market data
+     2) Analyze Input Data's indicators
+     3) Brief overview of volume or order flow
+     4) Potential near-term support/resistance (or high/low) scenarios
+     5) Final conclusion (position type, TP, SL)"
+
+    - "Consider three possible short-term scenarios:
+     A) The price goes up
+     B) The price goes down
+     C) The price moves sideways with minimal volatility
+
+    - "After you present your final conclusion, provide a brief self-critique.
+     - Identify any potential oversight or missing analysis
+     - If necessary, adjust or refine the final decision accordingly."
     
     Input Data [{interval} interval]:
     - Current position: {position} with leverage {leverage}x.

@@ -69,6 +69,7 @@ class FuturesRepository:
                 Futures.parent_order_id == current_order.parent_order_id,
                 Futures.order_id != order_id,
                 Futures.symbol == current_order.symbol,
+                current_order.parent_order_id != "",
             )
             .one_or_none()
         )
