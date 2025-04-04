@@ -18,3 +18,4 @@ starlette==0.46.1
 yfinance==0.2.52
 psycopg2-binary==2.9.9
 regex==2024.11.6
+threads_api==1.2.0

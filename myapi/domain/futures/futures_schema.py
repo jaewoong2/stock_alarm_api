@@ -155,7 +155,15 @@ class FutureInvestMentOrderParams(BaseModel):
     stopPrice: Optional[float]
 
 
+class FuturesActionType(str, Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+    HOLD = "HOLD"
+    CLOSE_ORDER = "CLOSE_ORDER"
+
+
 class FuturesOrderRequest(BaseModel):
+    action: FuturesActionType
     symbol: str
     quantity: float
     price: float
@@ -164,18 +172,12 @@ class FuturesOrderRequest(BaseModel):
     leverage: int
 
 
-class FuturesActionType(str, Enum):
-    LONG = "LONG"
-    SHORT = "SHORT"
-    HOLD = "HOLD"
-    CLOSE_ORDER = "CLOSE_ORDER"
-
-
 class FutureOpenAISuggestion(BaseModel):
-    action: FuturesActionType
-    reasoning: str
-    order: FuturesOrderRequest
     detaild_summary: str
+    action: FuturesActionType
+    first_order: FuturesOrderRequest
+    second_order: Optional[FuturesOrderRequest] = None
+    third_order: Optional[FuturesOrderRequest] = None
 
 
 class FuturesConfigRequest(BaseModel):

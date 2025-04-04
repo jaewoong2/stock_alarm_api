@@ -342,6 +342,17 @@ def create_analysis_prompt(
     return prompt.strip()
 
 
+def next_timeframe(timeframe: str = "15m"):
+    if timeframe == "15m":
+        return "30m"
+    elif timeframe == "30m":
+        return "1h"
+    elif timeframe == "1h":
+        return "4h"
+    else:
+        return "30m"
+
+
 class FuturesService:
     def __init__(
         self,
@@ -543,6 +554,8 @@ class FuturesService:
     ):
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
+        next_candles_info = self.fetch_ohlcv(symbol, next_timeframe(timeframe), limit)
+
         analysis = self.perform_technical_analysis(df=candles_info)
 
         technical_indicators, _, mean_indicators = get_technical_indicators(
@@ -643,7 +656,7 @@ class FuturesService:
     def execute_futures_with_suggestion(
         self,
         symbol: str,
-        suggestion: FutureOpenAISuggestion,
+        suggestion: FuturesOrderRequest,
         target_balance: Optional[FuturesBalance],
     ):
         """
@@ -676,8 +689,8 @@ class FuturesService:
                     if target_balance and target_balance.positions:
                         position = target_balance.positions
                         quantity = (
-                            float(suggestion.order.quantity)
-                            if suggestion.order and suggestion.order.quantity
+                            float(suggestion.quantity)
+                            if suggestion and suggestion.quantity
                             else 0.0
                         )
 
@@ -768,7 +781,7 @@ class FuturesService:
                             type="limit",
                             side="buy",
                             amount=target_balance.positions.position_amt,
-                            price=suggestion.order.price,
+                            price=suggestion.price,
                             params={"reduceOnly": True},
                         )
 
@@ -787,11 +800,11 @@ class FuturesService:
 
                 # 신규 LONG 포지션 생성
                 logger.info(
-                    f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for LONG position on {symbol}"
+                    f"Setting TP {suggestion.tp_price} and SL {suggestion.sl_price} for LONG position on {symbol}"
                 )
 
                 try:
-                    orders = self.place_long_order(suggestion.order)
+                    orders = self.place_long_order(suggestion)
                 except Exception as order_err:
                     logger.error(f"Failed to place LONG order: {str(order_err)}")
                     raise OrderCreationException(
@@ -817,7 +830,7 @@ class FuturesService:
                         self.futures_repository.create_futures(
                             futures=future,
                             position_type="TAKE_PROFIT",
-                            take_profit=suggestion.order.tp_price,
+                            take_profit=suggestion.tp_price,
                             stop_loss=None,
                         )
                         logger.info(f"Successfully saved TP order to database")
@@ -831,7 +844,7 @@ class FuturesService:
                             futures=future,
                             position_type="STOP_LOSS",
                             take_profit=None,
-                            stop_loss=suggestion.order.sl_price,
+                            stop_loss=suggestion.sl_price,
                         )
                         logger.info(f"Successfully saved SL order to database")
                 except Exception as db_err:
@@ -857,7 +870,7 @@ class FuturesService:
                             type="limit",
                             side="sell",
                             amount=target_balance.positions.position_amt,
-                            price=suggestion.order.price,
+                            price=suggestion.price,
                             params={"reduceOnly": True},
                         )
 
@@ -876,11 +889,11 @@ class FuturesService:
 
                 # 신규 SHORT 포지션 생성
                 logger.info(
-                    f"Setting TP {suggestion.order.tp_price} and SL {suggestion.order.sl_price} for SHORT position on {symbol}"
+                    f"Setting TP {suggestion.tp_price} and SL {suggestion.sl_price} for SHORT position on {symbol}"
                 )
 
                 try:
-                    orders = self.place_short_order(suggestion.order)
+                    orders = self.place_short_order(suggestion)
                 except Exception as order_err:
                     logger.error(f"Failed to place SHORT order: {str(order_err)}")
                     raise OrderCreationException(
@@ -906,7 +919,7 @@ class FuturesService:
                         self.futures_repository.create_futures(
                             futures=future,
                             position_type="TAKE_PROFIT",
-                            take_profit=suggestion.order.tp_price,
+                            take_profit=suggestion.tp_price,
                             stop_loss=None,
                         )
                         logger.info(f"Successfully saved TP order to database")
@@ -920,7 +933,7 @@ class FuturesService:
                             futures=future,
                             position_type="STOP_LOSS",
                             take_profit=None,
-                            stop_loss=suggestion.order.sl_price,
+                            stop_loss=suggestion.sl_price,
                         )
                         logger.info(f"Successfully saved SL order to database")
                 except Exception as db_err:
@@ -1224,21 +1237,16 @@ class FuturesService:
                 # 형제 노드가 액티브 주문에 포함 되어 있지 않으면 포지션 종료 상태
                 # -> 현재 Order 제거 (DB Cancled)
                 self.futures_repository.update_futures_status(
-                    order_id=sibling_order.order_id, status="canceled"
+                    order_id=order_id, status="canceled"
                 )
 
                 try:
-                    # -> 현재 Order 제거 (Close)
-                    self.exchange.cancel_order(sibling_order.order_id, symbol)
-                    logger.info(f"Canceled single order: {sibling_order.order_id}")
+                    self.exchange.cancel_order(order_id, symbol)
+                    logger.info(f"Canceled single order: {order_id}")
                 except ccxt.OrderNotFound:
-                    logger.warning(
-                        f"Order {sibling_order.order_id} already canceled or executed"
-                    )
+                    logger.warning(f"Order {order_id} already canceled or executed")
                 except Exception as e:
-                    logger.error(
-                        f"Failed to cancel order {sibling_order.order_id}: {str(e)}"
-                    )
+                    logger.error(f"Failed to cancel order {order_id}: {str(e)}")
 
         except Exception as e:
             logger.error(f"Failed to fetch active orders: {str(e)}")

@@ -202,12 +202,23 @@ async def execute_futures_with_ai(
         #   - 같은 포지션 일 경우, (TP/SL) 수정
         #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
         #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
-        result = futures_service.execute_futures_with_suggestion(
-            symbol=data.symbol,
-            suggestion=technical_suggestion,
-            target_balance=target_balance,
-        )
-        # result = None
+
+        suggetions = [
+            technical_suggestion.first_order,
+            technical_suggestion.second_order,
+            technical_suggestion.third_order,
+        ]
+
+        for suggetion in suggetions:
+            if suggetion == None:
+                continue
+
+            # 주문 실행
+            result = futures_service.execute_futures_with_suggestion(
+                symbol=data.symbol,
+                suggestion=suggetion,
+                target_balance=target_balance,
+            )
 
         if result == None:
             return {"message": "No action taken."}

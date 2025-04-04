@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 import logging
+from sqlalchemy.exc import PendingRollbackError
+from sqlalchemy import text
 
 from myapi.domain.futures.futures_model import Futures
 from myapi.domain.futures.futures_schema import (
-    FuturesCreate,
     FuturesResponse,
     FuturesVO,
 )
@@ -18,9 +19,26 @@ class FuturesRepository:
     ):
         self.db_session = db_session
 
+    def _ensure_valid_session(self):
+        """
+        세션이 유효한 상태인지 확인하고, 필요한 경우 복구합니다.
+        """
+        try:
+            # 간단한 쿼리를 실행하여 세션 상태 확인
+            self.db_session.execute(text("SELECT 1"))
+        except PendingRollbackError:
+            # 롤백이 필요한 경우 롤백 수행
+            logging.warning("PendingRollbackError detected. Rolling back transaction.")
+            self.db_session.rollback()
+        except Exception as e:
+            # 기타 예외 처리
+            logging.error(f"Session error: {e}")
+            self.db_session.rollback()
+
     def get_children_orders(
         self, parent_order_id: Optional[str] = None
     ) -> List[FuturesResponse]:
+        self._ensure_valid_session()
         query = self.db_session.query(Futures)
         if parent_order_id is None:
             # parent_order_id가 None인 경우, 모든 자식 주문을 가져옵니다.
@@ -34,6 +52,7 @@ class FuturesRepository:
         return [FuturesResponse.model_validate(f) for f in futures]
 
     def get_parents_orders(self, symbol: str) -> List[FuturesResponse]:
+        self._ensure_valid_session()
         _symbol = symbol
 
         if not symbol.endswith("USDT"):
@@ -54,6 +73,7 @@ class FuturesRepository:
         """
         주어진 order_id에 해당하는 선물 거래의 형제 거래를 조회합니다.
         """
+        self._ensure_valid_session()
         current_order = (
             self.db_session.query(Futures)
             .filter(Futures.order_id == order_id)
@@ -78,7 +98,6 @@ class FuturesRepository:
             return FuturesVO.model_validate(future)
 
         return None
-        # return [FuturesResponse.model_validate(f) for f in futures]
 
     def get_futures_siblings(
         self, parent_order_id: Optional[str] = None, symbol: Optional[str] = None
@@ -86,6 +105,7 @@ class FuturesRepository:
         """
         주어진 parent_order_id와 symbol을 가진 선물 거래의 형제 거래를 조회합니다.
         """
+        self._ensure_valid_session()
         query = self.db_session.query(Futures)
 
         if parent_order_id is not None:
@@ -107,6 +127,7 @@ class FuturesRepository:
         return answers
 
     def get_all_futures(self, symbol: Optional[str] = None):
+        self._ensure_valid_session()
         if symbol:
             futures = (
                 self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
@@ -123,6 +144,7 @@ class FuturesRepository:
         take_profit: Optional[float] = None,
         stop_loss: Optional[float] = None,
     ) -> FuturesResponse:
+        self._ensure_valid_session()
         try:
             db_futures = Futures(
                 symbol=futures.symbol,
@@ -146,10 +168,12 @@ class FuturesRepository:
             raise
 
     def get_futures_by_symbol(self, symbol: str) -> List[FuturesResponse]:
+        self._ensure_valid_session()
         futures = self.db_session.query(Futures).filter(Futures.symbol == symbol).all()
         return [FuturesResponse.model_validate(f) for f in futures]
 
     def get_open_futures(self, symbol: str):
+        self._ensure_valid_session()
         row = (
             self.db_session.query(Futures)
             .filter(Futures.symbol == symbol, Futures.status == "open")
@@ -158,6 +182,7 @@ class FuturesRepository:
         return FuturesVO(**row_to_dict(row)), row
 
     def update_futures_status(self, order_id: str, status: str) -> FuturesResponse:
+        self._ensure_valid_session()
         try:
             futures = (
                 self.db_session.query(Futures)
@@ -172,7 +197,7 @@ class FuturesRepository:
             self.db_session.add(futures)
             self.db_session.commit()
             self.db_session.refresh(futures)
-            return FuturesResponse.from_orm(futures)
+            return FuturesResponse.model_validate(futures)
         except Exception as e:
             self.db_session.rollback()
             logging.error(f"DB futures update failed: {e}")

@@ -1,3 +1,5 @@
+import logging
+from math import log
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -22,6 +24,7 @@ init_logging()
 
 origins = ["http://localhost:5173"]
 
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +40,7 @@ register_exception_handlers(app)
 # Exception handler for ServiceException
 @app.exception_handler(ServiceException)
 async def service_exception_handler(request: Request, exc: ServiceException):
+    logger.error(f"ServiceException: {exc.name} - {exc.detail}")
     return JSONResponse(
         status_code=400,  # Adjust the status code as needed
         content={"error": exc.name, "detail": exc.detail},
@@ -52,9 +56,12 @@ async def exception_interceptor(request: Request, call_next):
         return response
     except ServiceException as se:
         # Here you can add logging or any other cross-cutting concerns
+        logger.error(f"ServiceException: {se.name} - {se.detail}")
         return await service_exception_handler(request, se)
     except Exception as e:
         # Catch any other unhandled exceptions
+        logger.error(f"Unhandled exception: {str(e)}")
+
         return JSONResponse(
             status_code=500,
             content={"error": "Internal Server Error", "detail": str(e)},
