@@ -554,13 +554,20 @@ class FuturesService:
     ):
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
-        next_candles_info = self.fetch_ohlcv(symbol, next_timeframe(timeframe), limit)
 
         analysis = self.perform_technical_analysis(df=candles_info)
-
         technical_indicators, _, mean_indicators = get_technical_indicators(
             df=candles_info, length=limit, reverse=False
         )
+
+        next_timeframes = next_timeframe(next_timeframe(timeframe))
+        next_candles_info = self.fetch_ohlcv(symbol, next_timeframes, limit)
+
+        next_analysis = self.perform_technical_analysis(df=next_candles_info)
+        next_technical_indicators, _, next_mean_indicators = get_technical_indicators(
+            df=next_candles_info, length=limit, reverse=False
+        )
+
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
 
         plot_image_path = self.backdata_service.upload_plot_image(
@@ -590,10 +597,14 @@ class FuturesService:
                 balances.description if isinstance(balances, FuturesBalances) else ""
             ),
             technical_analysis=analysis.description,
+            next_technical_analysis=next_analysis.description,
             interval=timeframe,
+            next_interval=next_timeframes,
             market_data=current_price.description,
             latest_technical_indicators=technical_indicators.description,
             mean_technical_indicators=mean_indicators.description,
+            next_latest_technical_indicators=next_technical_indicators.description,
+            next_mean_technical_indicators=next_mean_indicators.description,
             additional_context=addtion_context,
             target_currency=target_currency,
             position=target_position.description if target_position else "None",

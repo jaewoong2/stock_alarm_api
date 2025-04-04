@@ -111,12 +111,16 @@ def generate_futures_prompt(
     market_data: str,
     latest_technical_indicators: str,
     mean_technical_indicators: str,
+    next_latest_technical_indicators: str,
+    next_mean_technical_indicators: str,
+    next_technical_analysis: str,
     technical_analysis: str,
     balances_data: str,
     target_currency: str = "BTC",
     quote_currency: str = "USDT",
     additional_context: str = "None",
     interval: str = "15m",
+    next_interval: str = "1h",
     position: str = "NONE",
     leverage: int = 2,
     minimum_amount: float = 0.001,
@@ -185,6 +189,11 @@ def generate_futures_prompt(
     - Technical Analysis: {technical_analysis}
     - Balances: {balances_data}
     - Funding Rate Description: {funding_rate}
+    
+    Input Data [{next_interval} interval]:
+    - {next_interval} Mean Technical Indicators With Latest 24 Candles: {next_mean_technical_indicators}
+    - {next_interval} Latest 1 Candle Technical Indicators: {next_latest_technical_indicators}
+    - {next_interval} Technical Analysis: {next_technical_analysis}
 
     Additional Context: {additional_context}
     """
