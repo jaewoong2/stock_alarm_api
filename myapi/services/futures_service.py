@@ -25,7 +25,6 @@ from myapi.domain.futures.futures_schema import (
     BollingerBands,
     MACDResult,
     Ticker,
-    FutureOpenAISuggestion,
 )
 from myapi.domain.trading.trading_model import Trade
 from myapi.domain.trading.trading_schema import TechnicalIndicators
@@ -353,6 +352,195 @@ def next_timeframe(timeframe: str = "15m"):
         return "30m"
 
 
+# === 2. 지표 계산 함수 ===
+def calculate_indicators_ema_stoch(df_: pd.DataFrame):
+    df = df_.copy()
+    # EMA 200
+    df["EMA200"] = df["close"].ewm(span=200).mean()
+
+    # Stochastic RSI 계산
+    length = 14
+    smoothK = 3
+    smoothD = 3
+
+    delta = df["close"].diff()
+    ups = delta.clip(lower=0).rolling(length).mean()
+    downs = (-delta.clip(upper=0)).rolling(length).mean()
+    rs = ups / (downs + 1e-8)
+    rsi = 100 - 100 / (1 + rs)
+
+    rsi_min = rsi.rolling(length).min()
+    rsi_max = rsi.rolling(length).max()
+    stoch = (rsi - rsi_min) / (rsi_max - rsi_min + 1e-8) * 100
+    df["%K"] = stoch.rolling(smoothK).mean()
+    df["%D"] = df["%K"].rolling(smoothD).mean()
+
+    return df
+
+
+# EMA200, Stoch RSI, 캔들 패턴
+def trading_logic_ema_stoch(df_: pd.DataFrame):
+    df = calculate_indicators_ema_stoch(df_)
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    explanations = []
+
+    # EMA 200 기준 추세 방향
+    if last["close"] > last["EMA200"]:
+        trend = "bullish"
+        explanations.append(f"Price is above EMA200: bullish trend.")
+    else:
+        trend = "bearish"
+        explanations.append(f"Price is below EMA200: bearish trend.")
+
+    # Stoch RSI 골든/데드 크로스
+    golden_cross = (prev["%K"] < prev["%D"]) and (last["%K"] > last["%D"])
+    dead_cross = (prev["%K"] > prev["%D"]) and (last["%K"] < last["%D"])
+
+    # 과매수/과매도 상태
+    oversold = last["%K"] < 20 and last["%D"] < 20
+    overbought = last["%K"] > 80 and last["%D"] > 80
+
+    # 캔들 모양 (강한 모멘텀 캔들)
+    prev_candle_range = prev["high"] - prev["low"]
+    prev_body = abs(prev["close"] - prev["open"])
+    prev_lower_wick = (
+        prev["open"] - prev["low"]
+        if prev["close"] >= prev["open"]
+        else prev["close"] - prev["low"]
+    )
+    prev_upper_wick = (
+        prev["high"] - prev["open"]
+        if prev["close"] >= prev["open"]
+        else prev["high"] - prev["close"]
+    )
+
+    strong_bull_candle = (
+        prev_body > prev_candle_range * 0.7
+        and prev_lower_wick < prev_body * 0.1
+        and prev["close"] > prev["open"]
+    )
+    strong_bear_candle = (
+        prev_body > prev_candle_range * 0.7
+        and prev_upper_wick < prev_body * 0.1
+        and prev["close"] < prev["open"]
+    )
+
+    # 설명 추가
+    if golden_cross:
+        explanations.append(
+            "Stochastic RSI shows Golden Cross: potential upward momentum."
+        )
+    elif dead_cross:
+        explanations.append(
+            "Stochastic RSI shows Dead Cross: potential downward momentum."
+        )
+
+    if oversold:
+        explanations.append("Stochastic RSI is in oversold region (<20).")
+    if overbought:
+        explanations.append("Stochastic RSI is in overbought region (>80).")
+
+    if strong_bull_candle:
+        explanations.append(
+            "Previous candle is a strong bullish candle (large body, small lower wick)."
+        )
+    if strong_bear_candle:
+        explanations.append(
+            "Previous candle is a strong bearish candle (large body, small upper wick)."
+        )
+
+    # 최종 판단
+    long_signal = (
+        trend == "bullish" and oversold and golden_cross and strong_bull_candle
+    )
+    short_signal = (
+        trend == "bearish" and overbought and dead_cross and strong_bear_candle
+    )
+
+    if long_signal:
+        explanations.append("Final decision: LONG signal detected.")
+    elif short_signal:
+        explanations.append("Final decision: SHORT signal detected.")
+    else:
+        explanations.append("Final decision: No clear signal.")
+
+    return "\n".join(explanations)
+
+
+def calculate_indicators_sma_ribon(df_: pd.DataFrame):
+    df = df_.copy()
+
+    # SMA 계산
+    df["sma5"] = df["close"].rolling(window=5).mean()
+    df["sma8"] = df["close"].rolling(window=8).mean()
+    df["sma13"] = df["close"].rolling(window=13).mean()
+
+    # 볼린저 밴드 계산 (20바, 2.5 표준편차)
+    window = 20
+    std_dev = 2.5
+    df["bb_middle"] = df["close"].rolling(window=window).mean()
+    df["bb_std"] = df["close"].rolling(window=window).std()
+    df["bb_upper"] = df["bb_middle"] + (df["bb_std"] * std_dev)
+    df["bb_lower"] = df["bb_middle"] - (df["bb_std"] * std_dev)
+
+    # 스토캐스틱 계산 (14-3-3)
+    window_stoch = 14
+    df["lowest_low"] = df["low"].rolling(window=window_stoch).min()
+    df["highest_high"] = df["high"].rolling(window=window_stoch).max()
+    df["stoch_k"] = (
+        100 * (df["close"] - df["lowest_low"]) / (df["highest_high"] - df["lowest_low"])
+    )
+    df["stoch_d"] = df["stoch_k"].rolling(window=3).mean()  # %D는 %K의 3일 이동 평균
+
+    return df
+
+
+def trading_logic_sma_ribon(df_: pd.DataFrame):
+    """
+    비트코인 선물 거래를 위한 기술적 지표 기반 거래 로직.
+    SMA(5, 8, 13), 볼린저 밴드, 스토캐스틱을 사용해 매수/매도 신호를 생성.
+
+    Parameters:
+        df (pandas.DataFrame): OHLCV 데이터와 계산된 기술적 지표가 포함된 데이터프레임
+
+    Returns:
+        tuple: (signal, message)
+            - signal: 'buy', 'sell', 또는 None (신호 없음)
+            - message: 신호에 대한 상세 설명 문자열
+    """
+    df = calculate_indicators_sma_ribon(df_)
+    message = (
+        "No signals matching about Technical SMA5, SMA8, SMA13, and Bollinger Bands."
+    )
+
+    # Buy condition: SMA5 crosses above both SMA8 and SMA13, and price is above the middle Bollinger Band
+    if (
+        df["sma5"].iloc[-1] > df["sma8"].iloc[-1]
+        and df["sma5"].iloc[-1] > df["sma13"].iloc[-1]
+        and df["close"].iloc[-1] > df["bb_middle"].iloc[-1]
+    ):
+        message = (
+            f"Buy signal detected!\n"
+            f"Reason: SMA5 ({df['sma5'].iloc[-1]:.2f}) has crossed above both SMA8 ({df['sma8'].iloc[-1]:.2f}) "
+            f"and SMA13 ({df['sma13'].iloc[-1]:.2f}), and the current price ({df['close'].iloc[-1]:.2f}) "
+            f"is above the middle Bollinger Band ({df['bb_middle'].iloc[-1]:.2f})."
+        )
+
+    # Sell condition: Price exceeds the upper Bollinger Band or Stochastic %K is above 80
+    elif df["close"].iloc[-1] > df["bb_upper"].iloc[-1] or df["stoch_k"].iloc[-1] > 80:
+        message = (
+            f"Sell signal detected!\n"
+            f"Reason: The current price ({df['close'].iloc[-1]:.2f}) has exceeded the upper Bollinger Band "
+            f"({df['bb_upper'].iloc[-1]:.2f}), or the Stochastic %K ({df['stoch_k'].iloc[-1]:.2f}) is above 80, "
+            f"indicating an overbought condition."
+        )
+
+    return message
+
+
 class FuturesService:
     def __init__(
         self,
@@ -560,7 +748,7 @@ class FuturesService:
             df=candles_info, length=limit, reverse=False
         )
 
-        next_timeframes = next_timeframe(next_timeframe(timeframe))
+        next_timeframes = next_timeframe(timeframe)
         next_candles_info = self.fetch_ohlcv(symbol, next_timeframes, limit)
 
         next_analysis = self.perform_technical_analysis(df=next_candles_info)
@@ -693,6 +881,9 @@ class FuturesService:
             except Exception as e:
                 logger.error(f"Failed to fetch ticker for {symbol}: {str(e)}")
                 raise ExchangeConnectionException(f"Failed to fetch ticker: {str(e)}")
+
+            # if suggestion.action == FuturesActionType.UPDATE_TP_SL:
+            # TP/SL 업데이트
 
             # CLOSE_ORDER 액션 처리
             if suggestion.action == FuturesActionType.CLOSE_ORDER:
@@ -986,6 +1177,8 @@ class FuturesService:
         rsi = calculate_rsi(df)
         ha_df = calculate_heikin_ashi(df)
         ha_analysis = analyze_heikin_ashi_model(ha_df)
+        logic_ema_stoch = trading_logic_ema_stoch(df)
+        logic_sma_ribon = trading_logic_sma_ribon(df)
 
         return TechnicalAnalysis(
             support=pivots.support1,
@@ -1001,6 +1194,8 @@ class FuturesService:
             rsi_divergence=detect_divergence_advanced(df, rsi),
             volume_trend=analyze_volume(df),
             ha_analysis=ha_analysis.model_dump(),
+            logic_ema_stoch=logic_ema_stoch,
+            logic_sma_ribon=logic_sma_ribon,
         )
 
     def place_long_order(self, order: FuturesOrderRequest):

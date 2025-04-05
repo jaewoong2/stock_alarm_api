@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator, root_validator
 from datetime import datetime
 from typing import Optional, Dict, Union
 
@@ -116,6 +116,8 @@ class TechnicalAnalysis(BaseModel):
     rsi_divergence: Optional[bool]
     volume_trend: Optional[str]
     ha_analysis: Optional[Dict]
+    logic_ema_stoch: Optional[str]
+    logic_sma_ribon: Optional[str]
 
     @property
     def description(self):
@@ -143,7 +145,9 @@ class TechnicalAnalysis(BaseModel):
             f"MACD Crossunder: {self.macd_crossunder}, "
             f"RSI Divergence: {self.rsi_divergence}, "
             f"Volume Trend: {self.volume_trend}, "
-            f"HA Analysis: {ha_analysis}"
+            f"HA Analysis: {ha_analysis}, "
+            f"EMA200 Trend Rider: {self.logic_ema_stoch}, "
+            f"TrendRibbon Scalper: {self.logic_sma_ribon}, "
         )
 
 
@@ -176,12 +180,11 @@ class FutureOpenAISuggestion(BaseModel):
     detaild_summary: str
     action: FuturesActionType
     first_order: FuturesOrderRequest
-    second_order: Optional[FuturesOrderRequest] = None
-    third_order: Optional[FuturesOrderRequest] = None
+    second_order: FuturesOrderRequest
+    third_order: FuturesOrderRequest
 
 
 class FuturesConfigRequest(BaseModel):
-
     # margin_type: str = "ISOLATED"
     symbol: str = "BTCUSDT"
     leverage: int = 2
