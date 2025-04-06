@@ -24,7 +24,9 @@ from myapi.domain.futures.futures_schema import (
     PivotPoints,
     BollingerBands,
     MACDResult,
+    TechnicalIndicatorsResponse,
     Ticker,
+    TradingSignal,
 )
 from myapi.domain.trading.trading_model import Trade
 from myapi.domain.trading.trading_schema import TechnicalIndicators
@@ -222,27 +224,23 @@ def calculate_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
     return ha_df
 
 
-def analyze_heikin_ashi_model(
-    ha_df: pd.DataFrame, lookback: int = 5
-) -> HeikinAshiAnalysis:
+def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
     """
-    Analyze the last `lookback` Heikin Ashi candles and return the result as a Pydantic BaseModel (HeikinAshiAnalysis).
-    Interpretation strings are provided in English.
+    Analyzes the last `lookback` Heikin Ashi candles and returns a message and TradingSignal tuple.
     """
-    # 1) Get the subset of recent candles
+    # Extract recent candles
     recent_df = ha_df.iloc[-lookback:].copy()
 
-    # 2) Determine bullish/bearish candles
+    # Identify bullish/bearish candles
     recent_df["is_bull"] = recent_df["HA_Close"] > recent_df["HA_Open"]
     recent_df["is_bear"] = recent_df["HA_Close"] < recent_df["HA_Open"]
 
-    # 3) Identify Doji candles
+    # Identify Doji candles
     body_size = (recent_df["HA_Close"] - recent_df["HA_Open"]).abs()
     candle_range = recent_df["HA_High"] - recent_df["HA_Low"]
-    # If the body is less than 10% of the entire candle range, consider it a Doji
     recent_df["doji"] = (candle_range > 0) & ((body_size / candle_range) < 0.1)
 
-    # 4) Calculate upper/lower tails
+    # Calculate upper/lower tails
     recent_df["upper_tail"] = recent_df["HA_High"] - recent_df[
         ["HA_Open", "HA_Close"]
     ].max(axis=1)
@@ -250,26 +248,23 @@ def analyze_heikin_ashi_model(
         recent_df[["HA_Open", "HA_Close"]].min(axis=1) - recent_df["HA_Low"]
     )
 
-    # ===== Basic Statistics =====
+    # Basic statistics
     num_bull = int(recent_df["is_bull"].sum())
     num_bear = int(recent_df["is_bear"].sum())
     num_doji = int(recent_df["doji"].sum())
 
-    # (a) Consecutive Bull/Bear
+    # Count consecutive bullish/bearish candles
     consecutive_bull = 0
     consecutive_bear = 0
 
-    # Count consecutive bullish candles from the most recent
     for i in reversed(range(len(recent_df))):
         if recent_df["is_bull"].iloc[i]:
             consecutive_bull += 1
-            # Stop if we see a bear candle just before
             if i < len(recent_df) - 1 and recent_df["is_bear"].iloc[i + 1]:
                 break
         else:
             break
 
-    # Count consecutive bearish candles
     for i in reversed(range(len(recent_df))):
         if recent_df["is_bear"].iloc[i]:
             consecutive_bear += 1
@@ -278,28 +273,53 @@ def analyze_heikin_ashi_model(
         else:
             break
 
-    # (b) Average upper/lower tail lengths
+    # Average tail lengths
     avg_upper_tail = recent_df["upper_tail"].mean() if len(recent_df) > 0 else 0.0
     avg_lower_tail = recent_df["lower_tail"].mean() if len(recent_df) > 0 else 0.0
 
-    # (c) Simple interpretation in English
-    interpretation = None
+    # Analysis results
+    explanations = []
+    factors = []
+    confidence = 0.0
+    signal = None
+
+    # Signal detection and interpretation
     if consecutive_bull > 2 and avg_lower_tail < avg_upper_tail:
+        signal = "long"
         interpretation = (
-            "A strong bullish trend may be in place: multiple consecutive bullish HA candles "
+            f"Strong bullish trend possible: {consecutive_bull} consecutive bullish HA candles detected, "
             "with relatively small lower tails."
         )
+        explanations.append(interpretation)
+        factors.extend(
+            [f"{consecutive_bull} Consecutive Bullish Candles", "Small Lower Tail"]
+        )
+        confidence = min(0.3 + consecutive_bull * 0.15, 0.9)
     elif consecutive_bear > 2 and avg_upper_tail < avg_lower_tail:
+        signal = "short"
         interpretation = (
-            "A strong bearish trend may be in place: multiple consecutive bearish HA candles "
+            f"Strong bearish trend possible: {consecutive_bear} consecutive bearish HA candles detected, "
             "with relatively small upper tails."
         )
+        explanations.append(interpretation)
+        factors.extend(
+            [f"{consecutive_bear} Consecutive Bearish Candles", "Small Upper Tail"]
+        )
+        confidence = min(0.3 + consecutive_bear * 0.15, 0.9)
     elif num_doji > 0:
-        interpretation = f"{num_doji} Doji candle(s) detected, indicating uncertainty or a potential trend reversal."
+        interpretation = f"{num_doji} Doji candle(s) detected: indicates uncertainty or potential trend reversal."
+        explanations.append(interpretation)
+        factors.append(f"{num_doji} Doji Candles")
+        confidence = 0.3
     else:
         interpretation = "No distinct pattern of consecutive candles found. Trend signals are not strongly indicated."
+        explanations.append(interpretation)
+        confidence = 0.0
 
-    # (d) Build the Pydantic model
+    signal_details = TradingSignal(
+        signal=signal, confidence=confidence, contributing_factors=factors
+    )
+
     result = HeikinAshiAnalysis(
         total_candles=lookback,
         num_bull=num_bull,
@@ -311,7 +331,8 @@ def analyze_heikin_ashi_model(
         avg_lower_tail=avg_lower_tail,
         interpretation=interpretation,
     )
-    return result
+
+    return result, signal_details
 
 
 def create_analysis_prompt(
@@ -379,31 +400,37 @@ def calculate_indicators_ema_stoch(df_: pd.DataFrame):
 
 
 # EMA200, Stoch RSI, 캔들 패턴
-def trading_logic_ema_stoch(df_: pd.DataFrame):
+def trading_logic_ema_stoch(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
     df = calculate_indicators_ema_stoch(df_)
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
     explanations = []
+    factors = []
+    confidence = 0.0
 
-    # EMA 200 기준 추세 방향
+    # Trend direction based on EMA200
     if last["close"] > last["EMA200"]:
         trend = "bullish"
-        explanations.append(f"Price is above EMA200: bullish trend.")
+        explanations.append("Price is above EMA200: bullish trend.")
+        factors.append("Price > EMA200")
+        confidence += 0.25
     else:
         trend = "bearish"
-        explanations.append(f"Price is below EMA200: bearish trend.")
+        explanations.append("Price is below EMA200: bearish trend.")
+        factors.append("Price < EMA200")
+        confidence += 0.25
 
-    # Stoch RSI 골든/데드 크로스
+    # Stochastic RSI Golden/Dead Cross
     golden_cross = (prev["%K"] < prev["%D"]) and (last["%K"] > last["%D"])
     dead_cross = (prev["%K"] > prev["%D"]) and (last["%K"] < last["%D"])
 
-    # 과매수/과매도 상태
+    # Overbought/Oversold conditions
     oversold = last["%K"] < 20 and last["%D"] < 20
     overbought = last["%K"] > 80 and last["%D"] > 80
 
-    # 캔들 모양 (강한 모멘텀 캔들)
+    # Candle shape (strong momentum candles)
     prev_candle_range = prev["high"] - prev["low"]
     prev_body = abs(prev["close"] - prev["open"])
     prev_lower_wick = (
@@ -428,31 +455,43 @@ def trading_logic_ema_stoch(df_: pd.DataFrame):
         and prev["close"] < prev["open"]
     )
 
-    # 설명 추가
+    # Add explanations and factors
     if golden_cross:
         explanations.append(
             "Stochastic RSI shows Golden Cross: potential upward momentum."
         )
+        factors.append("Stoch RSI Golden Cross")
+        confidence += 0.25
     elif dead_cross:
         explanations.append(
             "Stochastic RSI shows Dead Cross: potential downward momentum."
         )
+        factors.append("Stoch RSI Dead Cross")
+        confidence += 0.25
 
     if oversold:
         explanations.append("Stochastic RSI is in oversold region (<20).")
+        factors.append("Oversold Stoch RSI")
+        confidence += 0.15
     if overbought:
         explanations.append("Stochastic RSI is in overbought region (>80).")
+        factors.append("Overbought Stoch RSI")
+        confidence += 0.15
 
     if strong_bull_candle:
         explanations.append(
             "Previous candle is a strong bullish candle (large body, small lower wick)."
         )
+        factors.append("Strong Bullish Candle")
+        confidence += 0.20
     if strong_bear_candle:
         explanations.append(
             "Previous candle is a strong bearish candle (large body, small upper wick)."
         )
+        factors.append("Strong Bearish Candle")
+        confidence += 0.20
 
-    # 최종 판단
+    # Final decision
     long_signal = (
         trend == "bullish" and oversold and golden_cross and strong_bull_candle
     )
@@ -460,14 +499,24 @@ def trading_logic_ema_stoch(df_: pd.DataFrame):
         trend == "bearish" and overbought and dead_cross and strong_bear_candle
     )
 
+    signal = None
     if long_signal:
+        signal = "long"
         explanations.append("Final decision: LONG signal detected.")
+        confidence = min(confidence, 1.0)
     elif short_signal:
+        signal = "short"
         explanations.append("Final decision: SHORT signal detected.")
+        confidence = min(confidence, 1.0)
     else:
         explanations.append("Final decision: No clear signal.")
+        confidence = min(confidence, 0.5)
 
-    return "\n".join(explanations)
+    signal_details = TradingSignal(
+        signal=signal, confidence=confidence, contributing_factors=factors
+    )
+
+    return "\n".join(explanations), signal_details
 
 
 def calculate_indicators_sma_ribon(df_: pd.DataFrame):
@@ -498,47 +547,62 @@ def calculate_indicators_sma_ribon(df_: pd.DataFrame):
     return df
 
 
-def trading_logic_sma_ribon(df_: pd.DataFrame):
-    """
-    비트코인 선물 거래를 위한 기술적 지표 기반 거래 로직.
-    SMA(5, 8, 13), 볼린저 밴드, 스토캐스틱을 사용해 매수/매도 신호를 생성.
-
-    Parameters:
-        df (pandas.DataFrame): OHLCV 데이터와 계산된 기술적 지표가 포함된 데이터프레임
-
-    Returns:
-        tuple: (signal, message)
-            - signal: 'buy', 'sell', 또는 None (신호 없음)
-            - message: 신호에 대한 상세 설명 문자열
-    """
+def trading_logic_sma_ribon(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
     df = calculate_indicators_sma_ribon(df_)
-    message = (
-        "No signals matching about Technical SMA5, SMA8, SMA13, and Bollinger Bands."
-    )
+    explanations = []
+    factors = []
+    confidence = 0.0
+    signal = None
 
-    # Buy condition: SMA5 crosses above both SMA8 and SMA13, and price is above the middle Bollinger Band
-    if (
-        df["sma5"].iloc[-1] > df["sma8"].iloc[-1]
-        and df["sma5"].iloc[-1] > df["sma13"].iloc[-1]
-        and df["close"].iloc[-1] > df["bb_middle"].iloc[-1]
-    ):
+    # Buy condition: SMA5 crosses above SMA8 and SMA13, price above middle BB
+    sma5_above_sma8 = df["sma5"].iloc[-1] > df["sma8"].iloc[-1]
+    sma5_above_sma13 = df["sma5"].iloc[-1] > df["sma13"].iloc[-1]
+    price_above_bb_middle = df["close"].iloc[-1] > df["bb_middle"].iloc[-1]
+
+    if sma5_above_sma8 and sma5_above_sma13 and price_above_bb_middle:
+        signal = "long"
         message = (
             f"Buy signal detected!\n"
             f"Reason: SMA5 ({df['sma5'].iloc[-1]:.2f}) has crossed above both SMA8 ({df['sma8'].iloc[-1]:.2f}) "
             f"and SMA13 ({df['sma13'].iloc[-1]:.2f}), and the current price ({df['close'].iloc[-1]:.2f}) "
             f"is above the middle Bollinger Band ({df['bb_middle'].iloc[-1]:.2f})."
         )
+        explanations.append(message)
+        factors.extend(["SMA5 > SMA8", "SMA5 > SMA13", "Price > BB Middle"])
+        confidence = 0.75
 
-    # Sell condition: Price exceeds the upper Bollinger Band or Stochastic %K is above 80
-    elif df["close"].iloc[-1] > df["bb_upper"].iloc[-1] or df["stoch_k"].iloc[-1] > 80:
-        message = (
-            f"Sell signal detected!\n"
-            f"Reason: The current price ({df['close'].iloc[-1]:.2f}) has exceeded the upper Bollinger Band "
-            f"({df['bb_upper'].iloc[-1]:.2f}), or the Stochastic %K ({df['stoch_k'].iloc[-1]:.2f}) is above 80, "
-            f"indicating an overbought condition."
-        )
+    # Sell condition: Price exceeds upper BB or Stochastic %K > 80
+    price_above_bb_upper = df["close"].iloc[-1] > df["bb_upper"].iloc[-1]
+    stoch_overbought = df["stoch_k"].iloc[-1] > 80
 
-    return message
+    if price_above_bb_upper or stoch_overbought:
+        signal = "short"
+        reasons = []
+        if price_above_bb_upper:
+            reasons.append(
+                f"Price ({df['close'].iloc[-1]:.2f}) exceeds upper Bollinger Band ({df['bb_upper'].iloc[-1]:.2f})"
+            )
+            factors.append("Price > BB Upper")
+            confidence += 0.4
+        if stoch_overbought:
+            reasons.append(f"Stochastic %K ({df['stoch_k'].iloc[-1]:.2f}) > 80")
+            factors.append("Stoch %K Overbought")
+            confidence += 0.4
+        message = f"Sell signal detected!\nReason: {' and '.join(reasons)}."
+        explanations.append(message)
+        confidence = min(confidence, 0.9)
+
+    # No signal case
+    if not signal:
+        message = "No signals detected for SMA5, SMA8, SMA13, and Bollinger Bands."
+        explanations.append(message)
+        confidence = 0.0
+
+    signal_details = TradingSignal(
+        signal=signal, confidence=confidence, contributing_factors=factors
+    )
+
+    return "\n".join(explanations), signal_details
 
 
 class FuturesService:
@@ -730,6 +794,22 @@ class FuturesService:
 
         return min_notional, lot_size
 
+    def get_technical_indicators(
+        self,
+        candles_info: pd.DataFrame,
+        limit=500,
+    ):
+        analysis = self.perform_technical_analysis(df=candles_info)
+        technical_indicators, _, mean_indicators = get_technical_indicators(
+            df=candles_info, length=limit, reverse=False
+        )
+
+        return TechnicalIndicatorsResponse(
+            analysis=analysis,
+            technical_indicators=technical_indicators,
+            mean_indicators=mean_indicators,
+        )
+
     def generate_technical_prompts(
         self,
         symbol: str,
@@ -742,18 +822,13 @@ class FuturesService:
     ):
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
+        next_candles_info = self.fetch_ohlcv(symbol, next_timeframe(timeframe), limit)
 
-        analysis = self.perform_technical_analysis(df=candles_info)
-        technical_indicators, _, mean_indicators = get_technical_indicators(
-            df=candles_info, length=limit, reverse=False
+        current_technical_indicators = self.get_technical_indicators(
+            candles_info=candles_info, limit=limit
         )
-
-        next_timeframes = next_timeframe(timeframe)
-        next_candles_info = self.fetch_ohlcv(symbol, next_timeframes, limit)
-
-        next_analysis = self.perform_technical_analysis(df=next_candles_info)
-        next_technical_indicators, _, next_mean_indicators = get_technical_indicators(
-            df=next_candles_info, length=limit, reverse=False
+        next_technical_indicators = self.get_technical_indicators(
+            candles_info=next_candles_info, limit=limit
         )
 
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
@@ -784,15 +859,15 @@ class FuturesService:
             balances_data=(
                 balances.description if isinstance(balances, FuturesBalances) else ""
             ),
-            technical_analysis=analysis.description,
-            next_technical_analysis=next_analysis.description,
+            technical_analysis=current_technical_indicators.analysis.description,
+            next_technical_analysis=next_technical_indicators.analysis.description,
             interval=timeframe,
-            next_interval=next_timeframes,
+            next_interval=next_timeframe(timeframe),
             market_data=current_price.description,
-            latest_technical_indicators=technical_indicators.description,
-            mean_technical_indicators=mean_indicators.description,
-            next_latest_technical_indicators=next_technical_indicators.description,
-            next_mean_technical_indicators=next_mean_indicators.description,
+            latest_technical_indicators=current_technical_indicators.technical_indicators.description,
+            mean_technical_indicators=current_technical_indicators.mean_indicators.description,
+            next_latest_technical_indicators=next_technical_indicators.technical_indicators.description,
+            next_mean_technical_indicators=next_technical_indicators.mean_indicators.description,
             additional_context=addtion_context,
             target_currency=target_currency,
             position=target_position.description if target_position else "None",
@@ -1176,9 +1251,9 @@ class FuturesService:
         macd_series = pd.Series([macd_data.macd] * len(df), index=df.index)
         rsi = calculate_rsi(df)
         ha_df = calculate_heikin_ashi(df)
-        ha_analysis = analyze_heikin_ashi_model(ha_df)
-        logic_ema_stoch = trading_logic_ema_stoch(df)
-        logic_sma_ribon = trading_logic_sma_ribon(df)
+        ha_analysis, heikin_ashi_signal = analyze_heikin_ashi_model(ha_df)
+        logic_ema_stoch, ema_signal = trading_logic_ema_stoch(df)
+        logic_sma_ribon, sma_signal = trading_logic_sma_ribon(df)
 
         return TechnicalAnalysis(
             support=pivots.support1,
@@ -1196,6 +1271,7 @@ class FuturesService:
             ha_analysis=ha_analysis.model_dump(),
             logic_ema_stoch=logic_ema_stoch,
             logic_sma_ribon=logic_sma_ribon,
+            signals=[ema_signal, sma_signal, heikin_ashi_signal],
         )
 
     def place_long_order(self, order: FuturesOrderRequest):

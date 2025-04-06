@@ -1,4 +1,6 @@
+from calendar import c
 import dis
+import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
@@ -7,6 +9,7 @@ from dependency_injector.wiring import inject, Provide
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.futures.futures_schema import (
+    ExecuteFutureOrderRequest,
     ExecuteFuturesRequest,
     FutureOpenAISuggestion,
     FuturesConfigRequest,
@@ -16,8 +19,10 @@ from myapi.domain.futures.futures_schema import (
 )
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.ai_service import AIService
+from myapi.services.aws_service import AwsService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
+from myapi.utils.utils import format_trade_summary
 
 router = APIRouter(prefix="/futures", tags=["futures"])
 
@@ -194,7 +199,9 @@ async def execute_futures_with_ai(
         )
 
         # 분석 결과 Logging / Discode 전송
-        discord_service.send_message(technical_suggestion.model_dump_json())
+        discord_service.send_message(
+            format_trade_summary(technical_suggestion.model_dump())
+        )
         # discord_service.send_message(image_suggestion.model_dump_json())
 
         # AI 분석 결과를 바탕으로 선물 거래 실행
@@ -209,6 +216,7 @@ async def execute_futures_with_ai(
             technical_suggestion.third_order,
         ]
 
+        total_result = []
         for suggetion in suggetions:
             if suggetion == None:
                 continue
@@ -220,8 +228,165 @@ async def execute_futures_with_ai(
                 target_balance=target_balance,
             )
 
+            if result == None:
+                continue
+
+            response, error_message = result
+
+            total_result.append(response)
+
+            # # 선물 거래 결과 Logging / Discode 전송
+            if response:
+                discord_service.send_message(response.model_dump_json())
+
+            if error_message:
+                discord_service.send_message(error_message)
+
+        return total_result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Futures execution failed: {str(e)}"
+        )
+
+
+@router.get("/futures/signal", tags=["futures"])
+@inject
+async def get_signal(
+    symbol: str = "BTCUSDT",
+    timeframe: str = "5m",
+    limit: int = 500,
+    futures_service: FuturesService = Depends(
+        Provide[Container.services.futures_service]
+    ),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+):
+    try:
+        candles_info = futures_service.fetch_ohlcv(
+            symbol=symbol, timeframe=timeframe, limit=limit
+        )
+        # AI 분석 요청을 위한 프롬프트 생성
+        indicators = futures_service.get_technical_indicators(
+            candles_info=candles_info, limit=limit
+        )
+
+        if not indicators:
+            raise HTTPException(status_code=404, detail="No indicators found")
+
+        if not indicators.analysis:
+            raise HTTPException(status_code=404, detail="No analysis found")
+
+        if not indicators.analysis.signals:
+            raise HTTPException(status_code=404, detail="No signals found")
+
+        context = ""
+
+        for index, indicator in enumerate(indicators.analysis.signals):
+            if not indicator.signal:
+                continue
+
+            if indicator.signal.upper() == "LONG":
+                context += f"[Signal_{index}]_{indicator.signal.upper()}"
+                context += (
+                    f"[Description_{index}]_{"\n".join(indicator.contributing_factors)}"
+                )
+
+            if indicator.signal.upper() == "SHORT":
+                context += f"[Signal_{index}]_{indicator.signal.upper()}"
+                context += (
+                    f"[Description_{index}]_{"\n".join(indicator.contributing_factors)}"
+                )
+
+        if context != "":
+            data: ExecuteFuturesRequest = ExecuteFuturesRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                additional_context=context,
+            )
+
+            message = {
+                "body": data.model_dump_json(),
+                "resource": "/{proxy+}",
+                "path": "/futures/execute",
+                "httpMethod": "POST",
+                "isBase64Encoded": False,
+                "pathParameters": {"proxy": "futures/execute"},
+                "queryStringParameters": {},
+                "headers": {
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Accept": "*/*",
+                    "Accept-Encoding": "gzip, deflate, sdch",
+                    "Accept-Language": "ko",
+                    "Accept-Charset": "utf-8",
+                },
+                "requestContext": {
+                    "path": "/futures/execute",
+                    "resourcePath": "/{proxy+}",
+                    "httpMethod": "POST",
+                },
+            }
+
+            response = aws_service.send_sqs_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+                message_body=json.dumps(message),
+            )
+
+            return {
+                "status": "success",
+                "message": "Futures execution request queued successfully",
+                "sqs_message_id": response.get("MessageId", ""),
+                "data": message,
+            }
+
+        return {
+            "status": "success",
+            "message": "No signals found",
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Signal generation failed: {str(e)}"
+        )
+
+
+@router.post("/excute_order", tags=["futures"])
+@inject
+async def execute_futures_order(
+    data: ExecuteFutureOrderRequest,
+    futures_service: FuturesService = Depends(
+        Provide[Container.services.futures_service]
+    ),
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
+):
+    try:
+        # 선물 거래 대상 통화
+        target_currency = data.symbol.split("USDT")[0]
+        # 현재 선물 계좌 정보
+        balance_position = futures_service.fetch_balnce(
+            is_future=True, symbols=[target_currency, "USDT"]
+        )
+
+        target_balance = None
+
+        target_balances = [
+            balance
+            for balance in balance_position.balances
+            if balance.symbol == target_currency
+        ]
+
+        if len(target_balances) > 0:
+            target_balance = target_balances[0]
+
+        result = futures_service.execute_futures_with_suggestion(
+            symbol=data.symbol,
+            suggestion=data.suggestion,
+            target_balance=target_balance,
+        )
+
         if result == None:
-            return {"message": "No action taken."}
+            return None
 
         response, error_message = result
 
@@ -233,7 +398,6 @@ async def execute_futures_with_ai(
             discord_service.send_message(error_message)
 
         return response
-
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"

@@ -1,10 +1,19 @@
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel, model_validator, root_validator
+from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Dict, Union
+from typing import List, Optional, Dict, Union
 
-from myapi.domain.ai.ai_schema import ActionType
+from myapi.domain.trading.trading_schema import TechnicalIndicators
+
+
+class TradingSignal(BaseModel):
+    signal: Optional[str] = None  # "long", "short", 또는 None
+    confidence: float = 0.0  # 0~1 사이의 신뢰도 점수
+    contributing_factors: List[str] = []  # 신호에 기여한 요인 리스트
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class FuturesVO(BaseModel):
@@ -118,6 +127,7 @@ class TechnicalAnalysis(BaseModel):
     ha_analysis: Optional[Dict]
     logic_ema_stoch: Optional[str]
     logic_sma_ribon: Optional[str]
+    signals: Optional[List[TradingSignal]]
 
     @property
     def description(self):
@@ -178,7 +188,6 @@ class FuturesOrderRequest(BaseModel):
 
 class FutureOpenAISuggestion(BaseModel):
     detaild_summary: str
-    action: FuturesActionType
     first_order: FuturesOrderRequest
     second_order: FuturesOrderRequest
     third_order: FuturesOrderRequest
@@ -253,6 +262,13 @@ class ExecuteFuturesRequest(BaseModel):
     limit: int = 500
     timeframe: str = "1h"
     image_timeframe: str = "1h"
+    additional_context: Optional[str] = ""
+
+
+class ExecuteFutureOrderRequest(BaseModel):
+    symbol: str
+    suggestion: FuturesOrderRequest
+    target_balance: Optional[FuturesBalance]
 
 
 class PlaceFuturesOrder(BaseModel):
@@ -454,3 +470,17 @@ class MeanTechnicalIndicators(BaseModel):
         )
 
         return interpretations
+
+
+# ...existing code...
+
+
+class TechnicalIndicatorsResponse(BaseModel):
+    analysis: TechnicalAnalysis
+    technical_indicators: (
+        TechnicalIndicators  # 이미 정의된 TechnicalIndicators 클래스 사용
+    )
+    mean_indicators: MeanTechnicalIndicators
+
+    class Config:
+        arbitrary_types_allowed = True

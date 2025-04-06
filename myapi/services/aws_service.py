@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Optional
 from fastapi import HTTPException
 import boto3
 import json
@@ -93,3 +93,45 @@ class AwsService:
         return s3.upload_fileobj(
             fileobj, bucket_name, object_key, ExtraArgs={"ContentType": content_type}
         )
+
+    def send_sqs_message(
+        self,
+        queue_url: str,
+        message_body: str,
+        delay_seconds: int = 0,
+    ) -> dict:
+        """
+        AWS SQS 큐에 메시지를 전송합니다.
+
+        Args:
+            queue_url (str): SQS 큐의 URL
+            message_body (str): 전송할 메시지 본문
+            message_attributes (dict, optional): 메시지 속성. 기본값은 None
+            delay_seconds (int, optional): 메시지 전송 지연 시간(초). 기본값은 0
+
+        Returns:
+            dict: SQS 서비스의 응답 데이터
+
+        Raises:
+            HTTPException: SQS 메시지 전송 중 오류 발생 시
+        """
+        try:
+            sqs = boto3.client(
+                "sqs",
+                region_name=REGION_NAME,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+            )
+
+            params = {"QueueUrl": queue_url, "MessageBody": message_body}
+
+            if delay_seconds > 0:
+                params["DelaySeconds"] = str(delay_seconds)
+
+            response = sqs.send_message(**params)
+            return response
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error sending message to SQS: {str(e)}"
+            )
