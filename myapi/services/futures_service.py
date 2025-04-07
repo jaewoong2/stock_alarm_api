@@ -564,16 +564,25 @@ def trading_logic_sma_ribon(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
     df = calculate_indicators_sma_ribon(df_)
     explanations = []
     factors = []
-    confidence = 0.0
-    signal = None
 
-    # Buy condition: SMA5 crosses above SMA8 and SMA13, price above middle BB
+    # 초기화
+    final_signal = None
+    final_confidence = 0.0
+
+    # 개별 시그널 초기화
+    long_condition = False
+    short_condition = False
+    long_confidence = 0.0
+    short_confidence = 0.0
+
+    # === 매수 시그널 (Long) 계산 ===
     sma5_above_sma8 = df["sma5"].iloc[-1] > df["sma8"].iloc[-1]
     sma5_above_sma13 = df["sma5"].iloc[-1] > df["sma13"].iloc[-1]
     price_above_bb_middle = df["close"].iloc[-1] > df["bb_middle"].iloc[-1]
 
     if sma5_above_sma8 and sma5_above_sma13 and price_above_bb_middle:
-        signal = "long"
+        long_condition = True
+        long_confidence = 0.75
         message = (
             f"Buy signal detected!\n"
             f"Reason: SMA5 ({df['sma5'].iloc[-1]:.2f}) has crossed above both SMA8 ({df['sma8'].iloc[-1]:.2f}) "
@@ -582,45 +591,64 @@ def trading_logic_sma_ribon(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
         )
         explanations.append(message)
         factors.extend(["SMA5 > SMA8", "SMA5 > SMA13", "Price > BB Middle"])
-        confidence = 0.75
 
-    # Sell condition: Price exceeds upper BB or Stochastic %K > 80
+    # === 매도 시그널 (Short) 계산 ===
     price_above_bb_upper = df["close"].iloc[-1] > df["bb_upper"].iloc[-1]
     stoch_overbought = df["stoch_k"].iloc[-1] > 80
 
     if price_above_bb_upper or stoch_overbought:
-        signal = "short"
+        short_condition = True
         reasons = []
         if price_above_bb_upper:
             reasons.append(
                 f"Price ({df['close'].iloc[-1]:.2f}) exceeds upper Bollinger Band ({df['bb_upper'].iloc[-1]:.2f})"
             )
             factors.append("Price > BB Upper")
-            confidence += 0.4
+            short_confidence += 0.4
         if stoch_overbought:
             reasons.append(f"Stochastic %K ({df['stoch_k'].iloc[-1]:.2f}) > 80")
             factors.append("Stoch %K Overbought")
-            confidence += 0.4
+            short_confidence += 0.4
         message = f"Sell signal detected!\nReason: {' and '.join(reasons)}."
         explanations.append(message)
-        confidence = min(confidence, 0.9)
+        short_confidence = min(short_confidence, 0.9)  # 최대 confidence cap
 
-    # No signal case
-    if not signal:
-        message = "No signals detected for SMA5, SMA8, SMA13, and Bollinger Bands."
-        explanations.append(message)
-        confidence = 0.0
+    # === 최종 시그널 결정 ===
+    if long_condition and short_condition:
+        # 둘 다 발생 시 confidence 비교
+        if long_confidence > short_confidence:
+            final_signal = "long"
+            final_confidence = long_confidence
+        else:
+            final_signal = "short"
+            final_confidence = short_confidence
+        explanations.append(
+            f"Both signals detected. Selected '{final_signal}' based on higher confidence "
+            f"(Long: {long_confidence:.2f}, Short: {short_confidence:.2f})."
+        )
+    elif long_condition:
+        final_signal = "long"
+        final_confidence = long_confidence
+    elif short_condition:
+        final_signal = "short"
+        final_confidence = short_confidence
+    else:
+        explanations.append(
+            "No signals detected for SMA5, SMA8, SMA13, and Bollinger Bands."
+        )
+        final_signal = None
+        final_confidence = 0.0
 
     explanation = "\n".join(explanations)
 
     signal_details = TradingSignal(
-        signal=signal,
-        confidence=confidence,
+        signal=final_signal,
+        confidence=final_confidence,
         contributing_factors=factors,
         explanation=explanation,
     )
 
-    return "\n".join(explanations), signal_details
+    return explanation, signal_details
 
 
 class FuturesService:
