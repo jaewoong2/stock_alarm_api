@@ -1,4 +1,6 @@
 import base64
+from math import exp
+import time
 from urllib.parse import quote
 from venv import logger
 import ccxt
@@ -320,6 +322,15 @@ def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
         signal=signal, confidence=confidence, contributing_factors=factors
     )
 
+    explanation = "\n".join(explanations)
+
+    signal_details = TradingSignal(
+        signal=signal,
+        confidence=confidence,
+        contributing_factors=factors,
+        explanation=explanation,
+    )
+
     result = HeikinAshiAnalysis(
         total_candles=lookback,
         num_bull=num_bull,
@@ -329,7 +340,7 @@ def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
         consecutive_bear=consecutive_bear,
         avg_upper_tail=avg_upper_tail,
         avg_lower_tail=avg_lower_tail,
-        interpretation=interpretation,
+        interpretation=explanation,
     )
 
     return result, signal_details
@@ -363,7 +374,9 @@ def create_analysis_prompt(
 
 
 def next_timeframe(timeframe: str = "15m"):
-    if timeframe == "15m":
+    if timeframe == "5m":
+        return "15m"
+    elif timeframe == "15m":
         return "30m"
     elif timeframe == "30m":
         return "1h"
@@ -598,8 +611,13 @@ def trading_logic_sma_ribon(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
         explanations.append(message)
         confidence = 0.0
 
+    explanation = "\n".join(explanations)
+
     signal_details = TradingSignal(
-        signal=signal, confidence=confidence, contributing_factors=factors
+        signal=signal,
+        confidence=confidence,
+        contributing_factors=factors,
+        explanation=explanation,
     )
 
     return "\n".join(explanations), signal_details
