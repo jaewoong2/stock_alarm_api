@@ -46,6 +46,10 @@ from myapi.exceptions.futures_exceptions import (
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.backdata_service import BackDataService
 from myapi.utils.config import Settings
+from myapi.utils.futures_technical import (
+    calculate_all_indicators,
+    generate_trading_signal,
+)
 from myapi.utils.indicators import get_technical_indicators
 
 logger = logging.getLogger(__name__)
@@ -226,23 +230,28 @@ def calculate_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
     return ha_df
 
 
-def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
+def analyze_heikin_ashi_model(
+    ha_df: pd.DataFrame,
+    lookback: int = 5,
+    mode: str = "scalp",  # "scalp" (단타/스캘핑), "swing" (중기)
+):
     """
-    Analyzes the last `lookback` Heikin Ashi candles and returns a message and TradingSignal tuple.
+    Analyzes the last `lookback` Heikin Ashi candles and returns a message and TradingSignal.
+    단타/스윙 모드에 따라 임계값을 다르게 적용.
     """
-    # Extract recent candles
+    # 1) 최근 캔들 추출
     recent_df = ha_df.iloc[-lookback:].copy()
 
-    # Identify bullish/bearish candles
+    # 2) 기본 값 계산
     recent_df["is_bull"] = recent_df["HA_Close"] > recent_df["HA_Open"]
     recent_df["is_bear"] = recent_df["HA_Close"] < recent_df["HA_Open"]
 
-    # Identify Doji candles
+    # 2-1) 도지 판별
     body_size = (recent_df["HA_Close"] - recent_df["HA_Open"]).abs()
     candle_range = recent_df["HA_High"] - recent_df["HA_Low"]
     recent_df["doji"] = (candle_range > 0) & ((body_size / candle_range) < 0.1)
 
-    # Calculate upper/lower tails
+    # 2-2) 위꼬리/아래꼬리
     recent_df["upper_tail"] = recent_df["HA_High"] - recent_df[
         ["HA_Open", "HA_Close"]
     ].max(axis=1)
@@ -250,18 +259,19 @@ def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
         recent_df[["HA_Open", "HA_Close"]].min(axis=1) - recent_df["HA_Low"]
     )
 
-    # Basic statistics
+    # 3) 통계
     num_bull = int(recent_df["is_bull"].sum())
     num_bear = int(recent_df["is_bear"].sum())
     num_doji = int(recent_df["doji"].sum())
 
-    # Count consecutive bullish/bearish candles
+    # 3-1) 연속 양봉/음봉 계산
     consecutive_bull = 0
     consecutive_bear = 0
 
     for i in reversed(range(len(recent_df))):
         if recent_df["is_bull"].iloc[i]:
             consecutive_bull += 1
+            # 이전 캔들이 is_bear면 중단
             if i < len(recent_df) - 1 and recent_df["is_bear"].iloc[i + 1]:
                 break
         else:
@@ -275,62 +285,107 @@ def analyze_heikin_ashi_model(ha_df: pd.DataFrame, lookback: int = 5):
         else:
             break
 
-    # Average tail lengths
+    # 3-2) 꼬리 평균
     avg_upper_tail = recent_df["upper_tail"].mean() if len(recent_df) > 0 else 0.0
     avg_lower_tail = recent_df["lower_tail"].mean() if len(recent_df) > 0 else 0.0
 
-    # Analysis results
     explanations = []
     factors = []
     confidence = 0.0
     signal = None
 
-    # Signal detection and interpretation
-    if consecutive_bull > 2 and avg_lower_tail < avg_upper_tail:
+    # =============
+    # 모드별 파라미터 설정
+    # =============
+    if mode == "scalp":
+        # 단타(짧은 추세)에 맞게 임계값 낮춤
+        min_consecutive = 2  # 예) 2개 연속하면 추세 신호
+        tail_ratio_factor = 1.2  # 예) 하단 꼬리가 상단 꼬리보다 20% 이상 작으면 bullish
+        bull_base_conf = 0.3  # 초기 confidence
+        bear_base_conf = 0.3
+        doji_conf = 0.4  # 도지 감지 시 confidence (단타는 도지에 민감하게)
+        max_conf_cap = 0.8  # 최대 confidence 제한(너무 높지 않게)
+    else:
+        # 스윙모드
+        min_consecutive = 3  # 최소 3연속 이상의 캔들
+        tail_ratio_factor = 1.5  # 꼬리 길이 차이 좀 더 엄격
+        bull_base_conf = 0.4  # 좀 더 높게
+        bear_base_conf = 0.4
+        doji_conf = 0.2  # 스윙은 도지에 크게 흔들리지 않음
+        max_conf_cap = 0.9
+
+    # =============
+    # 신호 감지
+    # =============
+    # 1) 강한 상승 추세
+    if consecutive_bull >= min_consecutive and (
+        avg_lower_tail * tail_ratio_factor < avg_upper_tail
+    ):
         signal = "long"
         interpretation = (
-            f"Strong bullish trend possible: {consecutive_bull} consecutive bullish HA candles detected, "
-            "with relatively small lower tails."
+            f"Possible bullish trend: {consecutive_bull} consecutive bullish HA candles, "
+            "lower tails are smaller than upper tails."
         )
         explanations.append(interpretation)
         factors.extend(
-            [f"{consecutive_bull} Consecutive Bullish Candles", "Small Lower Tail"]
+            [
+                f"{consecutive_bull} Consecutive Bullish Candles",
+                "Lower tail < Upper tail",
+            ]
         )
-        confidence = min(0.3 + consecutive_bull * 0.15, 0.9)
-    elif consecutive_bear > 2 and avg_upper_tail < avg_lower_tail:
+        # confidence 계산
+        # base + (연속 봉 수 * 0.1 ~ 0.15)
+        confidence = min(bull_base_conf + consecutive_bull * 0.1, max_conf_cap)
+
+    # 2) 강한 하락 추세
+    elif consecutive_bear >= min_consecutive and (
+        avg_upper_tail * tail_ratio_factor < avg_lower_tail
+    ):
         signal = "short"
         interpretation = (
-            f"Strong bearish trend possible: {consecutive_bear} consecutive bearish HA candles detected, "
-            "with relatively small upper tails."
+            f"Possible bearish trend: {consecutive_bear} consecutive bearish HA candles, "
+            "upper tails are smaller than lower tails."
         )
         explanations.append(interpretation)
         factors.extend(
-            [f"{consecutive_bear} Consecutive Bearish Candles", "Small Upper Tail"]
+            [
+                f"{consecutive_bear} Consecutive Bearish Candles",
+                "Upper tail < Lower tail",
+            ]
         )
-        confidence = min(0.3 + consecutive_bear * 0.15, 0.9)
+        confidence = min(bear_base_conf + consecutive_bear * 0.1, max_conf_cap)
+
+    # 3) 도지
     elif num_doji > 0:
-        interpretation = f"{num_doji} Doji candle(s) detected: indicates uncertainty or potential trend reversal."
+        interpretation = (
+            f"{num_doji} Doji candle(s) => potential reversal or indecision."
+        )
         explanations.append(interpretation)
         factors.append(f"{num_doji} Doji Candles")
-        confidence = 0.3
+        confidence = doji_conf
+        # signal=None (중립), 단타라면 "hold" or "close" 신호
+
     else:
-        interpretation = "No distinct pattern of consecutive candles found. Trend signals are not strongly indicated."
+        interpretation = "No distinct bullish/bearish pattern or doji found. Trend signals not strong."
         explanations.append(interpretation)
         confidence = 0.0
 
-    signal_details = TradingSignal(
-        signal=signal, confidence=confidence, contributing_factors=factors
-    )
-
+    # 가독성 위한 설명
     explanation = "\n".join(explanations)
 
+    # =============
+    # TradingSignal 만들기 (가정)
+    # =============
     signal_details = TradingSignal(
-        signal=signal,
-        confidence=confidence,
+        signal=signal,  # "long" / "short" or None
+        confidence=confidence,  # 0 ~ 1.0
         contributing_factors=factors,
         explanation=explanation,
     )
 
+    # =============
+    # HeikinAshiAnalysis (기존처럼)
+    # =============
     result = HeikinAshiAnalysis(
         total_candles=lookback,
         num_bull=num_bull,
@@ -1301,6 +1356,9 @@ class FuturesService:
         logic_ema_stoch, ema_signal = trading_logic_ema_stoch(df)
         logic_sma_ribon, sma_signal = trading_logic_sma_ribon(df)
 
+        indicators = calculate_all_indicators(df)
+        signal_result = generate_trading_signal(df, indicators)
+
         return TechnicalAnalysis(
             support=pivots.support1,
             resistance=pivots.resistance1,
@@ -1318,6 +1376,7 @@ class FuturesService:
             logic_ema_stoch=logic_ema_stoch,
             logic_sma_ribon=logic_sma_ribon,
             signals=[ema_signal, sma_signal, heikin_ashi_signal],
+            total_signal=signal_result,
         )
 
     def place_long_order(self, order: FuturesOrderRequest):

@@ -600,7 +600,7 @@ class TradeExecutor:
         balances = self.coinone_service.get_balance(["KRW", symbol.upper()])
         active_orders = self.coinone_service.get_active_orders(symbol.upper())
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
-        technical_indicators, df = get_technical_indicators(candles_info, size)
+        technical_indicators, df, _ = get_technical_indicators(candles_info, size)
         plot_image_path = None
 
         if is_plot_use:

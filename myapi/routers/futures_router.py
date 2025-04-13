@@ -288,6 +288,12 @@ async def get_signal(
 
         context = ""
 
+        total_signal = indicators.analysis.total_signal
+
+        if total_signal:
+            context += f"[Signal-{0}]_{total_signal.signal.upper()}"
+            context += f"[Description-{0}]_{total_signal.explanation}"
+
         for index, indicator in enumerate(indicators.analysis.signals):
             if not indicator.signal:
                 continue

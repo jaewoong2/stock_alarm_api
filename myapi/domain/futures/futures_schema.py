@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Union
 
 from myapi.domain.trading.trading_schema import TechnicalIndicators
+from myapi.utils.futures_technical import TradingSignalResult
 
 
 class TradingSignal(BaseModel):
@@ -129,6 +130,7 @@ class TechnicalAnalysis(BaseModel):
     logic_ema_stoch: Optional[str]
     logic_sma_ribon: Optional[str]
     signals: Optional[List[TradingSignal]]
+    total_signal: TradingSignalResult
 
     @property
     def description(self):

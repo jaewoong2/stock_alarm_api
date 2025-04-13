@@ -127,106 +127,57 @@ def generate_futures_prompt(
     maximum_amount: float = 0.001,
     funding_rate: str = "",
 ):
-    """
-    개선된 프롬프트 함수:
-    - 15분마다 실행됨을 강조
-    - 15분봉 / 30분봉 데이터 사용 시 주의사항 추가
-    - 더 안정적인 매매 판단과 부분 청산/추가 진입 등에 대한 가이드 요청
-    """
-
+    """ """
     interval_, interval_str = split_interval(interval)
 
+    # 시스템 프롬프트
     system_prompt = f"""
-    You are an AI specializing in short-term futures crypto trading.
-    Your Goal is to generate automated trading decisions (LONG, SHORT, HOLD, CLOSE_ORDER)
-    for {target_currency}/{quote_currency} pair based on current market data.
-
-    Key Objectives:
-    1. This function is called every 15 minutes, so treat each invocation as a snapshot of the market at that time.
-    2. Predict movements for the next {interval_}-{interval_ * 2} {interval_str}, possibly extending to {interval_ * 4} {interval_str} if confidence > 80%.
-    3. Always prioritize avoiding liquidation and aim for consistent profitability.
-    4. Consider the difference between a newly closed candle (which is finalized) and the current forming candle (which is not yet complete).
+    You are The World Best short-term futures crypto trading AI.
+    Our primary goal: minimize drawdowns and preserve capital. [Maximize profits!].
     """
 
-    # 여기가 핵심: prompt 부분에 추가 지시사항 삽입
+    # 메인 프롬프트
     prompt = f"""
-    You are an AI specializing in short-term futures crypto.
-    Your task is to use {quote_currency} to trade {target_currency} efficiently.
+    You specialize in short-term futures trading for {target_currency}/{quote_currency}.
+    Analyze the latest data, but do not force trades if signals are conflicting or weak.
 
-    Steps to Follow:
-    1. Analyze market data thoroughly (current price, volume, highs/lows, ATR-based volatility) – focusing on the fact that this process repeats every 15 minutes.
-    2. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
-    3. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
-    4. Provide confidence score (0-100%). Default to NEUTRAL if below 65%.
-    5. Define Take Profit (TP) and Stop Loss (SL) levels dynamically based on Input Data (respect ~1–1.5% stop loss, ~1:2 R/R).
-    6. If Current Position should be closed, "CLOSE_ORDER".
+    **Key Instructions**:
+    1) Distinguish between a trending market (e.g., strong momentum, price well above/below major MAs) 
+       and a ranging market (e.g., Bollinger bands narrow, ADX low).
+       - If trending, you may consider partial entry or straightforward LONG/SHORT if confluence is high.
+       - If ranging, be more cautious; consider smaller scalps or HOLD.
+    2) If indicators conflict (trend says up, oscillator says down, etc.), default to HOLD or minimal position.
+    3) Provide a confidence score (0-100%). If <65%, prefer no trade or minimal size.
+    4) Use risk/reward ~1:2. Stop Loss around 1–1.5% from entry. 
+       Take Profit levels aiming ~2–3% or key fib/pivot levels.
+    5) Partial entry/exit is allowed: you can propose entering 50% now, 50% later if confirmation arises.
+    6) Summarize the logic for each step, from data analysis to final conclusion.
+    7) Provide a short self-critique, highlighting any potential missing info or contradictory signals.
 
-    (Additional 15m/30m Timeframe Considerations):
-    - Since the function runs every 15 minutes, carefully distinguish between:
-      • The most recently closed 15-minute candle (fully formed).
-      • The still-forming 15-minute candle (which might only be partially complete).
-    - Similarly, if using 30-minute data, be mindful that a 30m candle fully closes every two 15m intervals.
-      If the 30m candle is still forming, do not over-rely on incomplete signals.
-
-    Risk Management & Capital Allocation:
-    - TP: Minimum risk/reward ratio of 1:2 / SL: Max loss 1%~1.5% of entry price
-    - Adjust or scale position if partial signals appear, but maintain capital preservation.
-    - ** Minimum Quantity: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency} **.
-    - ** Maximum Quantity: {maximum_amount * leverage} {target_currency} **.
-    - If you have high confidence, you can increase size within the specified range.
-
-    ### LONG Entry Conditions (reminder):
-    1. **Trend Filter:** Price is **above EMA200**.
-    2. **Stochastic RSI Oversold:** below 20
-    3. **Stochastic RSI Golden Cross:** %K > %D
-    4. **Strong Bullish Candle:** large body, bullish close, small/no lower wick
-
-    ### SHORT Entry Conditions (reminder):
-    1. **Trend Filter:** Price is **below EMA200**.
-    2. **Stochastic RSI Overbought:** above 80
-    3. **Stochastic RSI Dead Cross:** %K < %D
-    4. **Strong Bearish Candle:** large body, bearish close, small/no upper wick
-
-    ### Additional Strategies (Trend+Oscillator / Fibo+S&R / Candle+BB Scalping):
-    - Combine these with real-time volume data, price action near key levels, and caution around incomplete candles.
-
-    Thought About And Select Order:
-    - If partial signals or uncertain low-volatility conditions → consider HOLD or partial position scaling.
-    - Use Fibonacci levels (e.g., 38.2%, 61.8%) or Bollinger extremes as secondary TP/SL targets.
-
-    "Please provide a clear step-by-step reasoning process to reach your final decision:
-     1) Summarize the key market data
-     2) Analyze Input Data's indicators (paying attention to newly closed vs. partially formed candles)
-     3) Brief overview of volume or order flow
-     4) Potential near-term support/resistance (or high/low) scenarios
-     5) Final conclusion (position type, TP, SL)"
-
-    "Consider three possible short-term scenarios:
-     A) The price goes up
-     B) The price goes down
-     C) The price moves sideways with minimal volatility
-
-    "After you present your final conclusion, provide a brief self-critique.
-     - Identify any potential oversight or missing analysis
-     - If necessary, adjust or refine the final decision accordingly."
-    
-    Input Data [Current Information]:
-    - Current position: {position} with leverage {leverage}x.
+    **Input Data**:
+    - Current Position: {position} (Leverage: {leverage}x)
     - Market Data: {market_data}
     - Balances: {balances_data}
-    - Funding Rate Description: {funding_rate}
+    - Funding Rate: {funding_rate}
 
-    Input Data [{interval} interval]:
-    - Mean Technical Indicators With Latest 24 Candles: {mean_technical_indicators}
-    - Latest 1 Candle Technical Indicators: {latest_technical_indicators}
+    **[{interval} interval]**:
+    - Mean Indicators (last 24 candles): {mean_technical_indicators}
+    - Latest 1 Candle Indicators: {latest_technical_indicators}
     - Technical Analysis: {technical_analysis}
-    
-    Input Data [{next_interval} interval]:
-    - {next_interval} Mean Technical Indicators With Latest 24 Candles: {next_mean_technical_indicators}
-    - {next_interval} Latest 1 Candle Technical Indicators: {next_latest_technical_indicators}
-    - {next_interval} Technical Analysis: {next_technical_analysis}
 
-    Additional Context: {additional_context}
+    **[{next_interval} interval]**:
+    - Mean Indicators (last 24 candles): {next_mean_technical_indicators}
+    - Latest 1 Candle Indicators: {next_latest_technical_indicators}
+    - Technical Analysis: {next_technical_analysis}
+
+    Additional Context:
+    {additional_context}
+
+    Position Sizing:
+    - Minimum: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency}
+    - Maximum: {maximum_amount * leverage} {target_currency}
+    
+    If uncertain, do not overtrade. Avoid unnecessary risks.
     """
 
     return prompt, system_prompt
