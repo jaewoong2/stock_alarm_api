@@ -291,8 +291,16 @@ async def get_signal(
         total_signal = indicators.analysis.total_signal
 
         if total_signal:
-            context += f"[Signal-{0}]_{total_signal.signal.upper()}"
-            context += f"[Description-{0}]_{total_signal.explanation}"
+            if not total_signal.signal:
+                raise HTTPException(status_code=404, detail="No total signal found")
+
+            if total_signal.signal.upper() == "LONG":
+                context += f"[Signal-{0}]_{total_signal.signal.upper()}"
+                context += f"[Description-{0}]_{total_signal.explanation}"
+
+            if total_signal.signal.upper() == "SHORT":
+                context += f"[Signal-{0}]_{total_signal.signal.upper()}"
+                context += f"[Description-{0}]_{total_signal.explanation}"
 
         for index, indicator in enumerate(indicators.analysis.signals):
             if not indicator.signal:

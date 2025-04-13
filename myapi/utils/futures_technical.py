@@ -5,8 +5,6 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from myapi.domain.futures.futures_schema import TradingSignal
-
 logger = logging.getLogger(__name__)
 
 # =========================
