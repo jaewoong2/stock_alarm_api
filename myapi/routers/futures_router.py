@@ -186,6 +186,7 @@ async def execute_futures_with_ai(
             target_currency=target_currency,
             balances=balance_position,
             target_position=(target_balance.positions if target_balance else None),
+            addtion_context=data.additional_context if data.additional_context else "",
             # addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
         )
 
