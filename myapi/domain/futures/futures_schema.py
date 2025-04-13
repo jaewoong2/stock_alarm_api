@@ -11,6 +11,7 @@ class TradingSignal(BaseModel):
     signal: Optional[str] = None  # "long", "short", 또는 None
     confidence: float = 0.0  # 0~1 사이의 신뢰도 점수
     contributing_factors: List[str] = []  # 신호에 기여한 요인 리스트
+    explanation: Optional[str] = None  # 신호에 대한 설명
 
     class Config:
         arbitrary_types_allowed = True

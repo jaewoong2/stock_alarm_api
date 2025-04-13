@@ -2,9 +2,11 @@ from calendar import c
 import dis
 import json
 import logging
+from math import log
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from dependency_injector.wiring import inject, Provide
+from numpy import add
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -123,6 +125,7 @@ async def execute_futures_with_ai(
     ),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
+    logger.info(f"Received data: {data.model_dump_json()}")
     try:
         # 선물 거래 대상 통화
         target_currency = data.symbol.split("USDT")[0]
@@ -195,7 +198,7 @@ async def execute_futures_with_ai(
             system_prompt=system_prompt,
             prompt=prompt,
             schema=FutureOpenAISuggestion,
-            chat_model=ChatModel.O1,
+            chat_model=ChatModel.O3_MINI,
             image_url=None,
         )
 
@@ -239,13 +242,16 @@ async def execute_futures_with_ai(
             # # 선물 거래 결과 Logging / Discode 전송
             if response:
                 discord_service.send_message(response.model_dump_json())
+                logger.info(f"Futures execution result: {response.model_dump_json()}")
 
             if error_message:
                 discord_service.send_message(error_message)
+                logger.info(f"Futures execution result: {error_message}")
 
         return total_result
 
     except Exception as e:
+        logging.error(f"Error in execute_futures_with_ai: {e}")
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"
         )
@@ -288,15 +294,11 @@ async def get_signal(
 
             if indicator.signal.upper() == "LONG":
                 context += f"[Signal_{index}]_{indicator.signal.upper()}"
-                context += (
-                    f"[Description_{index}]_{"\n".join(indicator.contributing_factors)}"
-                )
+                context += f"[Description_{index}]_{indicator.explanation}"
 
             if indicator.signal.upper() == "SHORT":
                 context += f"[Signal_{index}]_{indicator.signal.upper()}"
-                context += (
-                    f"[Description_{index}]_{"\n".join(indicator.contributing_factors)}"
-                )
+                context += f"[Description_{index}]_{indicator.explanation}"
 
         if context != "":
             data: ExecuteFuturesRequest = ExecuteFuturesRequest(
