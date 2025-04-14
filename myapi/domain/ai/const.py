@@ -127,57 +127,74 @@ def generate_futures_prompt(
     maximum_amount: float = 0.001,
     funding_rate: str = "",
 ):
-    """ """
-    interval_, interval_str = split_interval(interval)
+    """
+    Generate a short-term futures trading prompt using:
+      - ReAct: Observations → Thoughts → Actions
+      - Chain-of-Thought (CoT): Detailed reasoning steps in the Thought stage
 
-    # 시스템 프롬프트
-    system_prompt = f"""
-    You are The World Best short-term futures crypto trading AI.
-    Our primary goal: minimize drawdowns and preserve capital. [Maximize profits!].
+    Returns:
+      (prompt: str, system_prompt: str)
     """
 
-    # 메인 프롬프트
+    interval_, interval_str = split_interval(interval)
+
+    # ---------------------- SYSTEM PROMPT (고정 or 상황에 맞게 조절) ----------------------
+    system_prompt = f"""
+    You are an advanced short-term futures crypto trading AI. 
+    Your goal is to minimize drawdowns, preserve capital, and seek profitable entries when signals align.
+    
+    Please use ReAct methodology (Observation → Thought → Action), 
+    and in the Thought part, explicitly apply Chain-of-Thought (CoT) to break down your reasoning steps. 
+    If signals are not strong or are contradictory, you may decide not to trade.
+    """
+
+    # ---------------------- MAIN PROMPT ----------------------
+    # ReAct 포맷: Observation → Thought → Action
+    # Thought 단계에서 CoT(Chain-of-Thought)로 상세한 reasoning steps 표현하도록 유도
     prompt = f"""
-    You specialize in short-term futures trading for {target_currency}/{quote_currency}.
-    Analyze the latest data, but do not force trades if signals are conflicting or weak.
+    You are to analyze {target_currency}/{quote_currency} on a short-term futures basis.
+    
+    Key Objectives:
+    1. Predict movements for the next {interval_}-{interval_ * 2} {interval_str}, possibly extending to {interval_ * 4} {interval_str} if confidence > 80%.
+    2. Always prioritize avoiding liquidation and consistently profitable decisions
+    3. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
+    4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
 
-    **Key Instructions**:
-    1) Distinguish between a trending market (e.g., strong momentum, price well above/below major MAs) 
-       and a ranging market (e.g., Bollinger bands narrow, ADX low).
-       - If trending, you may consider partial entry or straightforward LONG/SHORT if confluence is high.
-       - If ranging, be more cautious; consider smaller scalps or HOLD.
-    2) If indicators conflict (trend says up, oscillator says down, etc.), default to HOLD or minimal position.
-    3) Provide a confidence score (0-100%). If <65%, prefer no trade or minimal size.
-    4) Use risk/reward ~1:2. Stop Loss around 1–1.5% from entry. 
-       Take Profit levels aiming ~2–3% or key fib/pivot levels.
-    5) Partial entry/exit is allowed: you can propose entering 50% now, 50% later if confirmation arises.
-    6) Summarize the logic for each step, from data analysis to final conclusion.
-    7) Provide a short self-critique, highlighting any potential missing info or contradictory signals.
+    **Observation (Data Summary)**:
+    1) Current Position: {position} with {leverage}x leverage
+    2) Market Data: {market_data}
+    3) Balances: {balances_data}
+    4) Funding Rate: {funding_rate}
 
-    **Input Data**:
-    - Current Position: {position} (Leverage: {leverage}x)
-    - Market Data: {market_data}
-    - Balances: {balances_data}
-    - Funding Rate: {funding_rate}
-
-    **[{interval} interval]**:
-    - Mean Indicators (last 24 candles): {mean_technical_indicators}
+    **{interval} Interval**:
+    - Mean Indicators (24 candles): {mean_technical_indicators}
     - Latest 1 Candle Indicators: {latest_technical_indicators}
-    - Technical Analysis: {technical_analysis}
+    - Technical Analysis (summarized): {technical_analysis}
 
-    **[{next_interval} interval]**:
-    - Mean Indicators (last 24 candles): {next_mean_technical_indicators}
+    **{next_interval} Interval**:
+    - Mean Indicators (24 candles): {next_mean_technical_indicators}
     - Latest 1 Candle Indicators: {next_latest_technical_indicators}
-    - Technical Analysis: {next_technical_analysis}
+    - Technical Analysis (summarized): {next_technical_analysis}
 
     Additional Context:
     {additional_context}
 
-    Position Sizing:
-    - Minimum: {max(minimum_amount * leverage, 0.002) * 1.2} {target_currency}
-    - Maximum: {maximum_amount * leverage} {target_currency}
-    
-    If uncertain, do not overtrade. Avoid unnecessary risks.
+    **Thought (Chain-of-Thought Reasoning)**:
+    1) Examine if market is trending or ranging based on MA, ADX, etc.
+    2) Check if there's confluence across RSI, MACD, or other indicators for a possible long/short setup.
+    3) Evaluate overall risk, especially if signals are weak or contradictory.
+    4) Estimate confidence level (0~100%). If under 65%, prefer no trade or minimal.
+    5) Determine potential Entry, Stop Loss (~1.0% away), Take Profit (~2.0% away) or relevant pivots.
+
+    **Action (Final Decision)**:
+    - If confluence is strong and confidence ≥65%, propose clear trade plan:
+      - Position size: between {max(minimum_amount * leverage, 0.002) * 1.2} and {maximum_amount * leverage} {target_currency}
+      - Stop Loss & Take Profit levels
+    - Summarize your final trade plan or confirm no trade.
+
+    Note: 
+    - Do not force trades if signals are not strong. 
+    - Partial entries or scaled positions are acceptable if strongly justified.
     """
 
     return prompt, system_prompt
