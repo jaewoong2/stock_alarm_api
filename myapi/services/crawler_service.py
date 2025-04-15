@@ -55,7 +55,7 @@ class CrawlerService:
         posts_collected = 0
         while posts_collected < max_posts:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1000)
             posts_collected = len(await page.query_selector_all("article"))
             if posts_collected >= max_posts:
                 break
