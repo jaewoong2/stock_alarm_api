@@ -114,6 +114,9 @@ def generate_futures_prompt(
     next_latest_technical_indicators: str,
     next_mean_technical_indicators: str,
     next_technical_analysis: str,
+    longterm_latest_technical_indicators: str,
+    longterm_mean_technical_indicators: str,
+    longterm_technical_analysis: str,
     technical_analysis: str,
     balances_data: str,
     target_currency: str = "BTC",
@@ -121,6 +124,7 @@ def generate_futures_prompt(
     additional_context: str = "None",
     interval: str = "15m",
     next_interval: str = "1h",
+    longterm_interval: str = "4h",
     position: str = "NONE",
     leverage: int = 2,
     minimum_amount: float = 0.001,
@@ -140,12 +144,16 @@ def generate_futures_prompt(
 
     # ---------------------- SYSTEM PROMPT (고정 or 상황에 맞게 조절) ----------------------
     system_prompt = f"""
-    You are an advanced short-term futures crypto trading AI. 
+    You are an advanced short-term futures crypto trading AI.
     Your goal is to minimize drawdowns, preserve capital, and seek profitable entries when signals align.
     
-    Please use ReAct methodology (Observation → Thought → Action), 
-    and in the Thought part, explicitly apply Chain-of-Thought (CoT) to break down your reasoning steps. 
-    If signals are not strong or are contradictory, you may decide not to trade.
+    Please use the ReAct methodology (Observation → Thought → Action) and in the Thought part, 
+    explicitly break down your reasoning with a Chain-of-Thought (CoT).
+    Pay special attention to potential trend reversals by analyzing:
+      - Candlestick reversal patterns (e.g., Hammer, Inverted Hammer, Shooting Star)
+      - Divergence between momentum indicators (e.g., RSI vs MACD)
+      - Significant changes in moving average slopes.
+    Do not force trades if signals are ambiguous or indicate a reversal.
     """
 
     # ---------------------- MAIN PROMPT ----------------------
@@ -159,7 +167,8 @@ def generate_futures_prompt(
     2. Always prioritize avoiding liquidation and consistently profitable decisions
     3. Provide decision: "LONG", "SHORT", "HOLD", or "CLOSE_ORDER" based on refined criteria below.
     4. Predict market direction (UP/DOWN/NEUTRAL) for {interval_}-{interval_ * 2} {interval_str} and clearly justify with reasoning.
-
+    5. If Current Position will not have profit anymore, suggest to CLOSE_ORDER.
+    
     **Observation (Data Summary)**:
     1) Current Position: {position} with {leverage}x leverage
     2) Market Data: {market_data}
@@ -175,26 +184,27 @@ def generate_futures_prompt(
     - Mean Indicators (24 candles): {next_mean_technical_indicators}
     - Latest 1 Candle Indicators: {next_latest_technical_indicators}
     - Technical Analysis (summarized): {next_technical_analysis}
-
+    
+    **{longterm_interval} Analysis**:
+    - Mean Indicators (24 candles): {longterm_mean_technical_indicators}
+    - Latest 1 Candle Indicators: {longterm_latest_technical_indicators}
+    - Technical Analysis (summarized): {longterm_technical_analysis}
+    
     Additional Context:
     {additional_context}
 
     **Thought (Chain-of-Thought Reasoning)**:
-    1) Examine if market is trending or ranging based on MA, ADX, etc.
-    2) Check if there's confluence across RSI, MACD, or other indicators for a possible long/short setup.
-    3) Evaluate overall risk, especially if signals are weak or contradictory.
-    4) Estimate confidence level (0~100%). If under 65%, prefer no trade or minimal.
-    5) Determine potential Entry, Stop Loss (~1.0% away), Take Profit (~2.0% away) or relevant pivots.
-
+    1) Analyze if the market is trending or showing signs of reversal
+    2) Check for divergence between key indicators (e.g., RSI vs MACD) as a confirmation of potential trend reversals.
+    3) Review changes in moving averages (both short-term and long-term) to verify trend direction.
+    4) Assess overall risk and estimate a confidence level (0~100%). If below 65% or if reversal signals are evident, favor HOLD or CLOSE_ORDER.
+    5) Define Possible Entry, Stop Loss (e.g., ~1.0% current away), and Possible Take Profit (e.g., ~2.0% current away) levels if signals are aligned.
+    
     **Action (Final Decision)**:
     - If confluence is strong and confidence ≥65%, propose clear trade plan:
-      - Position size: between {max(minimum_amount * leverage, 0.002) * 1.2} and {maximum_amount * leverage} {target_currency}
-      - Stop Loss & Take Profit levels
-    - Summarize your final trade plan or confirm no trade.
-
-    Note: 
-    - Do not force trades if signals are not strong. 
-    - Partial entries or scaled positions are acceptable if strongly justified.
+      - Position size: between {max(minimum_amount * leverage, 0.002) * 1.2:.4f} and {maximum_amount * leverage} {target_currency}.
+      - Specify detailed Stop Loss and Take Profit levels.
+    - Otherwise, summarize your analysis with a recommendation to HOLD or CLOSE_ORDER.
     """
 
     return prompt, system_prompt

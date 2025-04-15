@@ -8,6 +8,7 @@ from myapi.services import futures_service
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
+from myapi.services.crawler_service import CrawlerService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
@@ -68,6 +69,8 @@ class ServiceModule(containers.DeclarativeContainer):
         futures_repository=repositories.futures_repository,
         backdata_service=backdata_service,
     )
+
+    crawler_service = providers.Factory(CrawlerService)
 
 
 class Container(containers.DeclarativeContainer):

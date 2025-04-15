@@ -706,6 +706,66 @@ def trading_logic_sma_ribon(df_: pd.DataFrame) -> tuple[str, TradingSignal]:
     return explanation, signal_details
 
 
+import pandas as pd
+
+
+def detect_hammer(df: pd.DataFrame, recent_count: int = 5):
+    """
+    주어진 DataFrame(df)에 'Open', 'High', 'Low', 'Close' 컬럼이 있다고 가정합니다.
+    각 캔들을 분석하여 일반 Hammer 패턴과 Inverted Hammer 패턴을 구분해서 감지합니다.
+
+    Hammer 패턴 조건:
+      - 일반 Hammer: Body < 30% of Range, Lower Shadow >= 2 * Body, Upper Shadow <= 0.3 * Body
+      - Inverted Hammer: Body < 30% of Range, Upper Shadow >= 2 * Body, Lower Shadow <= 0.3 * Body
+
+    최신 recent_count 개 캔들에서 감지된 패턴 개수를 한 줄 요약 문자열로 반환합니다.
+
+    Returns:
+      - modified_df: 패턴 감지 결과(‘Hammer’, ‘Inverted_Hammer’, ‘Pattern’ 컬럼 포함)를 담은 DataFrame
+      - summary_explanation: "Detected X/Y recent candles with patterns: A Hammer, B Inverted Hammer." 형식의 한 줄 요약 문자열
+    """
+    df = df.copy()  # 원본 DataFrame 보호
+
+    # 캔들 각 요소 계산
+    df["Body"] = abs(df["close"] - df["open"])
+    df["Range"] = df["high"] - df["low"]
+    df["Lower_Shadow"] = df[["open", "close"]].min(axis=1) - df["low"]
+    df["Upper_Shadow"] = df["high"] - df[["open", "close"]].max(axis=1)
+
+    # 패턴 감지
+    hammer_cond = (
+        (df["Body"] < (df["Range"] * 0.3))
+        & (df["Lower_Shadow"] >= (df["Body"] * 2))
+        & (df["Upper_Shadow"] <= (df["Body"] * 0.3))
+    )
+    inv_hammer_cond = (
+        (df["Body"] < (df["Range"] * 0.3))
+        & (df["Upper_Shadow"] >= (df["Body"] * 2))
+        & (df["Lower_Shadow"] <= (df["Body"] * 0.3))
+    )
+
+    df["Hammer"] = hammer_cond
+    df["Inverted_Hammer"] = inv_hammer_cond
+
+    # 패턴 컬럼 생성: Hammer가 먼저 적용되고, Inverted Hammer가 적용되면 덮어씁니다.
+    df["Pattern"] = ""
+    df.loc[hammer_cond, "Pattern"] = "Hammer"
+    df.loc[inv_hammer_cond, "Pattern"] = "Inverted Hammer"
+
+    # 최신 recent_count 개 캔들에 대한 요약
+    recent_df = df.tail(recent_count)
+    hammer_count = int(recent_df["Hammer"].sum())
+    inv_hammer_count = int(recent_df["Inverted_Hammer"].sum())
+    total_patterns = hammer_count + inv_hammer_count
+
+    summary_explanation = (
+        f"Detected {total_patterns}/{recent_count} recent candles with patterns: "
+        f"{hammer_count} Hammer, {inv_hammer_count} Inverted Hammer."
+    )
+
+    return summary_explanation
+
+
 class FuturesService:
     def __init__(
         self,
@@ -918,18 +978,23 @@ class FuturesService:
         target_position: Optional[FuturesBalancePositionInfo],
         addtion_context: str = "",
         timeframe="1h",
+        longterm_timeframe: str = "4h",
         limit=500,
         target_currency="BTC",
     ):
         current_leverage, _ = self.get_position(symbol)
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
         next_candles_info = self.fetch_ohlcv(symbol, next_timeframe(timeframe), limit)
+        long_candles_info = self.fetch_ohlcv(symbol, longterm_timeframe, limit)
 
         current_technical_indicators = self.get_technical_indicators(
             candles_info=candles_info, limit=limit
         )
         next_technical_indicators = self.get_technical_indicators(
             candles_info=next_candles_info, limit=limit
+        )
+        long_technical_indicators = self.get_technical_indicators(
+            candles_info=long_candles_info, limit=limit
         )
 
         current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
@@ -964,6 +1029,10 @@ class FuturesService:
             next_technical_analysis=next_technical_indicators.analysis.description,
             interval=timeframe,
             next_interval=next_timeframe(timeframe),
+            longterm_interval=longterm_timeframe,
+            longterm_technical_analysis=long_technical_indicators.analysis.description,
+            longterm_latest_technical_indicators=long_technical_indicators.technical_indicators.description,
+            longterm_mean_technical_indicators=long_technical_indicators.mean_indicators.description,
             market_data=current_price.description,
             latest_technical_indicators=current_technical_indicators.technical_indicators.description,
             mean_technical_indicators=current_technical_indicators.mean_indicators.description,
@@ -1358,6 +1427,7 @@ class FuturesService:
 
         indicators = calculate_all_indicators(df)
         signal_result = generate_trading_signal(df, indicators)
+        hammer_explain = detect_hammer(df, 5)
 
         return TechnicalAnalysis(
             support=pivots.support1,
@@ -1377,6 +1447,7 @@ class FuturesService:
             logic_sma_ribon=logic_sma_ribon,
             signals=[ema_signal, sma_signal, heikin_ashi_signal],
             total_signal=signal_result,
+            hammer_explain=hammer_explain,
         )
 
     def place_long_order(self, order: FuturesOrderRequest):

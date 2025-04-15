@@ -22,6 +22,7 @@ from myapi.domain.futures.futures_schema import (
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
+from myapi.services.crawler_service import CrawlerResponse, CrawlerService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 from myapi.utils.utils import format_trade_summary
@@ -188,6 +189,7 @@ async def execute_futures_with_ai(
             limit=data.limit,
             target_currency=target_currency,
             balances=balance_position,
+            longterm_timeframe=data.longterm_timeframe,
             target_position=(target_balance.positions if target_balance else None),
             addtion_context=data.additional_context if data.additional_context else "",
             # addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
@@ -320,6 +322,7 @@ async def get_signal(
                 timeframe=timeframe,
                 limit=limit,
                 additional_context=context,
+                longterm_timeframe="1h",
             )
 
             message = {
@@ -438,3 +441,18 @@ async def set_futures_config(
 
 
 # Client_order_id -> Order_id 로 수정
+@router.get("/crawler/x", tags=["futures"])
+@inject
+async def crawl_x_posts(
+    keyword: str = "bitcoin",
+    max_posts: int = 10,
+    crawler_service: CrawlerService = Depends(
+        Provide[Container.services.crawler_service]
+    ),
+):
+    """Crawl X for posts related to the given keyword."""
+    try:
+        posts = await crawler_service.crawl_x_posts(keyword, max_posts)
+        return posts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to crawl posts: {str(e)}")

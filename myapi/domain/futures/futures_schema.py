@@ -131,6 +131,7 @@ class TechnicalAnalysis(BaseModel):
     logic_sma_ribon: Optional[str]
     signals: Optional[List[TradingSignal]]
     total_signal: TradingSignalResult
+    hammer_explain: str
 
     @property
     def description(self):
@@ -161,6 +162,8 @@ class TechnicalAnalysis(BaseModel):
             f"HA Analysis: {ha_analysis}, "
             f"EMA200 Trend Rider: {self.logic_ema_stoch}, "
             f"TrendRibbon Scalper: {self.logic_sma_ribon}, "
+            f"Total Signal: {self.total_signal.explanation}, "
+            f"Detected Hammer Pattern: {self.hammer_explain}, "
         )
 
 
@@ -265,6 +268,7 @@ class ExecuteFuturesRequest(BaseModel):
     limit: int = 500
     timeframe: str = "1h"
     image_timeframe: str = "1h"
+    longterm_timeframe: str = "4h"
     additional_context: Optional[str] = ""
 
 
