@@ -452,7 +452,9 @@ async def crawl_x_posts(
 ):
     """Crawl X for posts related to the given keyword."""
     try:
-        posts = await crawler_service.crawl_meta_thread(keyword, max_posts)
+        posts = await crawler_service.crawl_meta_thread(
+            f"https://www.threads.net/search?q={keyword}", max_posts
+        )
         return posts
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to crawl posts: {str(e)}")
