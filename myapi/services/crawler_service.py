@@ -26,10 +26,8 @@ class CrawlerResponse(BaseModel):
 
 
 class CrawlerService:
-    def __init__(
-        self,
-    ):
-        print("Hello CralwerService")
+    def __init__(self):
+        print("Hello CrawlerService")
 
     async def _launch_browser(self, playwright: Playwright):
         """Launch a headless browser optimized for Lambda."""
@@ -44,12 +42,6 @@ class CrawlerService:
         page = await browser.new_page()
         return page
 
-    async def _navigate_to_search(self, page, keyword: str):
-        """Navigate to X search page with the given keyword."""
-        search_url = f"https://x.com/search?q={keyword}&src=typed_query"
-        await page.goto(search_url, timeout=30000)
-        await page.wait_for_load_state("networkidle", timeout=30000)
-
     async def _scroll_page(self, page, max_posts: int):
         """Scroll the page to load more posts."""
         posts_collected = 0
@@ -61,12 +53,16 @@ class CrawlerService:
                 break
 
     async def _parse_post(self, element):
-        """Parse a single post element into a Post model."""
+        """Parse a single post element from a Meta Threads page into a Post model."""
         try:
-            tweet_id = await element.get_attribute("data-testid") or "unknown"
-            text_element = await element.query_selector("div[lang]")
+            post_id = await element.get_attribute("data-post-id")
+            if not post_id:
+                post_id = "unknown"
+            text_element = await element.query_selector(
+                "div[lang], div[class*='ThreadContent']"
+            )
             text = await text_element.inner_text() if text_element else "No text"
-            username_element = await element.query_selector("a[role='link']")
+            username_element = await element.query_selector("a[href^='/@']")
             username = (
                 await username_element.inner_text() if username_element else "unknown"
             )
@@ -76,26 +72,31 @@ class CrawlerService:
                 if time_element
                 else "unknown"
             )
-            return Post(
-                id=tweet_id, text=text, username=username, created_at=created_at
-            )
+            return Post(id=post_id, text=text, username=username, created_at=created_at)
         except Exception as e:
             logger.error(f"Error parsing post: {e}")
             return None
 
-    async def crawl_x_posts(
-        self, keyword: str = "bitcoin", max_posts: int = 5
+    async def crawl_meta_thread(
+        self, thread_url: str, max_posts: int = 5
     ) -> CrawlerResponse:
-        """Crawl X for posts related to the given keyword."""
+        """Crawl a Meta Threads page from the given thread URL."""
         posts = []
         async with async_playwright() as playwright:
             browser = await self._launch_browser(playwright)
             try:
                 page = await self._create_page(browser)
-                await self._navigate_to_search(page, keyword)
+                # Navigate directly to the Meta Threads URL
+                await page.goto(thread_url, timeout=30000)
+                await page.wait_for_load_state("networkidle", timeout=30000)
+
+                # Scroll the page to load posts
                 await self._scroll_page(page, max_posts)
 
-                post_elements = await page.query_selector_all("article")
+                # Use selectors that may match posts on Meta Threads
+                post_elements = await page.query_selector_all(
+                    "article, div[data-post-id]"
+                )
                 for element in post_elements[:max_posts]:
                     post = await self._parse_post(element)
                     if post:
@@ -106,4 +107,4 @@ class CrawlerService:
             finally:
                 await browser.close()
 
-        return CrawlerResponse(posts=posts, count=len(posts), keyword=keyword)
+        return CrawlerResponse(posts=posts, count=len(posts), keyword=thread_url)
