@@ -22,7 +22,7 @@ from myapi.domain.futures.futures_schema import (
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
-from myapi.services.crawler_service import CrawlerResponse, CrawlerService
+from myapi.services.crawler_service import CrawlerService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 from myapi.utils.utils import format_trade_summary
@@ -200,7 +200,7 @@ async def execute_futures_with_ai(
             system_prompt=system_prompt,
             prompt=prompt,
             schema=FutureOpenAISuggestion,
-            chat_model=ChatModel.O3_MINI,
+            chat_model=ChatModel.O4_MINI,
             image_url=None,
         )
 
@@ -452,9 +452,9 @@ async def crawl_x_posts(
 ):
     """Crawl X for posts related to the given keyword."""
     try:
-        posts = await crawler_service.crawl_meta_thread(
-            f"https://www.threads.net/search?q={keyword}", max_posts
+        html, title = await crawler_service.fetch_html(
+            f"https://www.threads.net/search?q={keyword}", "body"
         )
-        return posts
+        return html, title
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to crawl posts: {str(e)}")

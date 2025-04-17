@@ -109,6 +109,8 @@ class ChatModel(str, Enum):
     GPT_3_5_TURBO_1106 = "gpt-3.5-turbo-1106"
     GPT_3_5_TURBO_0125 = "gpt-3.5-turbo-0125"
     GPT_3_5_TURBO_16K_0613 = "gpt-3.5-turbo-16k-0613"
+    O4_MINI = "o4-mini-2025-04-16"
+    O4_MINI_2024_11_20 = "o4-mini-2025-04-16"
 
 
 class TextMessage(TypedDict):
