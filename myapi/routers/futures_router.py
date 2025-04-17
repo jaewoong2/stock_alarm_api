@@ -22,7 +22,6 @@ from myapi.domain.futures.futures_schema import (
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
-from myapi.services.crawler_service import CrawlerService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 from myapi.utils.utils import format_trade_summary
@@ -438,23 +437,3 @@ async def set_futures_config(
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"
         )
-
-
-# Client_order_id -> Order_id 로 수정
-@router.get("/crawler/x", tags=["futures"])
-@inject
-async def crawl_x_posts(
-    keyword: str = "bitcoin",
-    max_posts: int = 10,
-    crawler_service: CrawlerService = Depends(
-        Provide[Container.services.crawler_service]
-    ),
-):
-    """Crawl X for posts related to the given keyword."""
-    try:
-        html, title = await crawler_service.fetch_html(
-            f"https://www.threads.net/search?q={keyword}", "body"
-        )
-        return html, title
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to crawl posts: {str(e)}")
