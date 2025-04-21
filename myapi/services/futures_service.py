@@ -30,7 +30,6 @@ from myapi.domain.futures.futures_schema import (
     Ticker,
     TradingSignal,
 )
-from myapi.domain.trading.trading_model import Trade
 from myapi.domain.trading.trading_schema import TechnicalIndicators
 from typing import Dict, List, Optional
 import logging

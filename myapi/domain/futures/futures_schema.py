@@ -491,3 +491,38 @@ class TechnicalIndicatorsResponse(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class TFcfg(BaseModel):
+    tf_4h: str = "4h"
+    tf_1h: str = "1h"
+    tf_15m: str = "15m"
+    tf_5m: str = "5m"
+
+
+class IndiCfg(BaseModel):
+    ema_fast: int = 50
+    ema_slow: int = 200
+    ema_minor: int = 20
+    rsi_len: int = 14
+    atr_len: int = 14
+    adx_len: int = 14
+    bb_len: int = 20
+    bb_std: float = 2.0
+
+
+class RiskCfg(BaseModel):
+    atr_sl_mult: float = 1.0
+    atr_tp_mult: float = 1.8
+
+
+class BotCfg(BaseModel):
+    symbol: str = "BTC/USDT"
+    leverage: int = 5
+    qty: float = 0.001
+    min_notional: float = 5
+    tframes: TFcfg = TFcfg()
+    indi: IndiCfg = IndiCfg()
+    risk: RiskCfg = RiskCfg()
+    llm_snapshot_small: int = 30  # 5m·15m 최근 봉 수
+    llm_snapshot_big: int = 60  # 1h·4h 최근 봉 수

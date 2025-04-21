@@ -228,7 +228,6 @@ def get_technical_indicators(
     # ADX
     df = compute_adx(df)
 
-    df.set_index("timestamp", inplace=True)
     # (3) 뒤집은 상태에서 '마지막 행'이 곧 최신 데이터
     latest = df.iloc[len(df) - 1]
 
