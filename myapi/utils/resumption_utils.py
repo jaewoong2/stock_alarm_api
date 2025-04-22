@@ -13,36 +13,81 @@ from myapi.domain.futures.futures_schema import BotCfg, IndiCfg, RiskCfg, Signal
 
 
 def add_indis(df: pd.DataFrame, c: IndiCfg) -> pd.DataFrame:
+    """OHLCV DataFrame에 권장 지표·衍生 컬럼을 추가해 반환."""
     d = df.copy()
+
+    # === 기본 추세 ===
     d["ema_fast"] = ta.ema(d["close"], c.ema_fast)
     d["ema_slow"] = ta.ema(d["close"], c.ema_slow)
     d["ema_minor"] = ta.ema(d["close"], c.ema_minor)
+
+    # === 모멘텀 ===
     d["rsi"] = ta.rsi(d["close"], c.rsi_len)
+    stoch = ta.stoch(d["high"], d["low"], d["close"], length=c.stoch_len)
+    d = pd.concat(
+        [
+            d,
+            stoch.rename(
+                columns={"STOCHk_14_3_3": "stoch_k", "STOCHd_14_3_3": "stoch_d"}
+            ),
+        ],
+        axis=1,
+    )
+    macd = ta.macd(d["close"], c.macd_fast, c.macd_slow, c.macd_signal)
+    d = pd.concat(
+        [
+            d,
+            macd.rename(
+                columns={"MACD_12_26_9": "macd", "MACDs_12_26_9": "macd_signal"}
+            ),
+        ],
+        axis=1,
+    )
+    d["roc"] = ta.roc(d["close"], c.roc_len)
+
+    # === 변동성 ===
     d["atr"] = ta.atr(d["high"], d["low"], d["close"], c.atr_len)
-    adx_result = ta.adx(d["high"], d["low"], d["close"], c.adx_len)
-    if adx_result is not None:
-        d["adx"] = adx_result["ADX_14"]
-    else:
-        d["adx"] = pd.Series([None] * len(d), index=d.index)
+    d["atr_percent"] = (d["atr"] / d["close"]) * 100
+    d["natr"] = ta.natr(d["high"], d["low"], d["close"], c.atr_len)
+
+    # === 추세 강도 ===
+    d["adx"] = ta.adx(d["high"], d["low"], d["close"], c.adx_len)["ADX_14"]
+    d["lrs"] = ta.linreg(d["ema_minor"], length=c.lrs_len)  # 회귀 기울기
+
+    # === 볼린저밴드·돈채널 ===
     bb = ta.bbands(d["close"], c.bb_len, c.bb_std)
-    d = pd.concat([d, bb], axis=1)
-    don = ta.donchian(d["high"], d["low"], length=c.don_len)
-    # pandas_ta 기본 이름은 DCL_{len}, DCU_{len} 입니다.
+    don = ta.donchian(d["high"], d["low"], length=c.don_len).rename(
+        columns=lambda x: x.replace("DCL", "DONCH_L").replace("DCU", "DONCH_U")
+    )
+    d = pd.concat([d, bb, don], axis=1)
 
-    if don is not None:
-        don = don.rename(
-            columns={
-                f"DCL_{c.don_len}_{c.don_len}": f"DONCH_L_{c.don_len}",
-                f"DCU_{c.don_len}_{c.don_len}": f"DONCH_U_{c.don_len}",
-            }
-        )
+    # === 피봇 & 피보나치 (전일 기준) ===
+    piv = ta.pivots(d["high"], d["low"], d["close"], period="D")
+    d = pd.concat([d, piv], axis=1)
 
-    d = pd.concat([d, don], axis=1)
+    # === 가격·프라이스 액션 특성 ===
+    d["hlc3"] = (d["high"] + d["low"] + d["close"]) / 3
+    d["oc2"] = (d["open"] + d["close"]) / 2
+    d["candle_body"] = (d["close"] - d["open"]).abs()
+    d["upper_wick"] = d["high"] - d[["open", "close"]].max(axis=1)
+    d["lower_wick"] = d[["open", "close"]].min(axis=1) - d["low"]
 
-    d["lrs"] = ta.linreg(d["ema_minor"], length=c.lrs_len)
+    # ===衍生 기울기·증감률 (直近 1봉 대비) ===
+    d["ema_fast_slope"] = d["ema_fast"].pct_change() * 100
+    d["rsi_change"] = d["rsi"].diff()
+    d["atr_slope"] = d["atr"].pct_change() * 100
+
+    # === VWAP ===
     d["vwap"] = (d["close"] * d["volume"]).cumsum() / d["volume"].cumsum()
 
-    return d.dropna()
+    # === Heikin-Ashi & Ichimoku (선택) ===
+    ha = ta.ha(d["open"], d["high"], d["low"], d["close"])
+    d = pd.concat([d, ha], axis=1)
+
+    ichi = ta.ichimoku(d["high"], d["low"], d["close"])
+    d = pd.concat([d, ichi], axis=1)
+
+    return d.dropna().reset_index(drop=True)
 
 
 def trend_side(row) -> Literal["LONG", "SHORT"]:
@@ -209,13 +254,13 @@ def build_tf_snapshot(
         f"DONCH_U_{cfg.indi.don_len}",
         "vwap",
         # HA / Ichimoku 가 add_indis 에서 생성된다면
-        # "ha_open",
-        # "ha_close",
-        # "ISA_9",
-        # "ISB_26",
-        # "ITS_9",
-        # "IKS_26",
-        # "ICS_26",
+        "ha_open",
+        "ha_close",
+        "ISA_9",
+        "ISB_26",
+        "ITS_9",
+        "IKS_26",
+        "ICS_26",
     ]
     snap: Dict[str, list] = {}
     for col in CORE_COLS:
