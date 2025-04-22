@@ -49,7 +49,7 @@ class TradeMonitor:
                     status="ERROR", message="캔들 데이터 부족 (최소 120개 필요)"
                 )
 
-            indicators, candles = get_technical_indicators(candles, size)
+            indicators, candles, _ = get_technical_indicators(candles, size)
 
             if not indicators:
                 return TriggerResponse(status="ERROR", message="기술적 지표 계산 오류")

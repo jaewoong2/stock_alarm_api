@@ -2,7 +2,7 @@ from decimal import Decimal
 from enum import Enum
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List, Optional, Dict, Union
+from typing import List, Literal, Optional, Dict, Union
 
 from myapi.domain.trading.trading_schema import TechnicalIndicators
 from myapi.utils.futures_technical import TradingSignalResult
@@ -493,11 +493,11 @@ class TechnicalIndicatorsResponse(BaseModel):
         arbitrary_types_allowed = True
 
 
-class TFcfg(BaseModel):
-    tf_4h: str = "4h"
-    tf_1h: str = "1h"
-    tf_15m: str = "15m"
-    tf_5m: str = "5m"
+# ▶ **동적 타임프레임** 모델
+class TFCfg(BaseModel):
+    major: List[str] = ["4h", "1h"]  # 대세 판단용
+    minor: List[str] = ["15m", "5m"]  # 단기 판단용
+    # minor[0] = 더 큰 단기 TF, minor[1] = 가장 작은 단기 TF
 
 
 class IndiCfg(BaseModel):
@@ -509,20 +509,62 @@ class IndiCfg(BaseModel):
     adx_len: int = 14
     bb_len: int = 20
     bb_std: float = 2.0
+    don_len: int = 20
+    lrs_len: int = 14
 
 
 class RiskCfg(BaseModel):
     atr_sl_mult: float = 1.0
     atr_tp_mult: float = 1.8
+    vol_filter: float = 1.2
 
 
 class BotCfg(BaseModel):
     symbol: str = "BTC/USDT"
-    leverage: int = 5
-    qty: float = 0.001
-    min_notional: float = 5
-    tframes: TFcfg = TFcfg()
     indi: IndiCfg = IndiCfg()
     risk: RiskCfg = RiskCfg()
-    llm_snapshot_small: int = 30  # 5m·15m 최근 봉 수
-    llm_snapshot_big: int = 60  # 1h·4h 최근 봉 수
+    llm_snapshot_small: int = 16  # 5m·15m 최근 봉 수
+    llm_snapshot_big: int = 1  # 1h·4h 최근 봉 수
+
+
+class QueueMessage(BaseModel):
+    body: str = ""
+    path: str = "futures/execute"
+    method: Literal["POST", "GET"] = "GET"
+    query_string_parameters: Dict[str, str] = {}
+
+    @property
+    def message(self):
+        """
+        Returns a description about the queue message.
+        """
+        return {
+            "body": self.body,
+            "resource": "/{proxy+}",
+            "path": f"/{self.path}",
+            "httpMethod": self.method,
+            "isBase64Encoded": False,
+            "pathParameters": {"proxy": self.path},
+            "queryStringParameters": self.query_string_parameters,
+            "headers": {
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "*/*",
+                "Accept-Encoding": "gzip, deflate, sdch",
+                "Accept-Language": "ko",
+                "Accept-Charset": "utf-8",
+            },
+            "requestContext": {
+                "path": f"/{self.path}",
+                "resourcePath": "/{proxy+}",
+                "httpMethod": self.method,
+            },
+        }
+
+
+class ResumptionRequestData(BaseModel):
+    symbol: str = "BTCUSDT"
+    limit: int = 500
+    timeframes: TFCfg = TFCfg()  # 요청마다 원하는 TF 전달
+    snapshot_small: int = 30  # optional
+    snapshot_big: int = 60  # optional
+    use_llm: bool = True

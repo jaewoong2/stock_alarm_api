@@ -11,11 +11,15 @@ from numpy import add
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.futures.futures_schema import (
+    BotCfg,
     ExecuteFutureOrderRequest,
     ExecuteFuturesRequest,
     FutureOpenAISuggestion,
     FuturesConfigRequest,
     FuturesResponse,
+    IndiCfg,
+    ResumptionRequestData,
+    RiskCfg,
     TechnicalAnalysis,
     TechnicalAnalysisRequest,
 )
@@ -24,6 +28,12 @@ from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
+from myapi.utils.resumption_utils import (
+    add_indis,
+    build_explanation,
+    build_snapshot,
+    signal_logic,
+)
 from myapi.utils.utils import format_trade_summary
 
 router = APIRouter(prefix="/futures", tags=["futures"])
@@ -436,4 +446,106 @@ async def set_futures_config(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Futures execution failed: {str(e)}"
+        )
+
+
+@router.post("/futures/resumption", tags=["futures"])
+@inject
+async def get_resumption(
+    data: ResumptionRequestData,
+    futures_service: FuturesService = Depends(
+        Provide[Container.services.futures_service]
+    ),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+):
+    try:
+        configuration = BotCfg(
+            symbol="BTC/USDT",
+            indi=IndiCfg(
+                ema_fast=50,
+                ema_slow=200,
+                ema_minor=20,
+                rsi_len=14,
+                atr_len=14,
+                adx_len=14,
+                bb_len=20,
+                bb_std=2.0,
+            ),
+            risk=RiskCfg(atr_sl_mult=1.0, atr_tp_mult=1.8),
+            llm_snapshot_small=data.snapshot_small,  # 5m·15m 최근 봉 수,
+            llm_snapshot_big=data.snapshot_big,  # 1h·4h 최근 봉 수,
+        )
+
+        tfM1, tfM2 = data.timeframes.major
+        tfmB, tfmS = data.timeframes.minor
+
+        dM1 = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfM1, limit=data.limit
+            ),
+            c=configuration.indi,
+        )
+        dM2 = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfM2, limit=data.limit
+            ),
+            c=configuration.indi,
+        )
+        dB = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfmB, limit=data.limit
+            ),
+            c=configuration.indi,
+        )
+        dS = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfmS, limit=data.limit
+            ),
+            c=configuration.indi,
+        )
+
+        side = signal_logic(dM1, dM2, dB, dS, cfg=configuration)
+
+        if data.use_llm:
+            explanation = build_explanation(dM1, dM2, dB, dS, side, configuration)
+
+            snapshots = build_snapshot(
+                dS=dS,
+                dB=dB,
+                dM1=dM1,
+                dM2=dM2,
+                n_small=data.snapshot_small,
+                n_big=data.snapshot_big,
+                tfmS=tfmS,
+                tfmB=tfmB,
+                tfM1=tfM1,
+                tfM2=tfM2,
+                cfg=configuration,
+            )
+
+            snapshots["explanation"] = explanation
+
+            return snapshots
+
+        # message = QueueMessage(
+        #     body=data.model_dump_json(),
+        #     path="/futures/execute",
+        #     method="POST",
+        # ).message
+
+        # response = aws_service.send_sqs_message(
+        #     queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+        #     message_body=json.dumps(message),
+        # )
+
+        # return {
+        #     "status": "success",
+        #     "message": "Futures execution request queued successfully",
+        #     "sqs_message_id": response.get("MessageId", ""),
+        #     "data": message,
+        # }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Signal generation failed: {str(e)}"
         )

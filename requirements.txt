@@ -5,7 +5,7 @@ fastapi==0.115.11
 mangum==0.19.0
 matplotlib==3.10.1
 mplfinance==0.12.10b0
-numpy==2.2.4
+numpy==1.26.4
 openai==1.66.3
 pandas==2.2.3
 pydantic==2.10.6
