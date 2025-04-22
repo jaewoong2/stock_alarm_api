@@ -568,3 +568,15 @@ class ResumptionRequestData(BaseModel):
     snapshot_small: int = 30  # optional
     snapshot_big: int = 60  # optional
     use_llm: bool = True
+
+
+class SignalResult(BaseModel):
+    major_pass: bool
+    ichimoku_pass: bool
+    resumption_pass: bool
+    macd_pass: bool
+    rsi_pass: bool
+    price_pass: bool
+    volume_pass: bool
+
+    final_side: Literal["LONG", "SHORT", "NONE"]

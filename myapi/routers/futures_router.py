@@ -507,7 +507,9 @@ async def get_resumption(
         side = signal_logic(dM1, dM2, dB, dS, cfg=configuration)
 
         if data.use_llm:
-            explanation = build_explanation(dM1, dM2, dB, dS, side, configuration)
+            explanation = build_explanation(
+                dM1, dM2, dB, dS, side.final_side, configuration
+            )
 
             snapshots = build_snapshot(
                 dS=dS,

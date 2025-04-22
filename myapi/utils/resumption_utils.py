@@ -9,7 +9,7 @@ from typing import Dict, Literal
 import pandas as pd
 import pandas_ta as ta
 
-from myapi.domain.futures.futures_schema import BotCfg, IndiCfg, RiskCfg
+from myapi.domain.futures.futures_schema import BotCfg, IndiCfg, RiskCfg, SignalResult
 
 
 def add_indis(df: pd.DataFrame, c: IndiCfg) -> pd.DataFrame:
@@ -32,8 +32,8 @@ def add_indis(df: pd.DataFrame, c: IndiCfg) -> pd.DataFrame:
     if don is not None:
         don = don.rename(
             columns={
-                f"DCL_{c.don_len}": f"DONCH_L_{c.don_len}",
-                f"DCU_{c.don_len}": f"DONCH_U_{c.don_len}",
+                f"DCL_{c.don_len}_{c.don_len}": f"DONCH_L_{c.don_len}",
+                f"DCU_{c.don_len}_{c.don_len}": f"DONCH_U_{c.don_len}",
             }
         )
 
@@ -68,59 +68,102 @@ def minor_state(df_big, df_small) -> Literal["LONG", "SHORT"]:
 
 
 def signal_logic(
-    d_major1, d_major2, d_minor_big, d_minor_small, cfg: BotCfg
-) -> Literal["LONG", "SHORT", "NONE"]:
-    # 데이터프레임이 비어 있는지 확인
-    if (
-        len(d_major1) == 0
-        or len(d_major2) == 0
-        or len(d_minor_big) == 0
-        or len(d_minor_small) == 0
-    ):
-        return "NONE"
+    dM1: pd.DataFrame,
+    dM2: pd.DataFrame,
+    dB: pd.DataFrame,
+    dS: pd.DataFrame,
+    cfg: BotCfg,
+) -> SignalResult:
+    result = SignalResult(
+        major_pass=False,
+        ichimoku_pass=False,
+        resumption_pass=False,
+        macd_pass=False,
+        rsi_pass=False,
+        price_pass=False,
+        volume_pass=False,
+        final_side="NONE",
+    )
 
-    # 1) 대세
-    side_major1 = trend_side(d_major1.iloc[-1])
-    side_major2 = trend_side(d_major2.iloc[-1])
-    if (
-        side_major1 != side_major2
-        or min(d_major1.iloc[-1]["adx"], d_major2.iloc[-1]["adx"]) < 20
-    ):
-        return "NONE"
-    major = side_major1
+    # ① Major filter
+    side1 = trend_side(dM1.iloc[-1])
+    side2 = trend_side(dM2.iloc[-1])
+    adx1 = dM1["adx"].iloc[-1]  # ← Series.iloc 로 스칼라 추출
+    adx2 = dM2["adx"].iloc[-1]
+    bbw = (dM2["BBU_20_2.0"].iloc[-1] - dM2["BBL_20_2.0"].iloc[-1]) / dM2[
+        "ema_slow"
+    ].iloc[-1]
+    adx_thresh = 25 if bbw > 1.2 else 20
 
-    # 이전 데이터가 충분한지 확인
-    if len(d_minor_big) <= 1 or len(d_minor_small) <= 1:
-        return "NONE"
+    if not (side1 == side2 and min(adx1, adx2) >= adx_thresh):
+        return result
+    result.major_pass = True
+    major = side1
 
-    # 2) 직전 minor 역방향 → 현재 minor 대세
-    prev_minor = minor_state(d_minor_big.iloc[:-1], d_minor_small.iloc[:-1])
-    curr_minor = minor_state(d_minor_big, d_minor_small)
-    if prev_minor != major and curr_minor == major:
-        # 3) 가격이 Donchian 극단+VWAP 조건
-        row = d_minor_small.iloc[-1]
-        donch_col_low = f"DONCH_L_{cfg.indi.don_len}"
-        donch_col_high = f"DONCH_U_{cfg.indi.don_len}"
+    # ② Ichimoku filter
+    ich = ta.ichimoku(dM2["high"], dM2["low"], dM2["close"])
+    if ich is None:
+        return result
 
-        # 필요한 열이 존재하는지 확인
-        if donch_col_low not in row or donch_col_high not in row:
-            return "NONE"
+    # Access the first element of the tuple returned by ichimoku
+    ich_df = ich[0]
 
-        if major == "LONG":
-            cond_price = (
-                row["close"] < row[donch_col_low] and row["close"] < row["vwap"]
-            )
-        else:
-            cond_price = (
-                row["close"] > row[donch_col_high] and row["close"] > row["vwap"]
-            )
-        if (
-            cond_price
-            and row["volume"]
-            > d_minor_small["volume"].tail(20).mean() * cfg.risk.vol_filter
-        ):
-            return major
-    return "NONE"
+    if ich_df is None:
+        return result
+
+    spanA = ich_df["ISA_9"].iloc[-1]
+    tenk = ich_df["ITS_9"].iloc[-1]
+    kijun = ich_df["IKS_26"].iloc[-1]
+
+    if not (dM2["close"].iloc[-1] > spanA and tenk > kijun):
+        return result
+
+    result.ichimoku_pass = True
+
+    # ③ Resumption filter
+    prev_minor = minor_state(dB.iloc[:-1], dS.iloc[:-1])
+    curr_minor = minor_state(dB, dS)
+    if not (prev_minor != major and curr_minor == major):
+        return result
+    result.resumption_pass = True
+
+    # ④ MACD histogram filter
+    macd = ta.macd(dS["close"])
+    if macd is None:
+        return result
+    hist = macd["MACDh_12_26_9"].iloc[-1]
+    if not ((major == "LONG" and hist > 0) or (major == "SHORT" and hist < 0)):
+        return result
+    result.macd_pass = True
+
+    # ⑤ RSI centerline filter
+    rsi = dS["rsi"].iloc[-1]
+    if not ((major == "LONG" and rsi <= 50) or (major == "SHORT" and rsi >= 50)):
+        return result
+    result.rsi_pass = True
+
+    # ⑥ Price filter (Donchian + VWAP)
+    close = dS["close"].iloc[-1]
+    vwap = dS["vwap"].iloc[-1]
+    don_low = dS[f"DONCH_L_{cfg.indi.don_len}"].iloc[-1]
+    don_high = dS[f"DONCH_U_{cfg.indi.don_len}"].iloc[-1]
+    price_ok = (major == "LONG" and close < don_low and close < vwap) or (
+        major == "SHORT" and close > don_high and close > vwap
+    )
+    if not price_ok:
+        return result
+    result.price_pass = True
+
+    # ⑦ Volume filter
+    vol = dS["volume"].iloc[-1]
+    vol_avg = dS["volume"].tail(20).mean()
+    if not (vol >= vol_avg * cfg.risk.vol_filter):
+        return result
+    result.volume_pass = True
+
+    # 모두 통과!
+    result.final_side = major
+    return result
 
 
 def sl_tp(price: float, atr: float, side: str, r: RiskCfg) -> tuple[float, float]:
@@ -249,15 +292,15 @@ def build_explanation(
 
     # C. Price 필터 해석
     last = dS.iloc[-1]
-    # don_low = last[f"DONCH_L_{cfg.indi.don_len}"]
-    # don_high = last[f"DONCH_U_{cfg.indi.don_len}"]
-    # if major == "LONG":
-    #     cond = last["close"] < don_low and last["close"] < last["vwap"]
-    #     desc = f"close({last['close']:.4f}) < DonchianLow({don_low:.4f}) and VWAP({last['vwap']:.4f})"
-    # else:
-    #     cond = last["close"] > don_high and last["close"] > last["vwap"]
-    #     desc = f"close({last['close']:.4f}) > DonchianHigh({don_high:.4f}) and VWAP({last['vwap']:.4f})"
-    # expl["price_filter"] = f"Price filter { '통과' if cond else '미통과' }: {desc}."
+    don_low = last[f"DONCH_L_{cfg.indi.don_len}"]
+    don_high = last[f"DONCH_U_{cfg.indi.don_len}"]
+    if major == "LONG":
+        cond = last["close"] < don_low and last["close"] < last["vwap"]
+        desc = f"close({last['close']:.4f}) < DonchianLow({don_low:.4f}) and VWAP({last['vwap']:.4f})"
+    else:
+        cond = last["close"] > don_high and last["close"] > last["vwap"]
+        desc = f"close({last['close']:.4f}) > DonchianHigh({don_high:.4f}) and VWAP({last['vwap']:.4f})"
+    expl["price_filter"] = f"Price filter { '통과' if cond else '미통과' }: {desc}."
 
     # D. Volume 필터 해석
     avg_vol = dS["volume"].tail(20).mean()
