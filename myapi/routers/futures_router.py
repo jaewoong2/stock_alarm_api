@@ -1,3 +1,4 @@
+from asyncio import futures
 from calendar import c
 import dis
 import json
@@ -11,15 +12,16 @@ from numpy import add
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.futures.futures_schema import (
-    BotCfg,
     ExecuteFutureOrderRequest,
     ExecuteFuturesRequest,
     FutureOpenAISuggestion,
     FuturesConfigRequest,
     FuturesResponse,
     IndiCfg,
+    QueueMessage,
+    ResumptionConfiguration,
     ResumptionRequestData,
-    RiskCfg,
+    RiskConfiguration,
     TechnicalAnalysis,
     TechnicalAnalysisRequest,
 )
@@ -49,7 +51,7 @@ async def get_futures_balance(
         Provide[Container.services.futures_service]
     ),
 ):
-    return futures_service.fetch_balnce()
+    return futures_service.fetch_balance()
 
 
 @router.get("/{symbol}", tags=["futures"], response_model=List[FuturesResponse])
@@ -105,7 +107,7 @@ async def get_openai_analysis(
     ),
 ):
     try:
-        balance_position = futures_service.fetch_balnce()
+        balance_position = futures_service.fetch_balance()
         target_currency = data.symbol.split("USDT")[0]
         return futures_service.generate_technical_prompts(
             symbol=data.symbol,
@@ -121,6 +123,12 @@ async def get_openai_analysis(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI analysis failed: {str(e)}")
+
+
+@router.post("/execute_futures", tags=["futures"])
+@inject
+async def excute_order():
+    print("hello world")
 
 
 @router.post("/execute", tags=["futures"])
@@ -140,20 +148,13 @@ async def execute_futures_with_ai(
         # 선물 거래 대상 통화
         target_currency = data.symbol.split("USDT")[0]
         # 현재 선물 계좌 정보
-        balance_position = futures_service.fetch_balnce(
+        balance_position = futures_service.fetch_balance(
             is_future=True, symbols=[target_currency, "USDT"]
         )
 
-        target_balance = None
-
-        target_balances = [
-            balance
-            for balance in balance_position.balances
-            if balance.symbol == target_currency
-        ]
-
-        if len(target_balances) > 0:
-            target_balance = target_balances[0]
+        target_balance = futures_service.get_target_balance(
+            target_currency=target_currency
+        )
 
         if (
             target_balance
@@ -194,12 +195,16 @@ async def execute_futures_with_ai(
         # AI 분석 요청을 위한 프롬프트 생성
         prompt, system_prompt, _ = futures_service.generate_technical_prompts(
             symbol=data.symbol,
+            # 단기 Timeframe
             timeframe=data.timeframe,
             limit=data.limit,
+            # 장기 Timeframe
+            longterm_timeframe=data.longterm_timeframe,
+            # 공통
             target_currency=target_currency,
             balances=balance_position,
-            longterm_timeframe=data.longterm_timeframe,
             target_position=(target_balance.positions if target_balance else None),
+            # 추가 Context
             addtion_context=data.additional_context if data.additional_context else "",
             # addtion_context=f"It is {data.image_timeframe}'s plot chart summary: {image_suggestion.detaild_summary}",
         )
@@ -393,20 +398,13 @@ async def execute_futures_order(
         # 선물 거래 대상 통화
         target_currency = data.symbol.split("USDT")[0]
         # 현재 선물 계좌 정보
-        balance_position = futures_service.fetch_balnce(
+        balance_position = futures_service.fetch_balance(
             is_future=True, symbols=[target_currency, "USDT"]
         )
 
-        target_balance = None
-
-        target_balances = [
-            balance
-            for balance in balance_position.balances
-            if balance.symbol == target_currency
-        ]
-
-        if len(target_balances) > 0:
-            target_balance = target_balances[0]
+        target_balance = futures_service.get_target_balance(
+            target_currency=target_currency
+        )
 
         result = futures_service.execute_futures_with_suggestion(
             symbol=data.symbol,
@@ -459,7 +457,7 @@ async def get_resumption(
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     try:
-        configuration = BotCfg(
+        configuration = ResumptionConfiguration(
             symbol="BTC/USDT",
             indi=IndiCfg(
                 ema_fast=50,
@@ -471,44 +469,18 @@ async def get_resumption(
                 bb_len=20,
                 bb_std=2.0,
             ),
-            risk=RiskCfg(atr_sl_mult=1.0, atr_tp_mult=1.8),
+            risk=RiskConfiguration(atr_sl_mult=1.0, atr_tp_mult=1.8),
         )
 
-        tfM1, tfM2, tfmB, tfmS = data.timeframes
+        for timeframe in data.timeframes:
+            dataframe = futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=timeframe.timeframe, limit=data.limit
+            )
+            added_dataframe = futures_service.add_resumption_indicators(
+                dataframe=dataframe, resumption_configuration=configuration
+            )
 
-        daily_df = futures_service.fetch_ohlcv(
-            symbol=data.symbol, timeframe="1d", limit=data.limit
-        )
-
-        tfM1.data = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfM1.timeframe, limit=data.limit
-            ),
-            c=configuration.indi,
-        ).to_dict()
-
-        tfM2.data = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfM2.timeframe, limit=data.limit
-            ),
-            c=configuration.indi,
-        ).to_dict()
-
-        tfmB.data = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfmB.timeframe, limit=data.limit
-            ),
-            c=configuration.indi,
-        ).to_dict()
-
-        tfmS.data = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfmS.timeframe, limit=data.limit
-            ),
-            c=configuration.indi,
-        ).to_dict()
-
-        # side = signal_logic(dM1, dM2, dB, dS, cfg=configuration)
+            timeframe.data = added_dataframe.to_dict()
 
         if data.use_llm:
             # explanation = build_explanation(
@@ -524,23 +496,23 @@ async def get_resumption(
 
             return snapshots
 
-        # message = QueueMessage(
-        #     body=data.model_dump_json(),
-        #     path="/futures/execute",
-        #     method="POST",
-        # ).message
+        message = QueueMessage(
+            body=data.model_dump_json(),
+            path="/futures/execute",
+            method="POST",
+        ).message
 
-        # response = aws_service.send_sqs_message(
-        #     queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
-        #     message_body=json.dumps(message),
-        # )
+        response = aws_service.send_sqs_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+            message_body=json.dumps(message),
+        )
 
-        # return {
-        #     "status": "success",
-        #     "message": "Futures execution request queued successfully",
-        #     "sqs_message_id": response.get("MessageId", ""),
-        #     "data": message,
-        # }
+        return {
+            "status": "success",
+            "message": "Futures execution request queued successfully",
+            "sqs_message_id": response.get("MessageId", ""),
+            "data": message,
+        }
 
     except Exception as e:
         raise HTTPException(

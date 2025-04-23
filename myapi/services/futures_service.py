@@ -846,7 +846,23 @@ class FuturesService:
 
         return result if result else "Current config is up to date."
 
-    def fetch_balnce(self, is_future: bool = True, symbols: List[str] = ["USDT"]):
+    def get_target_balance(self, target_currency: str = "BTC"):
+        balances = self.fetch_balance(is_future=True, symbols=[target_currency, "USDT"])
+
+        target_balance = None
+
+        target_balances = [
+            balance
+            for balance in balances.balances
+            if balance.symbol == target_currency
+        ]
+
+        if len(target_balances) > 0:
+            target_balance = target_balances[0]
+
+        return target_balance
+
+    def fetch_balance(self, is_future: bool = True, symbols: List[str] = ["USDT"]):
         params = {}
         result = {
             "positions": {},
@@ -981,7 +997,10 @@ class FuturesService:
         limit=500,
         target_currency="BTC",
     ):
-        current_leverage, _ = self.get_position(symbol)
+        current_leverage, _ = self.get_position(
+            symbol
+        )  # (공통) 현재 포지션 / 레버러지 정보 가져오기
+
         candles_info = self.fetch_ohlcv(symbol, timeframe, limit)
         next_candles_info = self.fetch_ohlcv(symbol, next_timeframe(timeframe), limit)
         long_candles_info = self.fetch_ohlcv(symbol, longterm_timeframe, limit)
@@ -996,18 +1015,21 @@ class FuturesService:
             candles_info=long_candles_info, limit=limit
         )
 
-        current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+        current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")  # (공통) 현재 시간
 
         plot_image_path = self.backdata_service.upload_plot_image(
             df=candles_info, length=500, path=f"{symbol}_{current_time}.png"
-        )
-        encoded_image_url = encode_image(quote(plot_image_path, safe=":/"))
+        )  # (공통) Dataframe -> plot image 변환
 
-        current_price = self.fetch_ticker(symbol)
+        encoded_image_url = encode_image(
+            quote(plot_image_path, safe=":/")
+        )  # (공통) plot image -> base64 인코딩
 
-        _, min_amount = self.get_market(symbol=target_currency)
+        current_price = self.fetch_ticker(symbol)  # (공통) 현재 가격
 
-        funding_rate = self.fetch_funding_rate(symbol)
+        _, min_amount = self.get_market(symbol=target_currency)  # (공통) 최소 구매량
+
+        funding_rate = self.fetch_funding_rate(symbol)  # (공통) 펀딩 비율
 
         maximum_amount = 0.0
 
@@ -1887,3 +1909,13 @@ class FuturesService:
                 else ""
             ),
         )
+
+    def generate_resumption_technical_prompts(
+        self,
+        symbol: str,
+        target_currency,
+        balances: Optional[FuturesBalances],
+        target_position: Optional[FuturesBalancePositionInfo],
+        addtion_context: str = "",
+    ):
+        pass

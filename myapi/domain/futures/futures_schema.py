@@ -514,16 +514,16 @@ class IndiCfg(BaseModel):
     roc_len: int = 12
 
 
-class RiskCfg(BaseModel):
+class RiskConfiguration(BaseModel):
     atr_sl_mult: float = 1.4
     atr_tp_mult: float = 2.0
     vol_filter: float = 1.1
 
 
-class BotCfg(BaseModel):
+class ResumptionConfiguration(BaseModel):
     symbol: str = "BTC/USDT"
     indi: IndiCfg = IndiCfg()
-    risk: RiskCfg = RiskCfg()
+    risk: RiskConfiguration = RiskConfiguration()
     llm_snapshot_small: int = 16  # 5m·15m 최근 봉 수
     llm_snapshot_big: int = 1  # 1h·4h 최근 봉 수
 
@@ -563,7 +563,7 @@ class QueueMessage(BaseModel):
 
 
 # ▶ **동적 타임프레임** 모델
-class TFCfg(BaseModel):
+class TimeFrameConfiguration(BaseModel):
     timeframe: str = "5m"
     snapshot_length: int = 60
     # JSON 스키마 생성 시 제외
@@ -584,11 +584,11 @@ class TFCfg(BaseModel):
 class ResumptionRequestData(BaseModel):
     symbol: str = "BTCUSDT"
     limit: int = 500
-    timeframes: List[TFCfg] = [
-        TFCfg(timeframe="4h", snapshot_length=42, data={}),
-        TFCfg(timeframe="1h", snapshot_length=48, data={}),
-        TFCfg(timeframe="15m", snapshot_length=40, data={}),
-        TFCfg(timeframe="5m", snapshot_length=60, data={}),
+    timeframes: List[TimeFrameConfiguration] = [
+        TimeFrameConfiguration(timeframe="4h", snapshot_length=42, data={}),
+        TimeFrameConfiguration(timeframe="1h", snapshot_length=48, data={}),
+        TimeFrameConfiguration(timeframe="15m", snapshot_length=40, data={}),
+        TimeFrameConfiguration(timeframe="5m", snapshot_length=60, data={}),
     ]  # 요청마다 원하는 TF 전달 (큰 값 -> 작은 값 [4h, 1h, 15m, 5m])
     use_llm: bool = True
 

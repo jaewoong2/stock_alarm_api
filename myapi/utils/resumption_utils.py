@@ -10,11 +10,11 @@ import pandas as pd
 import pandas_ta as ta
 
 from myapi.domain.futures.futures_schema import (
-    BotCfg,
     IndiCfg,
-    RiskCfg,
+    ResumptionConfiguration,
+    RiskConfiguration,
     SignalResult,
-    TFCfg,
+    TimeFrameConfiguration,
 )
 
 
@@ -208,7 +208,7 @@ def signal_logic(
     dM2: pd.DataFrame,
     dB: pd.DataFrame,
     dS: pd.DataFrame,
-    cfg: BotCfg,
+    cfg: ResumptionConfiguration,
 ) -> SignalResult:
     result = SignalResult(
         major_pass=False,
@@ -302,7 +302,9 @@ def signal_logic(
     return result
 
 
-def sl_tp(price: float, atr: float, side: str, r: RiskCfg) -> tuple[float, float]:
+def sl_tp(
+    price: float, atr: float, side: str, r: RiskConfiguration
+) -> tuple[float, float]:
     if side == "LONG":
         return round(price - atr * r.atr_sl_mult, 2), round(
             price + atr * r.atr_tp_mult, 2
@@ -317,7 +319,7 @@ def build_tf_snapshot(
     df: pd.DataFrame,
     n: int,
     prefix: str,
-    cfg: BotCfg,
+    cfg: ResumptionConfiguration,
 ) -> Dict[str, list]:
     """
     df: 지표가 붙은 DataFrame
@@ -401,8 +403,8 @@ def build_snapshot(
     # tfmB: str,
     # tfM1: str,
     # tfM2: str,
-    timeframes: List[TFCfg],
-    cfg: BotCfg,
+    timeframes: List[TimeFrameConfiguration],
+    cfg: ResumptionConfiguration,
 ) -> dict:
     """
     dS, dB, dM1, dM2: 각각 가장 작은 minor → 큰 major 순으로
@@ -435,7 +437,7 @@ def build_explanation(
     dB: pd.DataFrame,
     dS: pd.DataFrame,
     major: str,
-    cfg: BotCfg,
+    cfg: ResumptionConfiguration,
 ) -> Dict[str, str]:
     """
     각 단계(major trend, minor state, price/volume 필터)에
