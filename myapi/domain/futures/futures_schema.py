@@ -1,8 +1,10 @@
+import pandas as pd
+
 from decimal import Decimal
 from enum import Enum
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List, Literal, Optional, Dict, Union
+from typing import Any, List, Literal, Optional, Dict, Union
 
 from myapi.domain.trading.trading_schema import TechnicalIndicators
 from myapi.utils.futures_technical import TradingSignalResult
@@ -493,30 +495,29 @@ class TechnicalIndicatorsResponse(BaseModel):
         arbitrary_types_allowed = True
 
 
-# ▶ **동적 타임프레임** 모델
-class TFCfg(BaseModel):
-    major: List[str] = ["4h", "1h"]  # 대세 판단용
-    minor: List[str] = ["15m", "5m"]  # 단기 판단용
-    # minor[0] = 더 큰 단기 TF, minor[1] = 가장 작은 단기 TF
-
-
 class IndiCfg(BaseModel):
-    ema_fast: int = 50
-    ema_slow: int = 200
+    ema_fast: int = 34
+    ema_slow: int = 144
     ema_minor: int = 20
-    rsi_len: int = 14
-    atr_len: int = 14
+    rsi_len: int = 9
+    atr_len: int = 21
     adx_len: int = 14
     bb_len: int = 20
     bb_std: float = 2.0
     don_len: int = 20
-    lrs_len: int = 14
+    lrs_len: int = 18
+
+    stoch_len: int = 14
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    roc_len: int = 12
 
 
 class RiskCfg(BaseModel):
-    atr_sl_mult: float = 1.0
-    atr_tp_mult: float = 1.8
-    vol_filter: float = 1.2
+    atr_sl_mult: float = 1.4
+    atr_tp_mult: float = 2.0
+    vol_filter: float = 1.1
 
 
 class BotCfg(BaseModel):
@@ -561,13 +562,38 @@ class QueueMessage(BaseModel):
         }
 
 
+# ▶ **동적 타임프레임** 모델
+class TFCfg(BaseModel):
+    timeframe: str = "5m"
+    snapshot_length: int = 60
+    # JSON 스키마 생성 시 제외
+    data: Dict[Any, Any] = {}
+
+    @property
+    def dataframe(self) -> pd.DataFrame:
+        return pd.DataFrame(self.data)
+
+    # major: List[str] = ["4h", "1h"]  # 대세 판단용
+    # minor: List[str] = ["15m", "5m"]  # 단기 판단용
+    # minor[0] = 더 큰 단기 TF, minor[1] = 가장 작은 단기 TF
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
 class ResumptionRequestData(BaseModel):
     symbol: str = "BTCUSDT"
     limit: int = 500
-    timeframes: TFCfg = TFCfg()  # 요청마다 원하는 TF 전달
-    snapshot_small: int = 30  # optional
-    snapshot_big: int = 60  # optional
+    timeframes: List[TFCfg] = [
+        TFCfg(timeframe="4h", snapshot_length=42, data={}),
+        TFCfg(timeframe="1h", snapshot_length=48, data={}),
+        TFCfg(timeframe="15m", snapshot_length=40, data={}),
+        TFCfg(timeframe="5m", snapshot_length=60, data={}),
+    ]  # 요청마다 원하는 TF 전달 (큰 값 -> 작은 값 [4h, 1h, 15m, 5m])
     use_llm: bool = True
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class SignalResult(BaseModel):

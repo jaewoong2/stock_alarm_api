@@ -472,60 +472,55 @@ async def get_resumption(
                 bb_std=2.0,
             ),
             risk=RiskCfg(atr_sl_mult=1.0, atr_tp_mult=1.8),
-            llm_snapshot_small=data.snapshot_small,  # 5m·15m 최근 봉 수,
-            llm_snapshot_big=data.snapshot_big,  # 1h·4h 최근 봉 수,
         )
 
-        tfM1, tfM2 = data.timeframes.major
-        tfmB, tfmS = data.timeframes.minor
+        tfM1, tfM2, tfmB, tfmS = data.timeframes
 
-        dM1 = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfM1, limit=data.limit
-            ),
-            c=configuration.indi,
-        )
-        dM2 = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfM2, limit=data.limit
-            ),
-            c=configuration.indi,
-        )
-        dB = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfmB, limit=data.limit
-            ),
-            c=configuration.indi,
-        )
-        dS = add_indis(
-            df=futures_service.fetch_ohlcv(
-                symbol=data.symbol, timeframe=tfmS, limit=data.limit
-            ),
-            c=configuration.indi,
+        daily_df = futures_service.fetch_ohlcv(
+            symbol=data.symbol, timeframe="1d", limit=data.limit
         )
 
-        side = signal_logic(dM1, dM2, dB, dS, cfg=configuration)
+        tfM1.data = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfM1.timeframe, limit=data.limit
+            ),
+            c=configuration.indi,
+        ).to_dict()
+
+        tfM2.data = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfM2.timeframe, limit=data.limit
+            ),
+            c=configuration.indi,
+        ).to_dict()
+
+        tfmB.data = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfmB.timeframe, limit=data.limit
+            ),
+            c=configuration.indi,
+        ).to_dict()
+
+        tfmS.data = add_indis(
+            df=futures_service.fetch_ohlcv(
+                symbol=data.symbol, timeframe=tfmS.timeframe, limit=data.limit
+            ),
+            c=configuration.indi,
+        ).to_dict()
+
+        # side = signal_logic(dM1, dM2, dB, dS, cfg=configuration)
 
         if data.use_llm:
-            explanation = build_explanation(
-                dM1, dM2, dB, dS, side.final_side, configuration
-            )
+            # explanation = build_explanation(
+            #     dM1, dM2, dB, dS, "side.final_side", configuration
+            # )
 
             snapshots = build_snapshot(
-                dS=dS,
-                dB=dB,
-                dM1=dM1,
-                dM2=dM2,
-                n_small=data.snapshot_small,
-                n_big=data.snapshot_big,
-                tfmS=tfmS,
-                tfmB=tfmB,
-                tfM1=tfM1,
-                tfM2=tfM2,
+                timeframes=data.timeframes,
                 cfg=configuration,
             )
 
-            snapshots["explanation"] = explanation
+            # snapshots["explanation"] = explanation
 
             return snapshots
 
