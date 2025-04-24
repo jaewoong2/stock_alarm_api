@@ -21,6 +21,7 @@ from myapi.domain.futures.futures_schema import (
     HeikinAshiAnalysis,
     PlaceFuturesOrder,
     PlaceFuturesOrderResponse,
+    ResumptionConfiguration,
     SimplifiedFundingRate,
     TechnicalAnalysis,
     PivotPoints,
@@ -50,6 +51,7 @@ from myapi.utils.futures_technical import (
     generate_trading_signal,
 )
 from myapi.utils.indicators import get_technical_indicators
+from myapi.utils.resumption_utils import add_indis
 
 logger = logging.getLogger(__name__)
 
@@ -1919,3 +1921,13 @@ class FuturesService:
         addtion_context: str = "",
     ):
         pass
+
+    def add_resumption_indicators(
+        self, dataframe: pd.DataFrame, resumption_configuration: ResumptionConfiguration
+    ):
+        df = add_indis(
+            df=dataframe,
+            c=resumption_configuration.indi,
+        )
+
+        return df

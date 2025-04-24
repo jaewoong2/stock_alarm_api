@@ -483,3 +483,154 @@ def build_explanation(
     )
 
     return expl
+
+
+def annotate_with_narrative_dynamic(
+    timeframes: List[TimeFrameConfiguration],
+):
+    """
+    Merge multi-timeframe DataFrames and annotate each timestamp
+    with narrative explanations based on dynamic timeframes,
+    including built-in extra_rules for richer analysis.
+
+    Parameters:
+    - dfs: dict mapping timeframe keys to DataFrames with at least
+           ['timestamp','close','atr','ema_fast','ema_slow'] and optionally
+           ['rsi','macd','macd_signal','BBU_20_2.0','BBL_20_2.0','vwap','atr_percent','roc','adx']
+           columns for each timeframe.
+    Returns:
+    - Merged DataFrame on 'timestamp' with added 'narrative' column.
+    """
+    times = [timeframe.timeframe for timeframe in timeframes]
+
+    # Rename each DF to include its timeframe suffix
+    renamed = {}
+    for timeframe in timeframes:
+        tf, df = timeframe.timeframe, timeframe.dataframe
+
+        suffix = f"_{tf}"
+        cols = {"timestamp": "timestamp"}
+        for col in df.columns:
+            if col != "timestamp":
+                cols[col] = f"{col}{suffix}"
+        renamed[tf] = df.rename(columns=cols)
+
+    # Merge all DataFrames on timestamp
+    merged = None
+    for df_tf in renamed.values():
+        merged = (
+            df_tf
+            if merged is None
+            else pd.merge(merged, df_tf, on="timestamp", how="inner")
+        )
+
+    # Define narrative rules
+    def trend_narrative(row):
+        tfs = times
+        if len(tfs) >= 2:
+            tf1, tf2 = tfs[-1], tfs[-2]
+            if (
+                row[f"ema_fast_{tf1}"] > row[f"ema_slow_{tf1}"]
+                and row[f"ema_fast_{tf2}"] > row[f"ema_slow_{tf2}"]
+            ):
+                return f"Long-term trends ({tf2}, {tf1}) bullish"
+        return "Long-term trend not aligned bullish"
+
+    def pullback_narrative(row):
+        tfs = times
+
+        if len(tfs) >= 2:
+            tf1, tf2 = tfs[0], tfs[1]
+            if (
+                row[f"ema_fast_{tf1}"] < row[f"ema_slow_{tf1}"]
+                and row[f"ema_fast_{tf2}"] < row[f"ema_slow_{tf2}"]
+            ):
+                return f"Detected short-term pullback ({tf1}, {tf2})"
+        return None
+
+    # Auto-generated rules for any available indicators
+    auto_rules = []
+    for tf in times:
+
+        if merged is None:
+            continue
+        # RSI
+        rcol = f"rsi_{tf}"
+        if rcol in merged.columns:
+            auto_rules.append(
+                lambda r, rcol=rcol, tf=tf: (
+                    f"RSI({tf})={r[rcol]:.1f} overbought"
+                    if r[rcol] > 70
+                    else (f"RSI({tf})={r[rcol]:.1f} oversold" if r[rcol] < 30 else None)
+                )
+            )
+        # MACD
+        mcol, scol = f"macd_{tf}", f"macd_signal_{tf}"
+        if mcol in merged.columns and scol in merged.columns:
+            auto_rules.append(
+                lambda r, mcol=mcol, scol=scol, tf=tf: (
+                    f"MACD({tf})={r[mcol]:.2f} {'>' if r[mcol]>r[scol] else '<'} Signal"
+                )
+            )
+        # Bollinger Bands
+        ub, lb = f"BBU_20_2.0_{tf}", f"BBL_20_2.0_{tf}"
+        ccol = f"close_{tf}"
+        if ub in merged.columns:
+            auto_rules.append(
+                lambda r, ub=ub, ccol=ccol, tf=tf: (
+                    "Close(%s) above upper BB" % tf if r[ccol] > r[ub] else None
+                )
+            )
+        if lb in merged.columns:
+            auto_rules.append(
+                lambda r, lb=lb, ccol=ccol, tf=tf: (
+                    "Close(%s) below lower BB" % tf if r[ccol] < r[lb] else None
+                )
+            )
+        # VWAP
+        vcol = f"vwap_{tf}"
+        if vcol in merged.columns:
+            auto_rules.append(
+                lambda r, vcol=vcol, ccol=ccol, tf=tf: (
+                    f"VWAP bias({tf}): close {'>' if r[ccol]>r[vcol] else '<'} VWAP"
+                )
+            )
+        # ATR%
+        ap = f"atr_percent_{tf}"
+        if ap in merged.columns:
+            auto_rules.append(
+                lambda r, ap=ap, tf=tf: (
+                    f"ATR%({tf}) high volatility"
+                    if r[ap] > 1.5
+                    else (f"ATR%({tf}) low volatility" if r[ap] < 0.7 else None)
+                )
+            )
+        # ROC
+        roc = f"roc_{tf}"
+        if roc in merged.columns:
+            auto_rules.append(
+                lambda r, roc=roc, tf=tf: (
+                    f"ROC({tf})={r[roc]:.2f}%{'+' if r[roc]>0 else ''}"
+                )
+            )
+        # ADX
+        adx = f"adx_{tf}"
+        if adx in merged.columns:
+            auto_rules.append(
+                lambda r, adx=adx, tf=tf: (
+                    f"ADX({tf})={r[adx]:.1f} trend {'strong' if r[adx]>25 else 'weak'}"
+                )
+            )
+
+    # Combine all rules
+    rules = [trend_narrative, pullback_narrative] + auto_rules
+
+    # Annotate narratives
+    if merged is None:
+        return pd.DataFrame()
+
+    merged["narrative"] = merged.apply(
+        lambda row: " / ".join(filter(None, (rule(row) for rule in rules))), axis=1
+    )
+
+    return merged["narrative"]

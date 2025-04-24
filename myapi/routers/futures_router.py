@@ -1,13 +1,16 @@
 from asyncio import futures
 from calendar import c
 import dis
+from heapq import merge
 import json
 import logging
 from math import log
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from dependency_injector.wiring import inject, Provide
+from fastapi.responses import PlainTextResponse
 from numpy import add
+from pandas import DataFrame
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -32,6 +35,7 @@ from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 from myapi.utils.resumption_utils import (
     add_indis,
+    annotate_with_narrative_dynamic,
     build_explanation,
     build_snapshot,
     signal_logic,
@@ -486,15 +490,85 @@ async def get_resumption(
             # explanation = build_explanation(
             #     dM1, dM2, dB, dS, "side.final_side", configuration
             # )
+            snapshot = ""
+            CORE_COLS = [
+                # OHLCV
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                # 파생 가격
+                "hlc3",
+                "oc2",
+                # 추세
+                "ema_fast",
+                "ema_slow",
+                "ema_minor",
+                "ema_fast_slope",
+                # 모멘텀
+                "rsi",
+                "rsi_change",
+                "stoch_k",
+                "stoch_d",
+                "macd",
+                "macd_signal",
+                "roc",
+                # 변동성
+                "atr",
+                "atr_percent",
+                "natr",
+                "atr_slope",
+                # 추세 강도
+                "adx",
+                "lrs",
+                # 볼밴·돈채널
+                f"BBL_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
+                f"BBU_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
+                f"DONCH_L_{configuration.indi.don_len}",
+                f"DONCH_U_{configuration.indi.don_len}",
+                # 피봇 예시
+                "P",
+                "S1",
+                "R1",
+                "S2",
+                "R2",
+                # 프라이스 액션
+                "candle_body",
+                "upper_wick",
+                "lower_wick",
+                # VWAP
+                "vwap",
+                # HA / Ichimoku
+                "HA_open",
+                "HA_close",
+                "ISA_9",
+                "ISB_26",
+                "ITS_9",
+                "IKS_26",
+                "ICS_26",
+            ]
 
-            snapshots = build_snapshot(
-                timeframes=data.timeframes,
-                cfg=configuration,
-            )
+            # for timeframe in data.timeframes:
+            #     columns = [
+            #         column
+            #         for column in CORE_COLS
+            #         if column in timeframe.dataframe.columns
+            #     ]
+
+            #     snapshot += f"Candle TimeFrame {timeframe.timeframe}: \n\n"
+            #     snapshot += f"{timeframe.dataframe.iloc[-timeframe.snapshot_length::].to_csv(columns=columns)}\n\n"
+            merged = annotate_with_narrative_dynamic(data.timeframes)
+
+            # snapshots = build_snapshot(
+            #     timeframes=data.timeframes,
+            #     cfg=configuration,
+            # )
 
             # snapshots["explanation"] = explanation
 
-            return snapshots
+            return merged.iloc[-timeframe.snapshot_length : :].to_csv()
 
         message = QueueMessage(
             body=data.model_dump_json(),
