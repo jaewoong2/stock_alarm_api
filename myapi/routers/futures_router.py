@@ -458,7 +458,10 @@ async def get_resumption(
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
-    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
     try:
         configuration = ResumptionConfiguration(
@@ -480,6 +483,7 @@ async def get_resumption(
             dataframe = futures_service.fetch_ohlcv(
                 symbol=data.symbol, timeframe=timeframe.timeframe, limit=data.limit
             )
+
             added_dataframe = futures_service.add_resumption_indicators(
                 dataframe=dataframe, resumption_configuration=configuration
             )
@@ -550,43 +554,112 @@ async def get_resumption(
                 "ICS_26",
             ]
 
-            # for timeframe in data.timeframes:
-            #     columns = [
-            #         column
-            #         for column in CORE_COLS
-            #         if column in timeframe.dataframe.columns
-            #     ]
+            for timeframe in data.timeframes:
+                columns = [
+                    column
+                    for column in CORE_COLS
+                    if column in timeframe.dataframe.columns
+                ]
 
-            #     snapshot += f"Candle TimeFrame {timeframe.timeframe}: \n\n"
-            #     snapshot += f"{timeframe.dataframe.iloc[-timeframe.snapshot_length::].to_csv(columns=columns)}\n\n"
-            merged = annotate_with_narrative_dynamic(data.timeframes)
+                snapshot += (
+                    f"<Candle Dataframe TimeFrame {timeframe.timeframe} Start> \n"
+                )
+                snapshot += f"{timeframe.dataframe.tail(timeframe.snapshot_length).to_csv(columns=columns)}\n"
+                snapshot += (
+                    f"</Candle Dataframe TimeFrame {timeframe.timeframe} End> \n"
+                )
 
-            # snapshots = build_snapshot(
-            #     timeframes=data.timeframes,
-            #     cfg=configuration,
-            # )
+        balance_position = futures_service.fetch_balance()
+        target_currency = data.symbol.split("USDT")[0]
 
-            # snapshots["explanation"] = explanation
+        # return PlainTextResponse(snapshot)
 
-            return merged.iloc[-timeframe.snapshot_length : :].to_csv()
-
-        message = QueueMessage(
-            body=data.model_dump_json(),
-            path="/futures/execute",
-            method="POST",
-        ).message
-
-        response = aws_service.send_sqs_message(
-            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
-            message_body=json.dumps(message),
+        target_balance = futures_service.get_target_balance(
+            target_currency=target_currency
         )
 
-        return {
-            "status": "success",
-            "message": "Futures execution request queued successfully",
-            "sqs_message_id": response.get("MessageId", ""),
-            "data": message,
-        }
+        if (
+            target_balance
+            and target_balance.positions
+            and target_balance.positions.position_amt == 0
+        ):
+            futures_service.cancle_order(data.symbol)
+
+        if not target_balance:
+            futures_service.cancle_order(data.symbol)
+
+        futures_service.cancel_sibling_order_by_active_order(symbol=data.symbol)
+
+        logger.info(f"balance_position: {balance_position.model_dump()}")
+        logger.info(
+            f"target_balance: {target_balance.model_dump() if target_balance else None}"
+        )
+
+        prompt, system_prompt = futures_service.generate_resumption_technical_prompts(
+            data=snapshot,
+            symbol=data.symbol,
+            target_currency=target_currency,
+            balances=balance_position,
+            target_position=target_balance.positions if target_balance else None,
+            addtion_context="",
+        )
+
+        # AI 분석 요청
+        technical_suggestion = ai_service.completions_parse(
+            system_prompt=system_prompt,
+            prompt=prompt,
+            schema=FutureOpenAISuggestion,
+            chat_model=ChatModel.O4_MINI,
+            image_url=None,
+        )
+
+        # 분석 결과 Logging / Discode 전송
+        discord_service.send_message(
+            format_trade_summary(technical_suggestion.model_dump())
+        )
+        # discord_service.send_message(image_suggestion.model_dump_json())
+
+        # AI 분석 결과를 바탕으로 선물 거래 실행
+        # - 기존 거래
+        #   - 같은 포지션 일 경우, (TP/SL) 수정
+        #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
+        #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
+
+        suggetions = [
+            technical_suggestion.first_order,
+            technical_suggestion.second_order,
+            technical_suggestion.third_order,
+        ]
+
+        total_result = []
+        for suggetion in suggetions:
+            if suggetion == None:
+                continue
+
+            # 주문 실행
+            result = futures_service.execute_futures_with_suggestion(
+                symbol=data.symbol,
+                suggestion=suggetion,
+                target_balance=target_balance,
+            )
+
+            if result == None:
+                continue
+
+            response, error_message = result
+
+            total_result.append(response)
+
+            # # 선물 거래 결과 Logging / Discode 전송
+            if response:
+                discord_service.send_message(response.model_dump_json())
+                logger.info(f"Futures execution result: {response.model_dump_json()}")
+
+            if error_message:
+                discord_service.send_message(error_message)
+                logger.info(f"Futures execution result: {error_message}")
+
+        return total_result
 
     except Exception as e:
         raise HTTPException(

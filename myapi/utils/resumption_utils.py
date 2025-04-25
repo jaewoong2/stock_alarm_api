@@ -178,7 +178,14 @@ def add_indis(df: pd.DataFrame, c: IndiCfg) -> pd.DataFrame:
     ):
         d = pd.concat([d, ichi_result[0]], axis=1)  # 첫 번째 dataframe만 사용
 
-    return d.dropna().reset_index(drop=True)
+    # NaN 값 처리: 이전/이후 값으로 채우고, 남은 NaN은 0으로
+    d = d.ffill().bfill().fillna(0)
+
+    # 숫자형 컬럼을 소수점 2자리로 반올림
+    numeric_columns = d.select_dtypes(include=["float64", "int64"]).columns
+    d[numeric_columns] = d[numeric_columns].round(2)
+
+    return d.reset_index(drop=True)
 
 
 def trend_side(row) -> Literal["LONG", "SHORT"]:
@@ -504,24 +511,29 @@ def annotate_with_narrative_dynamic(
     times = [timeframe.timeframe for timeframe in timeframes]
 
     # Rename each DF to include its timeframe suffix
-    renamed = {}
-    for timeframe in timeframes:
-        tf, df = timeframe.timeframe, timeframe.dataframe
-
+    dfs = {}
+    for cfg in timeframes:
+        tf, df = cfg.timeframe, cfg.dataframe.copy()
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+        # rename columns
         suffix = f"_{tf}"
-        cols = {"timestamp": "timestamp"}
-        for col in df.columns:
-            if col != "timestamp":
-                cols[col] = f"{col}{suffix}"
-        renamed[tf] = df.rename(columns=cols)
+        rename_map = {c: c + suffix for c in df.columns if c != "timestamp"}
+        dfs[tf] = df.rename(columns=rename_map)
 
-    # Merge all DataFrames on timestamp
-    merged = None
-    for df_tf in renamed.values():
-        merged = (
-            df_tf
-            if merged is None
-            else pd.merge(merged, df_tf, on="timestamp", how="inner")
+    # Sort timeframes by duration (short to long)
+    tfs = sorted(dfs.keys(), key=lambda x: pd.to_timedelta(x))
+    base = dfs[tfs[0]]
+
+    # As-of merge each DF onto base
+    merged = base
+    for tf in tfs[1:]:
+        merged = pd.merge_asof(
+            merged,
+            dfs[tf],
+            on="timestamp",
+            direction="backward",
+            tolerance=pd.to_timedelta(tf),
         )
 
     # Define narrative rules

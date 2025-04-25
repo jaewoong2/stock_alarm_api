@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime
 
 import requests
-from myapi.domain.ai.const import generate_futures_prompt
+from myapi.domain.ai.const import generate_futures_prompt, generate_resumption_prompts
 from myapi.domain.futures.futures_schema import (
     FuturesActionType,
     FuturesBalance,
@@ -1914,13 +1914,61 @@ class FuturesService:
 
     def generate_resumption_technical_prompts(
         self,
+        data: str,
         symbol: str,
         target_currency,
         balances: Optional[FuturesBalances],
         target_position: Optional[FuturesBalancePositionInfo],
         addtion_context: str = "",
     ):
-        pass
+
+        current_time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")  # (공통) 현재 시간
+
+        current_price = self.fetch_ticker(symbol)  # (공통) 현재 가격
+
+        _, min_amount = self.get_market(symbol=target_currency)  # (공통) 최소 구매량
+
+        funding_rate = self.fetch_funding_rate(symbol)  # (공통) 펀딩 비율
+
+        current_leverage, _ = self.get_position(
+            symbol
+        )  # (공통) 현재 포지션 / 레버러지 정보 가져오기
+
+        # excute_result = self.execute_futures_with_suggestion(
+        #     symbol=symbol, target_balance=None, suggestion=None
+        # )
+
+        maximum_amount = 0.0
+
+        if balances:
+            usdt_balance = [
+                balance for balance in balances.balances if balance.symbol == "USDT"
+            ]
+
+            if len(usdt_balance) > 0:
+                usdt_balance = usdt_balance[0]
+                maximum_amount = float(usdt_balance.free) / current_price.last
+
+        prompt, system_prompt = generate_resumption_prompts(
+            data_string=data,
+            market_data=current_price.description,
+            current_time=current_time,
+            balances_data=(
+                balances.description if balances else "No balance data available"
+            ),
+            target_currency=target_currency,
+            quote_currency="USDT",
+            position=target_position.position if target_position else "NONE",
+            leverage=current_leverage or 1,
+            minimum_amount=min_amount,
+            maximum_amount=maximum_amount,
+            funding_rate=str(funding_rate.funding_rate),
+            additional_context=addtion_context,
+        )
+
+        return prompt, system_prompt
+
+        # return excute_result
 
     def add_resumption_indicators(
         self, dataframe: pd.DataFrame, resumption_configuration: ResumptionConfiguration
