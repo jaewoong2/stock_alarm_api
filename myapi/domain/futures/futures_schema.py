@@ -209,7 +209,8 @@ class FuturesConfigRequest(BaseModel):
 
 
 class TechnicalAnalysisRequest(BaseModel):
-    symbol: str = "BTCUSDT"
+    symbol: str = "BTCUSDC"
+    currency: str = "USDC"
     interval: str = "1h"
     size: int = 500
 
@@ -266,7 +267,8 @@ class FuturesBalances(BaseModel):
 
 
 class ExecuteFuturesRequest(BaseModel):
-    symbol: str = "BTCUSDT"
+    symbol: str = "BTCUSDC"
+    currency: str = "USDC"
     limit: int = 500
     timeframe: str = "1h"
     image_timeframe: str = "1h"
@@ -276,6 +278,7 @@ class ExecuteFuturesRequest(BaseModel):
 
 class ExecuteFutureOrderRequest(BaseModel):
     symbol: str
+    currency: str = "USDC"
     suggestion: FuturesOrderRequest
     target_balance: Optional[FuturesBalance]
 
@@ -582,7 +585,10 @@ class TimeFrameConfiguration(BaseModel):
 
 
 class ResumptionRequestData(BaseModel):
-    symbol: str = "BTCUSDT"
+    symbol: str = "BTCUSDC"
+    target_currency: str = "BTC"
+    currency: str = "USDC"
+
     limit: int = 500
     timeframes: List[TimeFrameConfiguration] = [
         TimeFrameConfiguration(timeframe="4h", snapshot_length=42, data={}),

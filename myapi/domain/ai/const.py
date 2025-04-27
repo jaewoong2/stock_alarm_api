@@ -253,6 +253,24 @@ def generate_resumption_prompts(
     CurrentTime: {current_time} (+ 09:00 UTC)
     # ===== DECISION RULES (extract from my strategy diagram) =====
 
+    • STEP-0  THREE-PHASE TREND-REVERSAL CHECK 
+        • UP→DOWN pattern (P-U1~3) OR DOWN→UP pattern (P-D1~3) identified
+        within the LAST 15 5-minute candles = call it "REVERSAL_SIGNAL".
+
+        Detection hints:
+            P-U3 ⇢ latest high ≤ prev_HH×1.003 AND upper_wick ≥ 0.5*body
+            P-D3 ⇢ latest low ≥ prev_LL×0.997 AND lower_wick ≥ 0.5*body
+            (see full description in strategy notes)
+
+        • If REVERSAL_SIGNAL contradicts current open position:
+            ⇒ immediate "CLOSE_ORDER"
+            ⇒ consider opposite direction with risk ≤ 0.5 R and
+                confidence += 0.1 (cap 0.9)
+
+        • If REVERSAL_SIGNAL exists but confirmation (RSI/MACD/vol) is
+        missing ⇒ decision = "HOLD", reason must state “awaiting confirm”.
+    
+
     • Step-1  HTF (4H + 1H) bias (4H & 1H, last 10 candles)::
         - Higher-High / Higher-Low structure → bias = UP
         - Lower-Low / Lower-High structure → bias = DOWN

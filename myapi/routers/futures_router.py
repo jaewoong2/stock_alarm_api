@@ -34,11 +34,7 @@ from myapi.services.aws_service import AwsService
 from myapi.services.discord_service import DiscordService
 from myapi.services.futures_service import FuturesService, generate_prompt_for_image
 from myapi.utils.resumption_utils import (
-    add_indis,
-    annotate_with_narrative_dynamic,
-    build_explanation,
-    build_snapshot,
-    signal_logic,
+    get_cols,
 )
 from myapi.utils.utils import format_trade_summary
 
@@ -76,13 +72,14 @@ async def get_futures(
 @inject
 async def get_ticker(
     symbol: str,
+    currency: str = "USDC",
     futures_service: FuturesService = Depends(
         Provide[Container.services.futures_service]
     ),
 ):
     try:
         ticker = futures_service.fetch_ticker(symbol)
-        return {"symbol": f"{symbol}/USDT", "price": ticker.last}
+        return {"symbol": f"{symbol}/{currency}", "price": ticker.last}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -112,7 +109,7 @@ async def get_openai_analysis(
 ):
     try:
         balance_position = futures_service.fetch_balance()
-        target_currency = data.symbol.split("USDT")[0]
+        target_currency = data.symbol.split(data.currency)[0]
         return futures_service.generate_technical_prompts(
             symbol=data.symbol,
             timeframe=data.interval,
@@ -150,10 +147,10 @@ async def execute_futures_with_ai(
     logger.info(f"Received data: {data.model_dump_json()}")
     try:
         # 선물 거래 대상 통화
-        target_currency = data.symbol.split("USDT")[0]
+        target_currency = data.symbol.split(data.currency)[0]
         # 현재 선물 계좌 정보
         balance_position = futures_service.fetch_balance(
-            is_future=True, symbols=[target_currency, "USDT"]
+            is_future=True, symbols=[target_currency, data.currency]
         )
 
         target_balance = futures_service.get_target_balance(
@@ -280,7 +277,7 @@ async def execute_futures_with_ai(
 @router.get("/futures/signal", tags=["futures"])
 @inject
 async def get_signal(
-    symbol: str = "BTCUSDT",
+    symbol: str = "BTCUSDC",
     timeframe: str = "5m",
     limit: int = 500,
     futures_service: FuturesService = Depends(
@@ -400,10 +397,10 @@ async def execute_futures_order(
 ):
     try:
         # 선물 거래 대상 통화
-        target_currency = data.symbol.split("USDT")[0]
+        target_currency = data.symbol.split(data.currency)[0]
         # 현재 선물 계좌 정보
         balance_position = futures_service.fetch_balance(
-            is_future=True, symbols=[target_currency, "USDT"]
+            is_future=True, symbols=[target_currency, data.currency]
         )
 
         target_balance = futures_service.get_target_balance(
@@ -465,7 +462,7 @@ async def get_resumption(
 ):
     try:
         configuration = ResumptionConfiguration(
-            symbol="BTC/USDT",
+            symbol=data.symbol,
             indi=IndiCfg(
                 ema_fast=50,
                 ema_slow=200,
@@ -490,87 +487,24 @@ async def get_resumption(
 
             timeframe.data = added_dataframe.to_dict()
 
-        if data.use_llm:
-            # explanation = build_explanation(
-            #     dM1, dM2, dB, dS, "side.final_side", configuration
-            # )
-            snapshot = ""
-            CORE_COLS = [
-                # OHLCV
-                "timestamp",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                # 파생 가격
-                "hlc3",
-                "oc2",
-                # 추세
-                "ema_fast",
-                "ema_slow",
-                "ema_minor",
-                "ema_fast_slope",
-                # 모멘텀
-                "rsi",
-                "rsi_change",
-                "stoch_k",
-                "stoch_d",
-                "macd",
-                "macd_signal",
-                "roc",
-                # 변동성
-                "atr",
-                "atr_percent",
-                "natr",
-                "atr_slope",
-                # 추세 강도
-                "adx",
-                "lrs",
-                # 볼밴·돈채널
-                f"BBL_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
-                f"BBU_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
-                f"DONCH_L_{configuration.indi.don_len}",
-                f"DONCH_U_{configuration.indi.don_len}",
-                # 피봇 예시
-                "P",
-                "S1",
-                "R1",
-                "S2",
-                "R2",
-                # 프라이스 액션
-                "candle_body",
-                "upper_wick",
-                "lower_wick",
-                # VWAP
-                "vwap",
-                # HA / Ichimoku
-                "HA_open",
-                "HA_close",
-                "ISA_9",
-                "ISB_26",
-                "ITS_9",
-                "IKS_26",
-                "ICS_26",
+        # explanation = build_explanation(
+        #     dM1, dM2, dB, dS, "side.final_side", configuration
+        # )
+        snapshot = ""
+
+        for timeframe in data.timeframes:
+            columns = [
+                column
+                for column in get_cols(configuration)
+                if column in timeframe.dataframe.columns
             ]
 
-            for timeframe in data.timeframes:
-                columns = [
-                    column
-                    for column in CORE_COLS
-                    if column in timeframe.dataframe.columns
-                ]
-
-                snapshot += (
-                    f"<Candle Dataframe TimeFrame {timeframe.timeframe} Start> \n"
-                )
-                snapshot += f"{timeframe.dataframe.tail(timeframe.snapshot_length).to_csv(columns=columns)}\n"
-                snapshot += (
-                    f"</Candle Dataframe TimeFrame {timeframe.timeframe} End> \n"
-                )
+            snapshot += f"<Candle Dataframe TimeFrame {timeframe.timeframe} Start> \n"
+            snapshot += f"{timeframe.dataframe.tail(timeframe.snapshot_length).to_csv(columns=columns)}\n"
+            snapshot += f"</Candle Dataframe TimeFrame {timeframe.timeframe} End> \n"
 
         balance_position = futures_service.fetch_balance()
-        target_currency = data.symbol.split("USDT")[0]
+        target_currency = data.symbol.split(data.currency)[0]
 
         # return PlainTextResponse(snapshot)
 
@@ -624,7 +558,6 @@ async def get_resumption(
         #   - 같은 포지션 일 경우, (TP/SL) 수정
         #   - 다른 포지션 일 경우, 전체 주문 취소, 포지션 종료 및 새롭게 시작
         #   - 취소 일 경우, 전체 주문 취소, 포지션 종료
-
         suggetions = [
             technical_suggestion.first_order,
             technical_suggestion.second_order,

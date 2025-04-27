@@ -51,12 +51,14 @@ class FuturesRepository:
 
         return [FuturesResponse.model_validate(f) for f in futures]
 
-    def get_parents_orders(self, symbol: str) -> List[FuturesResponse]:
+    def get_parents_orders(
+        self, symbol: str, currency: str = "USDC"
+    ) -> List[FuturesResponse]:
         self._ensure_valid_session()
         _symbol = symbol
 
-        if not symbol.endswith("USDT"):
-            _symbol = f"{symbol}USDT"
+        if not symbol.endswith(currency):
+            _symbol = f"{symbol}{currency}"
 
         futures = (
             self.db_session.query(Futures)

@@ -147,7 +147,7 @@ class InsufficientBalanceException(FuturesTradeException):
         message: str,
         required_amount: float = 0.0,
         available_amount: float = 0.0,
-        currency: str = "USDT",
+        currency: str = "USDC",
     ):
         details = {
             "required_amount": required_amount,

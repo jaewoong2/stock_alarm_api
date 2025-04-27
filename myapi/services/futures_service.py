@@ -786,10 +786,10 @@ class FuturesService:
         self.futures_repository = futures_repository
         self.backdata_service = backdata_service
 
-    def get_position(self, symbol: str):
+    def get_position(self, symbol: str, currency: str = "USDC"):
         _symbol = symbol
-        if not _symbol.endswith("USDT"):
-            _symbol += "USDT"
+        if not _symbol.endswith(currency):
+            _symbol += f"{currency}"
 
         positions = self.exchange.fapiPrivateV2GetPositionRisk({"symbol": _symbol})
 
@@ -848,8 +848,10 @@ class FuturesService:
 
         return result if result else "Current config is up to date."
 
-    def get_target_balance(self, target_currency: str = "BTC"):
-        balances = self.fetch_balance(is_future=True, symbols=[target_currency, "USDT"])
+    def get_target_balance(self, target_currency: str = "BTC", currency: str = "USDC"):
+        balances = self.fetch_balance(
+            is_future=True, symbols=[target_currency, currency]
+        )
 
         target_balance = None
 
@@ -864,7 +866,12 @@ class FuturesService:
 
         return target_balance
 
-    def fetch_balance(self, is_future: bool = True, symbols: List[str] = ["USDT"]):
+    def fetch_balance(
+        self,
+        is_future: bool = True,
+        symbols: List[str] = ["USDC"],
+        currency: str = "USDC",
+    ):
         params = {}
         result = {
             "positions": {},
@@ -879,12 +886,12 @@ class FuturesService:
 
         balances = self.exchange.fetch_balance(params)
 
-        result["balances"] = {"USDT": balances["USDT"]}
+        result["balances"] = {f"{currency}": balances[currency]}
 
         result["positions"] = {
-            symbol: self.get_positions(symbol + "USDT")
+            symbol: self.get_positions(symbol + f"{currency}")
             for symbol in symbols
-            if symbol != "USDT"
+            if symbol != f"{currency}"
         }
 
         return FuturesBalances(
@@ -958,9 +965,9 @@ class FuturesService:
     def get_current_futures_pirce(self, symbol: str):
         return self.exchange.fetch_ticker(symbol)
 
-    def get_market(self, symbol: str):
+    def get_market(self, symbol: str, currency: str = "USDC"):
         markets = self.exchange.load_markets(False, {"type": "future"})
-        market = markets[symbol + "/USDT"]
+        market = markets[symbol + f"/{currency}"]
         filters = market["info"]["filters"]
 
         min_notional = float(
@@ -998,6 +1005,7 @@ class FuturesService:
         longterm_timeframe: str = "4h",
         limit=500,
         target_currency="BTC",
+        currency: str = "USDC",
     ):
         current_leverage, _ = self.get_position(
             symbol
@@ -1037,7 +1045,9 @@ class FuturesService:
 
         if balances:
             usdt_balance = [
-                balance for balance in balances.balances if balance.symbol == "USDT"
+                balance
+                for balance in balances.balances
+                if balance.symbol == f"{currency}"
             ]
 
             if len(usdt_balance) > 0:
@@ -1065,7 +1075,7 @@ class FuturesService:
             target_currency=target_currency,
             position=target_position.description if target_position else "None",
             leverage=current_leverage or 0,
-            quote_currency="USDT",
+            quote_currency=f"{currency}",
             minimum_amount=min_amount,
             maximum_amount=maximum_amount,
             funding_rate=funding_rate.description,
@@ -1105,7 +1115,7 @@ class FuturesService:
                 ]:
                     self.exchange.cancel_order(children_order.order_id, symbol)
 
-    def cancel_all_orders(self, symbol: str = "BTCUSDT"):
+    def cancel_all_orders(self, symbol: str = "BTCUSDC"):
         # API 를 통해 현재 열려있는 Order 를 찾습니다.
         active_orders_api = self.fetch_active_orders(symbol)
         # DB 를 통해 Order를 모두 찾습니다
@@ -1473,10 +1483,10 @@ class FuturesService:
             hammer_explain=hammer_explain,
         )
 
-    def place_long_order(self, order: FuturesOrderRequest):
+    def place_long_order(self, order: FuturesOrderRequest, currency: str = "USDC"):
 
-        if not order.symbol.endswith("USDT"):
-            order.symbol += "USDT"
+        if not order.symbol.endswith(currency):
+            order.symbol += f"{currency}"
 
         buy_order = self.exchange.create_order(
             symbol=order.symbol,
@@ -1544,9 +1554,9 @@ class FuturesService:
             ),
         )
 
-    def place_short_order(self, order: FuturesOrderRequest):
-        if not order.symbol.endswith("USDT"):
-            order.symbol += "USDT"
+    def place_short_order(self, order: FuturesOrderRequest, currency: str = "USDC"):
+        if not order.symbol.endswith(f"{currency}"):
+            order.symbol += f"{currency}"
 
         sell_order = self.exchange.create_order(
             symbol=order.symbol,
@@ -1879,7 +1889,7 @@ class FuturesService:
             logger.error(f"Unexpected error in cancel_sibling_order: {str(e)}")
             raise OrderCancellationException(f"Unexpected error: {str(e)}")
 
-    def fetch_funding_rate(self, symbol: str = "BTCUSDT"):
+    def fetch_funding_rate(self, symbol: str = "BTCUSDC"):
         funding_rate = self.exchange.fetch_funding_rate(symbol=symbol)
         return SimplifiedFundingRate(
             symbol=(
@@ -1919,6 +1929,7 @@ class FuturesService:
         target_currency,
         balances: Optional[FuturesBalances],
         target_position: Optional[FuturesBalancePositionInfo],
+        currency: str = "USDC",
         addtion_context: str = "",
     ):
 
@@ -1941,13 +1952,13 @@ class FuturesService:
         maximum_amount = 0.0
 
         if balances:
-            usdt_balance = [
-                balance for balance in balances.balances if balance.symbol == "USDT"
+            currency_balances = [
+                balance for balance in balances.balances if balance.symbol == currency
             ]
 
-            if len(usdt_balance) > 0:
-                usdt_balance = usdt_balance[0]
-                maximum_amount = float(usdt_balance.free) / current_price.last
+            if len(currency_balances) > 0:
+                currency_balance = currency_balances[0]
+                maximum_amount = float(currency_balance.free) / current_price.last
 
         prompt, system_prompt = generate_resumption_prompts(
             data_string=data,
@@ -1957,7 +1968,7 @@ class FuturesService:
                 balances.description if balances else "No balance data available"
             ),
             target_currency=target_currency,
-            quote_currency="USDT",
+            quote_currency=currency,
             position=target_position.position if target_position else "NONE",
             leverage=current_leverage or 1,
             minimum_amount=min_amount,

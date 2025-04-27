@@ -646,3 +646,71 @@ def annotate_with_narrative_dynamic(
     )
 
     return merged["narrative"]
+
+
+def get_cols(configuration: ResumptionConfiguration) -> List[str]:
+    """
+    Get the list of columns to be used in the DataFrame.
+    """
+    # CORE_COLS 는 add_indis 로 생성된 열 중, 스냅샷에 포함할 것들만
+
+    CORE_COLS = [
+        # OHLCV
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        # 파생 가격
+        "hlc3",
+        "oc2",
+        # 추세
+        "ema_fast",
+        "ema_slow",
+        "ema_minor",
+        "ema_fast_slope",
+        # 모멘텀
+        "rsi",
+        "rsi_change",
+        "stoch_k",
+        "stoch_d",
+        "macd",
+        "macd_signal",
+        "roc",
+        # 변동성
+        "atr",
+        "atr_percent",
+        "natr",
+        "atr_slope",
+        # 추세 강도
+        "adx",
+        "lrs",
+        # 볼밴·돈채널
+        f"BBL_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
+        f"BBU_{configuration.indi.bb_len}_{configuration.indi.bb_std}",
+        f"DONCH_L_{configuration.indi.don_len}",
+        f"DONCH_U_{configuration.indi.don_len}",
+        # 피봇 예시
+        "P",
+        "S1",
+        "R1",
+        "S2",
+        "R2",
+        # 프라이스 액션
+        "candle_body",
+        "upper_wick",
+        "lower_wick",
+        # VWAP
+        "vwap",
+        # HA / Ichimoku
+        "HA_open",
+        "HA_close",
+        "ISA_9",
+        "ISB_26",
+        "ITS_9",
+        "IKS_26",
+        "ICS_26",
+    ]
+
+    return CORE_COLS
