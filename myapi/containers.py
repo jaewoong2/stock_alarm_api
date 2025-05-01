@@ -1,4 +1,3 @@
-from asyncio import futures
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
@@ -11,6 +10,7 @@ from myapi.services.coinone_service import CoinoneService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
+from myapi.services.signal_service import SignalService
 from myapi.services.tqqq_service import TqqqService
 from myapi.services.trading.trade_service import TradingService
 from myapi.utils.config import Settings
@@ -69,6 +69,11 @@ class ServiceModule(containers.DeclarativeContainer):
         backdata_service=backdata_service,
     )
 
+    signal_service = providers.Factory(
+        SignalService,
+        settings=config.config,
+    )
+
 
 class Container(containers.DeclarativeContainer):
     """전체 의존성 컨테이너"""
@@ -80,6 +85,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.trading_router",
             "myapi.routers.coinone_router",
             "myapi.routers.futures_router",
+            "myapi.routers.signal_router",
         ],
     )
 
