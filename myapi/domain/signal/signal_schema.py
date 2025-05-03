@@ -1,14 +1,33 @@
 from pydantic import BaseModel, Field, validator
 from datetime import date
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, Optional
 
-Strategy = Literal["PULLBACK", "OVERSOLD", "MACD_LONG", "GAPPER"]
+Strategy = Literal["PULLBACK", "OVERSOLD", "MACD_LONG", "GAPPER", "VOL_DRY_BOUNCE"]
 
 
 class SignalRequest(BaseModel):
-    tickers: List[str] | None = None
+    tickers: List[str] | None = [
+        "SPY",
+        "QQQ",
+        "AAPL",
+        "MSFT",
+        "TSLA",
+        "COIN",
+        "SOXX",
+        "NVDA",
+        "AMD",
+        "PLTR",
+        "AMZN",
+    ]
     strategies: List[Strategy] = Field(
-        default_factory=lambda: ["PULLBACK", "OVERSOLD", "MACD_LONG"]
+        # default=["PULLBACK", "OVERSOLD", "MACD_LONG", "GAPPER"],
+        default_factory=lambda: [
+            "PULLBACK",
+            "OVERSOLD",
+            "MACD_LONG",
+            "GAPPER",
+            "VOL_DRY_BOUNCE",
+        ],
     )
     start: date | None = None  # 없으면 settings.START_DAYS_BACK 로 계산
     with_fundamental: bool = True
@@ -18,7 +37,7 @@ class SignalRequest(BaseModel):
 class TechnicalSignal(BaseModel):
     strategy: Strategy
     triggered: bool
-    details: Dict[str, float]
+    details: Dict[str, float | None]
 
 
 class FundamentalData(BaseModel):
@@ -30,7 +49,7 @@ class FundamentalData(BaseModel):
 class NewsHeadline(BaseModel):
     title: str
     url: str
-    sentiment: Literal["positive", "neutral", "negative"]
+    sentiment: Optional[Literal["positive", "neutral", "negative"]]
 
 
 class TickerReport(BaseModel):
@@ -43,3 +62,4 @@ class TickerReport(BaseModel):
 class SignalResponse(BaseModel):
     run_date: date
     reports: List[TickerReport]
+    market_condition: Optional[str] = None

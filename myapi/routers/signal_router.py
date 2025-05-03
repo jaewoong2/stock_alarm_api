@@ -25,11 +25,11 @@ def get_signals(
     ),
 ):
     DEFAULT_UNIVERSE: str = "SPY,QQQ,AAPL,MSFT,TSLA,COIN"
-    START_DAYS_BACK: int = 365
+    START_DAYS_BACK: int = 100
     run_date = date.today()
     tickers = req.tickers or DEFAULT_UNIVERSE.split(",")
 
-    start = req.start or (run_date - timedelta(days=START_DAYS_BACK))
+    start = run_date - timedelta(days=START_DAYS_BACK)
 
     reports: list[TickerReport] = []
     for t in tickers:
@@ -39,7 +39,7 @@ def get_signals(
             continue
 
         df = signal_service.add_indicators(df)
-        tech_sigs = signal_service.evaluate_signals(df, req.strategies)
+        tech_sigs = signal_service.evaluate_signals(df, req.strategies, ticker=t)
 
         funda = signal_service.fetch_fundamentals(t) if req.with_fundamental else None
         news = signal_service.fetch_news(t) if req.with_news else None
@@ -48,4 +48,14 @@ def get_signals(
             TickerReport(ticker=t, signals=tech_sigs, fundamentals=funda, news=news)
         )
 
-    return SignalResponse(run_date=run_date, reports=reports)
+    mkt_ok = signal_service.market_ok()
+
+    return SignalResponse(
+        run_date=run_date,
+        reports=reports,
+        market_condition=(
+            "시장 컨디션이 좋습니다. (예: 지수가 50 SMA 위)"
+            if mkt_ok
+            else "시장 컨디션이 좋지 않습니다. (예: 지수가 50 SMA 아래)"
+        ),
+    )
