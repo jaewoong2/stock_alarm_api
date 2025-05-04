@@ -1,9 +1,8 @@
 from datetime import date, timedelta
 import logging
 from typing import List, Optional, Literal, Union, cast
-from numpy import tri
+from click import prompt
 import pandas as pd
-from regex import T
 import yfinance as yf
 import pandas_ta as ta  # Ensure 'ta' is installed via pip install ta
 import requests
@@ -15,13 +14,29 @@ from pandas_datareader import data as pdr  # pip install pandas_datareader
 
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
+    SignalPromptData,
     TechnicalSignal,
     Strategy,
     FundamentalData,
     NewsHeadline,
+    TickerReport,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def safe_float(val):
+    if val is None:
+        return None
+    if isinstance(val, pd.Series):
+        if len(val) > 0:
+            val = val.iloc[0]
+        else:
+            return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
 
 
 def flatten_price_columns(df: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
@@ -101,26 +116,19 @@ class SignalService:
     def _vol_dry_bounce_v2(self, df):
         if len(df) < 60:
             return False, {}
-
         last = df.iloc[-1]
-        # ① Dry-Up 구간 찾기 (최근 10 일)
-
         vdu_mask = (
             (df["VOL_Z"] <= -1)
             & (df["Close"] < df["SMA5"])
             & (df["Close"] > df["SMA20"])
         )
-
         if not vdu_mask.tail(10).any():
             return False, {}
-
-        # ② 오늘 Break-out 조건
         trig = (
-            (last["Close"] > last["SMA5"])
-            and (0.98 <= last["Close"] / last["SMA20"] <= 1.03)
-            # and (last["VOL_PCTL60"] >= 0.9)
+            (last["Close"] >= last["SMA5"])
+            and (0.95 <= last["Close"] / last["SMA20"] <= 1.05)
+            # 변경: 거래량 퍼센타일 조건 제거로 신호 완화
         )
-
         return trig, {
             "z_vol": round(float(last["VOL_Z"]), 2) or None,
             "pctl_vol": round(float(last["VOL_PCTL60"]), 2) or None,
@@ -246,6 +254,90 @@ class SignalService:
         """스칼라 대신 NaN 이면 None 리턴"""
         return None if pd.isna(v) else float(v)
 
+        # 추가: ROE 계산
+
+    def _calculate_roe(self, tk: yf.Ticker) -> float | None:
+        try:
+            fin = tk.get_income_stmt(freq="yearly")
+            balance = tk.get_balance_sheet(freq="yearly")
+            if isinstance(fin, pd.DataFrame) and isinstance(balance, pd.DataFrame):
+                net_income = (
+                    fin.loc["NetIncome"].iloc[0] if "NetIncome" in fin.index else None
+                )
+                equity = (
+                    balance.loc["StockholdersEquity"].iloc[0]
+                    if "StockholdersEquity" in balance.index
+                    else None
+                )
+
+                # Extract scalar values from Series objects if needed
+
+                net_income_val = safe_float(net_income)
+                equity_val = safe_float(equity)
+
+                if (
+                    net_income_val is not None
+                    and equity_val is not None
+                    and equity_val != 0
+                ):
+                    return net_income_val / equity_val * 100
+        except Exception as e:
+            logger.warning(f"Error calculating ROE: {str(e)}")
+        return None
+
+    # 추가: Debt-to-Equity Ratio 계산
+    def _calculate_debt_to_equity(self, tk: yf.Ticker) -> float | None:
+        try:
+            balance = tk.get_balance_sheet(freq="yearly")
+            if isinstance(balance, pd.DataFrame):
+                total_debt = (
+                    balance.loc["TotalDebt"].iloc[0]
+                    if "TotalDebt" in balance.index
+                    else None
+                )
+                equity = (
+                    balance.loc["StockholdersEquity"].iloc[0]
+                    if "StockholdersEquity" in balance.index
+                    else None
+                )
+
+                # Extract scalar values from Series objects if needed
+
+                total_debt_val = safe_float(total_debt)
+                equity_val = safe_float(equity)
+
+                if (
+                    total_debt_val is not None
+                    and equity_val is not None
+                    and equity_val != 0
+                ):
+                    return total_debt_val / equity_val
+        except Exception as e:
+            logger.warning(f"Error calculating Debt-to-Equity: {str(e)}")
+        return None
+
+        # 추가: Free Cash Flow Yield 계산
+
+    def _calculate_fcf_yield(self, tk: yf.Ticker) -> float | None:
+        try:
+            cashflow = tk.get_cash_flow(freq="yearly")
+            info = tk.info or tk.fast_info or {}
+            market_cap = info.get("marketCap")
+            if isinstance(cashflow, pd.DataFrame) and market_cap:
+                fcf = (
+                    cashflow.loc["FreeCashFlow"].iloc[0]
+                    if "FreeCashFlow" in cashflow.index
+                    else None
+                )
+                if fcf is not None and market_cap != 0:
+                    fcf = safe_float(fcf)
+                    if fcf is not None:
+                        return fcf / market_cap * 100
+                    return None
+        except Exception as e:
+            logger.warning(f"Error calculating FCF Yield: {str(e)}")
+        return None
+
     def fetch_ohlcv(
         self,
         ticker: str,
@@ -278,35 +370,29 @@ class SignalService:
 
     def add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-
-        # --- Stochastic ---
+        # 기존 지표
         df["SMA5"] = ta.sma(df.Close, 5)
         df["SMA20"] = ta.sma(df.Close, 20)
         df["VOL20"] = df.Volume.rolling(20).mean()
         df["VOL_Z"] = (df.Volume - df.VOL20) / df.Volume.rolling(20).std()
         df["VOL_PCTL60"] = df.Volume.rank(pct=True, method="max")
-
-        # --- 이동평균 & RSI ---
         df["SMA10"] = ta.sma(df["Close"], length=10)
         df["SMA50"] = ta.sma(df["Close"], length=50)
         df["RSI14"] = ta.rsi(df["Close"], length=14)
-        logger.info(f"이평선: {df["SMA10"]}, {df["SMA50"]}, {df["RSI14"]}")
-
-        # --- 볼린저밴드 ---
+        # 추가: 장기 이동평균선 및 변동성 지표
+        df["SMA200"] = ta.sma(df["Close"], length=200)  # 추가: 장기 추세
+        df["ATR14"] = ta.atr(
+            df["High"], df["Low"], df["Close"], length=14
+        )  # 추가: 변동성
+        stoch = ta.stoch(df["High"], df["Low"], df["Close"], k=14, d=3, smooth_k=3)
+        if stoch is not None:
+            df = pd.concat([df, stoch], axis=1)  # 추가: Stochastic Oscillator
         bb = ta.bbands(df["Close"], length=20, std=2)
         if bb is not None:
-            logger.info(f"볼린저밴드: {bb}")
             df = pd.concat([df, bb], axis=1)
-
-        # --- MACD ---
         macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
         if macd is not None:
-            logger.info(f"macd: {macd}")
-            df = pd.concat(
-                [df, macd], axis=1
-            )  # 컬럼: MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
-
-        # 계산 끝난 뒤 앞쪽 NaN 영역 한 번에 잘라내기
+            df = pd.concat([df, macd], axis=1)
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
         return df
 
@@ -315,31 +401,25 @@ class SignalService:
     ) -> List[TechnicalSignal]:
         out: List[TechnicalSignal] = []
         cols = set(df.columns)
-
-        # —––– 스칼라 값 안전 추출 —––––
-        # Close
         close_last = df["Close"].iloc[-1]
-
-        # SMAs
         sma10_last = df["SMA10"].iloc[-1] if "SMA10" in cols else None
         sma50_last = df["SMA50"].iloc[-1] if "SMA50" in cols else None
-
-        # RSI
+        sma200_last = df["SMA200"].iloc[-1] if "SMA200" in cols else None  # 추가
         rsi_last = df["RSI14"].iloc[-1] if "RSI14" in cols else None
-
-        # Bollinger Lower
         bbl_last = df["BBL_20_2.0"].iloc[-1] if "BBL_20_2.0" in cols else None
-
-        # MACD 히스토그램 (이전·최신)   'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9'
         macd_prev = df["MACDh_12_26_9"].iloc[-2] if "MACDh_12_26_9" in cols else None
         macd_last = df["MACDh_12_26_9"].iloc[-1] if "MACDh_12_26_9" in cols else None
+        stoch_k = (
+            df["STOCHk_14_3_3"].iloc[-1] if "STOCHk_14_3_3" in cols else None
+        )  # 추가
+        high_52w = (
+            df["High"].rolling(252).max().iloc[-1] if len(df) >= 252 else None
+        )  # 추가
 
-        # —––– 전략별 조건 평가 —––––
-
-        # 1) PULLBACK: SMA10, SMA50 모두 있어야
+        # 변경: PULLBACK 조건 완화 (1% 이내)
         if "PULLBACK" in strategies:
             if sma10_last is not None and sma50_last is not None:
-                triggered = (close_last <= sma10_last * 1.005) and (
+                triggered = (close_last <= sma10_last * 1.01) and (
                     close_last >= sma50_last
                 )
             else:
@@ -356,10 +436,10 @@ class SignalService:
                 )
             )
 
-        # 2) OVERSOLD: RSI, BBL 모두 있어야
+        # 변경: OVERSOLD 조건 완화 (RSI < 35)
         if "OVERSOLD" in strategies:
             if rsi_last is not None and bbl_last is not None:
-                triggered = (rsi_last < 30) and (close_last < bbl_last)
+                triggered = (rsi_last < 35) and (close_last < bbl_last)
             else:
                 triggered = False
             out.append(
@@ -370,10 +450,10 @@ class SignalService:
                 )
             )
 
-        # 3) MACD_LONG: MACD_HIST 이전·최신 모두 있어야
+        # 변경: MACD_LONG 조건 완화 (0 근처 전환)
         if "MACD_LONG" in strategies:
             if macd_prev is not None and macd_last is not None:
-                triggered = (macd_prev < 0) and (macd_last > 0)
+                triggered = (macd_prev < 0.1) and (macd_last > 0)
             else:
                 triggered = False
             out.append(
@@ -390,25 +470,74 @@ class SignalService:
                 TechnicalSignal(strategy="VOL_DRY_BOUNCE", triggered=trig, details=det)
             )
 
+        # 추가: GOLDEN_CROSS 전략
+        if "GOLDEN_CROSS" in strategies:
+            if sma50_last is not None and sma200_last is not None:
+                sma50_prev = df["SMA50"].iloc[-2] if len(df) > 1 else None
+                sma200_prev = df["SMA200"].iloc[-2] if len(df) > 1 else None
+                triggered = (
+                    sma50_prev is not None
+                    and sma200_prev is not None
+                    and sma50_prev <= sma200_prev
+                    and sma50_last > sma200_last
+                )
+            else:
+                triggered = False
+            out.append(
+                TechnicalSignal(
+                    strategy="GOLDEN_CROSS",
+                    triggered=triggered,
+                    details={"sma50": sma50_last, "sma200": sma200_last},
+                )
+            )
+
+        # 추가: MEAN_REVERSION 전략
+        if "MEAN_REVERSION" in strategies:
+            if sma20_last := df["SMA20"].iloc[-1] if "SMA20" in cols else None:
+                triggered = (
+                    (close_last > sma20_last * 0.95)
+                    and (close_last < sma20_last * 1.05)
+                    and (df["Close"].iloc[-2] < sma20_last * 0.90)
+                )
+            else:
+                triggered = False
+            out.append(
+                TechnicalSignal(
+                    strategy="MEAN_REVERSION",
+                    triggered=triggered,
+                    details={"close": close_last, "sma20": sma20_last},
+                )
+            )
+
+        # 추가: BREAKOUT 전략
+        if "BREAKOUT" in strategies:
+            triggered = high_52w is not None and close_last > high_52w
+            out.append(
+                TechnicalSignal(
+                    strategy="BREAKOUT",
+                    triggered=triggered,
+                    details={"close": close_last, "high_52w": high_52w},
+                )
+            )
+
         return out
 
     def fetch_fundamentals(self, ticker: str) -> FundamentalData:
-        """
-        trailing PE, EPS 서프라이즈 %, 매출 YoY %
-        비어 있으면 None 반환 → Pydantic 필드는 optional
-        """
         tk = yf.Ticker(ticker)
-
-        info = tk.info or tk.fast_info or {}  # fast_info 가 더 빠르고 안정적
+        info = tk.info or tk.fast_info or {}
         trailing_pe = info.get("peTrailing") or info.get("trailingPE")
-
         eps_surprise_pct = self._latest_eps_surprise_pct(tk)
         revenue_growth = self._revenue_yoy_growth(tk)
-
+        roe = self._calculate_roe(tk)  # 추가
+        debt_to_equity = self._calculate_debt_to_equity(tk)  # 추가
+        fcf_yield = self._calculate_fcf_yield(tk)  # 추가
         return FundamentalData(
             trailing_pe=trailing_pe,
             eps_surprise_pct=eps_surprise_pct,
             revenue_growth=revenue_growth,
+            roe=roe,
+            debt_to_equity=debt_to_equity,
+            fcf_yield=fcf_yield,
         )
 
     def _get_sentiment(self, text: str) -> Literal["positive", "neutral", "negative"]:
@@ -492,3 +621,84 @@ class SignalService:
             "news": news,
             "last_updated": dt.datetime.now().isoformat(),
         }
+
+    def generate_prompt(self, data: SignalPromptData):
+        """
+        Generate a prompt for the AI model based on the report and description.
+        """
+
+        prompt = f"""
+        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today (May 5, 2025). For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-3 days).
+
+        ### Input Data
+        Below is a JSON array of stocks/ETFs with their previous day's data (May 4, 2025). Each item includes:
+        - `ticker`: Stock/ETF ticker symbol.
+        - `last_price`: Closing price from the previous day.
+        - `price_change_pct`: Percentage price change from the day before.
+        - `triggered_strategies`: List of technical strategies triggered, with descriptions:
+            - PULLBACK: Price near 10-day SMA, above 50-day SMA (buy on dip in uptrend).
+            - OVERSOLD: RSI < 35 and price below lower Bollinger Band (buy on reversal).
+            - MACD_LONG: MACD histogram crosses above 0 (buy on momentum).
+            - VOL_DRY_BOUNCE: Low volume period followed by breakout above 5-day SMA (buy on breakout).
+            - GOLDEN_CROSS: 50-day SMA crosses above 200-day SMA (buy on long-term trend).
+            - MEAN_REVERSION: Price returns to 20-day SMA after deviation (buy on reversal).
+            - BREAKOUT: Price exceeds 52-week high (buy on momentum).
+        - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
+        - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
+            - `trailing_pe`: Trailing Price-to-Earnings ratio.
+            - `eps_surprise_pct`: Earnings per share surprise percentage.
+            - `revenue_growth`: Year-over-year revenue growth percentage.
+            - `roe`: Return on equity percentage.
+            - `debt_to_equity`: Debt-to-equity ratio.
+            - `fcf_yield`: Free cash flow yield percentage.
+        - `news`: Recent news headlines (sentiment analysis currently unavailable).
+
+        ```json
+        - ticker: {data.ticker}
+        - last_price: {data.last_price}
+        - price_change_pct: {data.price_change_pct}
+        - triggered_strategies: {data.triggered_strategies}
+        - technical_details: {data.technical_details}
+        - fundamentals: {data.fundamentals}
+        - news: {data.news}
+        - additional_info: {data.additional_info}
+        ```
+
+        ## Instructions
+
+            ### Analyze Each Stock/ETF:
+            - Evaluate the triggered strategies and their technical details (e.g., RSI, MACD).
+            - Consider fundamental data (e.g., high ROE, low debt-to-equity) for stock quality.
+            - Factor in news headlines for sentiment or catalysts (e.g., earnings beats).
+            - Assess price_change_pct for momentum or reversal potential.
+
+            ### Provide Recommendations:
+            - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
+                For BUY/SELL:
+                - Entry Price: Suggested price to enter today (e.g., near last_price or a breakout level).
+                - Stop-Loss Price: Price to exit to limit losses (e.g., 2-5% below entry, based on ATR or support levels).
+                - Take-Profit Price: Price to exit for profit (e.g., 5-10% above entry, based on resistance or strategy).
+                
+                For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
+
+            ### Reasoning:
+            - Explain your recommendation step-by-step, referencing specific technical/fundamental data and news.
+
+
+            ### Constraints:
+            - Entry, stop-loss, and take-profit prices must be realistic (within 10% of last_price unless justified).
+            - Consider short-term trading horizon (1-3 days).
+            - Avoid recommending stocks with no triggered strategies.
+            - If fundamentals are unavailable (e.g., ETFs), focus on technicals and news.
+
+            ### Output Format
+            Return a JSON array of recommendations, one per stock/ETF. Each recommendation should include:
+            - ticker: Stock/ETF ticker.
+            - recommendation: "BUY", "SELL", or "HOLD".
+            - entry_price: Suggested entry price (null for HOLD).
+            - stop_loss_price: Suggested stop-loss price (null for HOLD).
+            - take_profit_price: Suggested take-profit price (null for HOLD).
+            - reasoning: Step-by-step explanation of the recommendation.
+        """
+
+        return prompt
