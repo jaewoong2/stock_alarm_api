@@ -1,7 +1,6 @@
 from datetime import date, timedelta
 import logging
 from typing import List, Optional, Literal, Union, cast
-from click import prompt
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta  # Ensure 'ta' is installed via pip install ta
