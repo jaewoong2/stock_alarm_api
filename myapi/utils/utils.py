@@ -1,3 +1,6 @@
+from myapi.domain.signal.signal_schema import SignalPromptResponse
+
+
 def format_trade_summary(data: dict):
     # 이모지 맵
     emoji_map = {
@@ -64,6 +67,71 @@ def format_trade_summary(data: dict):
     except Exception as e:
         lines.append("🚨 오류 발생:")
         lines.append(str(e))
+
+    # 문자열로 반환
+    return "\n".join(lines)
+
+
+def format_signal_response(response: SignalPromptResponse) -> str:
+    """
+    SignalPromptResponse 객체를 가독성 있는 마크다운 문자열로 변환합니다.
+
+    Args:
+        response: 분석 결과가 담긴 SignalPromptResponse 객체
+
+    Returns:
+        마크다운 형식의 분석 요약 문자열
+    """
+    # 이모지 맵
+    emoji_map = {
+        "ticker": "🏷️",
+        "recommendation": "🚦",
+        "reasoning": "📝",
+        "entry_price": "💰",
+        "stop_loss_price": "🛡️",
+        "take_profit_price": "🎯",
+    }
+
+    lines = []
+
+    try:
+        # 헤더 (티커와 추천)
+        lines.append(
+            f"## {emoji_map['ticker']} {response.ticker} - {emoji_map['recommendation']} {response.recommendation}"
+        )
+        lines.append("")
+
+        # 가격 정보 (추천이 HOLD가 아닐 경우에만)
+        if response.recommendation != "HOLD":
+            price_lines = []
+
+            if response.entry_price is not None:
+                price_lines.append(
+                    f"{emoji_map['entry_price']} **진입가**: {response.entry_price}"
+                )
+
+            if response.stop_loss_price is not None:
+                price_lines.append(
+                    f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
+                )
+
+            if response.take_profit_price is not None:
+                price_lines.append(
+                    f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
+                )
+
+            if price_lines:
+                lines.append("### 가격 수준")
+                lines.extend(price_lines)
+                lines.append("")
+
+        # 분석 이유
+        lines.append("### 분석 근거")
+        lines.append(f"{emoji_map['reasoning']} {response.reasoning}")
+
+    except Exception as e:
+        lines.append("🚨 **오류 발생:**")
+        lines.append(f"```\n{str(e)}\n```")
 
     # 문자열로 반환
     return "\n".join(lines)

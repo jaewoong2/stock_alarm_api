@@ -1,5 +1,7 @@
+import dis
 import json
 from typing import List
+from unittest import result
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
@@ -21,6 +23,7 @@ from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
+from myapi.utils.utils import format_signal_response
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -48,7 +51,7 @@ def llm_query(
         chat_model=ChatModel.O4_MINI,
     )
 
-    discord_service.send_message(content=f"{result}")
+    discord_service.send_message(content=f"{format_signal_response(result)}")
 
     return result
 
@@ -155,17 +158,18 @@ def get_signals(
             },
         }
 
-        response = aws_service.send_sqs_message(
-            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
-            message_body=json.dumps(message),
-        )
+        try:
+            aws_service.send_sqs_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+                message_body=json.dumps(message),
+            )
+        except Exception as e:
+            print(f"Error sending SQS message: {e}")
+            raise
 
-        return {
-            "status": "success",
-            "message": "Futures execution request queued successfully",
-            "sqs_message_id": response.get("MessageId", ""),
-            "data": message,
-        }
+        discord_service.send_message(
+            content=f"SQS Message For AI Query Sended, Signal detected for {report.ticker} with strategies: {triggered_strategies}"
+        )
 
     return SignalResponse(
         run_date=run_date,
