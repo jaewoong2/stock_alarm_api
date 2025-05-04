@@ -1,4 +1,4 @@
-import dis
+import json
 from typing import List
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
@@ -14,7 +14,6 @@ from myapi.domain.signal.signal_schema import (
     SignalPromptResponse,
     SignalRequest,
     SignalResponse,
-    Strategy,
     TechnicalSignal,
     TickerReport,
 )
@@ -104,8 +103,6 @@ def get_signals(
             )
         )
 
-        aws_service.send_sqs_message()
-
     mkt_ok = signal_service.market_ok()
 
     triggered_report = [
@@ -124,7 +121,7 @@ def get_signals(
             if signal.triggered
         }
 
-        message = SignalPromptData(
+        data = SignalPromptData(
             ticker=report.ticker,
             dataframe=report.dataframe,
             last_price=report.last_price or 0.0,
@@ -135,6 +132,40 @@ def get_signals(
             news=report.news,
             additional_info=None,
         )
+
+        message = {
+            "body": data.model_dump_json(),
+            "resource": "/{proxy+}",
+            "path": "/signals/llm-query",
+            "httpMethod": "POST",
+            "isBase64Encoded": False,
+            "pathParameters": {"proxy": "signals/llm-query"},
+            "queryStringParameters": {},
+            "headers": {
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "*/*",
+                "Accept-Encoding": "gzip, deflate, sdch",
+                "Accept-Language": "ko",
+                "Accept-Charset": "utf-8",
+            },
+            "requestContext": {
+                "path": "/signals/llm-query",
+                "resourcePath": "/{proxy+}",
+                "httpMethod": "POST",
+            },
+        }
+
+        response = aws_service.send_sqs_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+            message_body=json.dumps(message),
+        )
+
+        return {
+            "status": "success",
+            "message": "Futures execution request queued successfully",
+            "sqs_message_id": response.get("MessageId", ""),
+            "data": message,
+        }
 
     return SignalResponse(
         run_date=run_date,
