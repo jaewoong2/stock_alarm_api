@@ -82,6 +82,8 @@ def format_signal_response(response: SignalPromptResponse) -> str:
     Returns:
         마크다운 형식의 분석 요약 문자열
     """
+
+    probability_of_rising_up = response.probability_of_rising_up
     # 이모지 맵
     emoji_map = {
         "ticker": "🏷️",
@@ -90,6 +92,7 @@ def format_signal_response(response: SignalPromptResponse) -> str:
         "entry_price": "💰",
         "stop_loss_price": "🛡️",
         "take_profit_price": "🎯",
+        "probability_of_rising_up": "📈",
     }
 
     lines = []
@@ -118,6 +121,11 @@ def format_signal_response(response: SignalPromptResponse) -> str:
             if response.take_profit_price is not None:
                 price_lines.append(
                     f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
+                )
+
+            if probability_of_rising_up:
+                price_lines.append(
+                    f"{emoji_map['probability_of_rising_up']} **상승 확률**: {probability_of_rising_up}"
                 )
 
             if price_lines:

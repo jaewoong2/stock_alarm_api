@@ -1,4 +1,5 @@
-import json
+import logging
+from venv import logger
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
@@ -23,6 +24,8 @@ from myapi.services.signal_service import SignalService
 from myapi.utils.utils import format_signal_response
 
 router = APIRouter(prefix="/signals", tags=["signals"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/llm-query", response_model=SignalResponse)
@@ -78,6 +81,7 @@ def get_signals(
             continue
 
         df = signal_service.add_indicators(df)
+
         tech_sigs = [
             TechnicalSignal(
                 strategy=signal.strategy,
@@ -89,7 +93,6 @@ def get_signals(
         ]
 
         funda = signal_service.fetch_fundamentals(t) if req.with_fundamental else None
-        news = signal_service.fetch_news(t) if req.with_news else None
 
         reports.append(
             TickerReport(
@@ -98,8 +101,8 @@ def get_signals(
                 price_change_pct=df["Close"].pct_change().iloc[-1],
                 signals=tech_sigs,
                 fundamentals=funda,
-                news=news,
-                dataframe=df.tail(20).to_csv(),
+                news=None,
+                dataframe=df.tail(20).round(3).to_csv(),
             )
         )
 
@@ -115,11 +118,19 @@ def get_signals(
         triggered_strategies = [
             signal.strategy for signal in report.signals if signal.triggered
         ]
+
         technical_details = {
             signal.strategy: signal.details
             for signal in report.signals
             if signal.triggered
         }
+
+        try:
+            news = signal_service.fetch_news(report.ticker) if req.with_news else None
+            report.news = news
+        except Exception as e:
+            logger.error(f"Error fetching news for {report.ticker}: {e}")
+            report.news = None
 
         data = SignalPromptData(
             ticker=report.ticker,
@@ -156,10 +167,12 @@ def get_signals(
         }
 
         try:
-            aws_service.send_sqs_message(
-                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
-                message_body=json.dumps(message),
-            )
+            response = llm_query(req=data)
+            logger.info(f"LLM Query Response: {response}")
+            # aws_service.send_sqs_message(
+            #     queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+            #     message_body=json.dumps(message),
+            # )
         except Exception as e:
             print(f"Error sending SQS message: {e}")
             raise

@@ -371,28 +371,39 @@ class SignalService:
         df = df.copy()
         # 기존 지표
         df["SMA5"] = ta.sma(df.Close, 5)
+        df["SMA10"] = ta.sma(df["Close"], length=10)
         df["SMA20"] = ta.sma(df.Close, 20)
+        df["SMA50"] = ta.sma(df["Close"], length=50)
+        df["SMA200"] = ta.sma(df["Close"], length=200)  # 추가: 장기 추세
+
         df["VOL20"] = df.Volume.rolling(20).mean()
         df["VOL_Z"] = (df.Volume - df.VOL20) / df.Volume.rolling(20).std()
         df["VOL_PCTL60"] = df.Volume.rank(pct=True, method="max")
-        df["SMA10"] = ta.sma(df["Close"], length=10)
-        df["SMA50"] = ta.sma(df["Close"], length=50)
+
         df["RSI14"] = ta.rsi(df["Close"], length=14)
-        # 추가: 장기 이동평균선 및 변동성 지표
-        df["SMA200"] = ta.sma(df["Close"], length=200)  # 추가: 장기 추세
         df["ATR14"] = ta.atr(
             df["High"], df["Low"], df["Close"], length=14
         )  # 추가: 변동성
+
         stoch = ta.stoch(df["High"], df["Low"], df["Close"], k=14, d=3, smooth_k=3)
+
         if stoch is not None:
             df = pd.concat([df, stoch], axis=1)  # 추가: Stochastic Oscillator
+
         bb = ta.bbands(df["Close"], length=20, std=2)
         if bb is not None:
             df = pd.concat([df, bb], axis=1)
+
         macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
         if macd is not None:
             df = pd.concat([df, macd], axis=1)
+
+        # 추가: VWAP와 ROC
+        df["VWAP"] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
+        df["ROC5"] = ta.roc(df.Close, length=5)
+
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
+
         return df
 
     def evaluate_signals(
@@ -401,9 +412,11 @@ class SignalService:
         out: List[TechnicalSignal] = []
         cols = set(df.columns)
         close_last = df["Close"].iloc[-1]
+        sma5_last = df["SMA5"].iloc[-1] if "SMA5" in cols else None
         sma10_last = df["SMA10"].iloc[-1] if "SMA10" in cols else None
+        sma20_last = df["SMA20"].iloc[-1] if "SMA20" in cols else None
         sma50_last = df["SMA50"].iloc[-1] if "SMA50" in cols else None
-        sma200_last = df["SMA200"].iloc[-1] if "SMA200" in cols else None  # 추가
+        sma200_last = df["SMA200"].iloc[-1] if "SMA200" in cols else None
         rsi_last = df["RSI14"].iloc[-1] if "RSI14" in cols else None
         bbl_last = df["BBL_20_2.0"].iloc[-1] if "BBL_20_2.0" in cols else None
         macd_prev = df["MACDh_12_26_9"].iloc[-2] if "MACDh_12_26_9" in cols else None
@@ -414,15 +427,18 @@ class SignalService:
         high_52w = (
             df["High"].rolling(252).max().iloc[-1] if len(df) >= 252 else None
         )  # 추가
+        vwap_last = df["VWAP"].iloc[-1] if "VWAP" in cols else None
+        roc5_last = df["ROC5"].iloc[-1] if "ROC5" in cols else None
+        close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
 
         # 변경: PULLBACK 조건 완화 (1% 이내)
         if "PULLBACK" in strategies:
-            if sma10_last is not None and sma50_last is not None:
-                triggered = (close_last <= sma10_last * 1.01) and (
-                    close_last >= sma50_last
-                )
-            else:
-                triggered = False
+            triggered = (
+                sma10_last is not None
+                and sma50_last is not None
+                and close_last <= sma10_last * 1.03
+                and close_last >= sma50_last * 0.98
+            )
             out.append(
                 TechnicalSignal(
                     strategy="PULLBACK",
@@ -435,26 +451,39 @@ class SignalService:
                 )
             )
 
-        # 변경: OVERSOLD 조건 완화 (RSI < 35)
+        # OVERSOLD (완화된 조건 + Stochastic 확인)
         if "OVERSOLD" in strategies:
-            if rsi_last is not None and bbl_last is not None:
-                triggered = (rsi_last < 35) and (close_last < bbl_last)
-            else:
-                triggered = False
+            triggered = (
+                rsi_last is not None
+                and bbl_last is not None
+                and stoch_k is not None
+                and rsi_last < 40
+                and close_last <= bbl_last * 1.02
+                and stoch_k < 30
+            )
             out.append(
                 TechnicalSignal(
                     strategy="OVERSOLD",
                     triggered=triggered,
-                    details={"RSI14": rsi_last, "BBL": bbl_last},
+                    details={"rsi": rsi_last, "bbl": bbl_last, "stoch_k": stoch_k},
                 )
             )
 
-        # 변경: MACD_LONG 조건 완화 (0 근처 전환)
+        # MACD_LONG (완화된 조건 + MACD 선 확인)
         if "MACD_LONG" in strategies:
-            if macd_prev is not None and macd_last is not None:
-                triggered = (macd_prev < 0.1) and (macd_last > 0)
-            else:
-                triggered = False
+            macd_line = df["MACD_12_26_9"].iloc[-1] if "MACD_12_26_9" in cols else None
+            signal_line = (
+                df["MACDs_12_26_9"].iloc[-1] if "MACDs_12_26_9" in cols else None
+            )
+            triggered = (
+                macd_prev is not None
+                and macd_last is not None
+                and macd_line is not None
+                and signal_line is not None
+                and macd_prev < 0.2
+                and macd_last > -0.05
+                and macd_line > signal_line
+            )
             out.append(
                 TechnicalSignal(
                     strategy="MACD_LONG",
@@ -463,43 +492,44 @@ class SignalService:
                 )
             )
 
+        # VOL_DRY_BOUNCE
         if "VOL_DRY_BOUNCE" in strategies:
             trig, det = self._vol_dry_bounce_v2(df)
             out.append(
                 TechnicalSignal(strategy="VOL_DRY_BOUNCE", triggered=trig, details=det)
             )
 
-        # 추가: GOLDEN_CROSS 전략
+        # GOLDEN_CROSS (완화된 조건 + 거래량 확인)
         if "GOLDEN_CROSS" in strategies:
-            if sma50_last is not None and sma200_last is not None:
-                sma50_prev = df["SMA50"].iloc[-2] if len(df) > 1 else None
-                sma200_prev = df["SMA200"].iloc[-2] if len(df) > 1 else None
-                triggered = (
-                    sma50_prev is not None
-                    and sma200_prev is not None
-                    and sma50_prev <= sma200_prev
-                    and sma50_last > sma200_last
-                )
-            else:
-                triggered = False
+            vol_z = df["VOL_Z"].iloc[-1] if "VOL_Z" in cols else None
+            triggered = (
+                sma50_last is not None
+                and sma200_last is not None
+                and vol_z is not None
+                and sma50_last > sma200_last * 0.99
+                and vol_z > 0.5
+            )
             out.append(
                 TechnicalSignal(
                     strategy="GOLDEN_CROSS",
                     triggered=triggered,
-                    details={"sma50": sma50_last, "sma200": sma200_last},
+                    details={
+                        "sma50": sma50_last,
+                        "sma200": sma200_last,
+                        "vol_z": vol_z,
+                    },
                 )
             )
 
-        # 추가: MEAN_REVERSION 전략
+        # MEAN_REVERSION (완화된 조건)
         if "MEAN_REVERSION" in strategies:
-            if sma20_last := df["SMA20"].iloc[-1] if "SMA20" in cols else None:
-                triggered = (
-                    (close_last > sma20_last * 0.95)
-                    and (close_last < sma20_last * 1.05)
-                    and (df["Close"].iloc[-2] < sma20_last * 0.90)
-                )
-            else:
-                triggered = False
+            triggered = (
+                sma20_last is not None
+                and close_prev is not None
+                and close_last > sma20_last * 0.90
+                and close_last < sma20_last * 1.10
+                and close_prev < sma20_last * 0.95
+            )
             out.append(
                 TechnicalSignal(
                     strategy="MEAN_REVERSION",
@@ -508,14 +538,89 @@ class SignalService:
                 )
             )
 
-        # 추가: BREAKOUT 전략
+        # BREAKOUT (완화된 조건 + RSI 확인)
         if "BREAKOUT" in strategies:
-            triggered = high_52w is not None and close_last > high_52w
+            triggered = (
+                high_52w is not None
+                and rsi_last is not None
+                and close_last > high_52w * 0.98
+                and rsi_last < 70
+            )
             out.append(
                 TechnicalSignal(
                     strategy="BREAKOUT",
                     triggered=triggered,
-                    details={"close": close_last, "high_52w": high_52w},
+                    details={
+                        "close": close_last,
+                        "high_52w": high_52w,
+                        "rsi": rsi_last,
+                    },
+                )
+            )
+
+        # GAP_UP (신규 전략)
+        if "GAP_UP" in strategies:
+            triggered = (
+                close_prev is not None
+                and vol_z is not None
+                and close_last > close_prev * 1.02
+                and vol_z > 0.5
+            )
+            out.append(
+                TechnicalSignal(
+                    strategy="GAP_UP",
+                    triggered=triggered,
+                    details={
+                        "close": close_last,
+                        "close_prev": close_prev,
+                        "vol_z": vol_z,
+                    },
+                )
+            )
+
+        # # VWAP_BOUNCE (신규 전략) => 폐기 (너무 많이 잡음)
+        # if "VWAP_BOUNCE" in strategies:
+        #     triggered = (
+        #         vwap_last is not None
+        #         and rsi_last is not None
+        #         and close_last >= vwap_last * 0.98
+        #         and close_last <= vwap_last * 1.02
+        #         and rsi_last >= 40
+        #     )
+        #     out.append(
+        #         TechnicalSignal(
+        #             strategy="VWAP_BOUNCE",
+        #             triggered=triggered,
+        #             details={"close": close_last, "vwap": vwap_last, "rsi": rsi_last},
+        #         )
+        #     )
+
+        # 단기간 급격한 가격/거래량 변화 포착
+        if "MOMENTUM_SURGE" in strategies:
+            if "Volume" in df.columns and len(df) >= 5:
+                # 최근 가격 변화율
+                price_chg_pct = (df["Close"].iloc[-1] / df["Close"].iloc[-5] - 1) * 100
+
+                # 최근 거래량 증가율
+                vol_chg_pct = (
+                    df["Volume"].iloc[-1] / df["Volume"].iloc[-5:].mean() - 1
+                ) * 100
+
+                # 가격 3% 이상 상승 + 거래량 50% 이상 증가
+                triggered = bool((abs(price_chg_pct) > 3) and (vol_chg_pct > 50))
+
+                details = {
+                    "price_change_pct": round(price_chg_pct, 2),
+                    "volume_change_pct": round(vol_chg_pct, 2),
+                }
+
+            else:
+                triggered = False
+                details = {}
+
+            out.append(
+                TechnicalSignal(
+                    strategy="MOMENTUM_SURGE", triggered=triggered, details=details
                 )
             )
 
@@ -549,31 +654,35 @@ class SignalService:
         return "neutral"
 
     def fetch_news(
-        self, ticker: str, days_back: int = 3, max_items: int = 5
+        self, ticker: str, days_back: int = 5, max_items: int = 5
     ) -> List[NewsHeadline]:
         """Fetch recent news headlines for the given ticker."""
-        url = "https://newsapi.org/v2/everything"
-        params = {
-            "q": ticker,
-            "language": "en",
-            "from": (dt.date.today() - dt.timedelta(days=days_back)).isoformat(),
-            "sortBy": "relevancy",
-            "pageSize": max_items,
-            "apiKey": self.settings.NEWS_API_KEY,
-        }
+        try:
+            url = "https://newsapi.org/v2/everything"
+            params = {
+                "q": ticker,
+                "language": "en",
+                "from": (dt.date.today() - dt.timedelta(days=days_back)).isoformat(),
+                "sortBy": "relevancy",
+                "pageSize": max_items,
+                "apiKey": self.settings.NEWS_API_KEY,
+            }
 
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        articles = r.json().get("articles", [])
+            r = requests.get(url, params=params, timeout=10)
+            r.raise_for_status()
+            articles = r.json().get("articles", [])
 
-        return [
-            NewsHeadline(
-                title=a["title"],
-                url=a["url"],
-                sentiment=None,
-            )
-            for a in articles
-        ]
+            return [
+                NewsHeadline(
+                    title=a["title"],
+                    url=a["url"],
+                    sentiment=None,
+                )
+                for a in articles
+            ]
+        except ImportError:
+            logger.warning("News API not available.")
+            return []
 
     def analyze_stock(self, ticker: str, strategies: List[Strategy]) -> dict:
         """Perform a complete analysis of the stock including price, technicals, fundamentals and news."""
@@ -635,13 +744,15 @@ class SignalService:
         - `last_price`: Closing price from the previous day.
         - `price_change_pct`: Percentage price change from the day before.
         - `triggered_strategies`: List of technical strategies triggered, with descriptions:
-            - PULLBACK: Price near 10-day SMA, above 50-day SMA (buy on dip in uptrend).
-            - OVERSOLD: RSI < 35 and price below lower Bollinger Band (buy on reversal).
-            - MACD_LONG: MACD histogram crosses above 0 (buy on momentum).
-            - VOL_DRY_BOUNCE: Low volume period followed by breakout above 5-day SMA (buy on breakout).
-            - GOLDEN_CROSS: 50-day SMA crosses above 200-day SMA (buy on long-term trend).
-            - MEAN_REVERSION: Price returns to 20-day SMA after deviation (buy on reversal).
-            - BREAKOUT: Price exceeds 52-week high (buy on momentum).
+            - PULLBACK: Price has dipped close to the 10-day SMA while remaining above the 50-day SMA—aiming to “buy the dip” within an ongoing uptrend.
+            - OVERSOLD: RSI(14) falls below 40, the price trades near the lower Bollinger Band (BBL_20_2.0), and Stochastic %K is under 30, signaling potential oversold conditions.
+            - MACD_LONG: The MACD histogram (MACDh) moves from deep negative territory (e.g. below –0.20) to above –0.05, and the MACD line crosses above its signal line, indicating a bullish shift.
+            - VOL_DRY_BOUNCE: After a period of unusually low volume (“dry-up”), volume begins to recover and the price bounces—capturing a rebound from a low-volume pullback.
+            - GOLDEN_CROSS: The 50-day SMA crosses above (or nearly crosses) the 200-day SMA, accompanied by a volume Z-score (VOL_Z) above 0.5, suggesting a strong bullish reversal.
+            - MEAN_REVERSION: Price deviates significantly below the 20-day SMA (previous close < 95% of SMA20) then reverts back within ±10% of the SMA20—trading on the expectation of average-reversion.
+            - BREAKOUT: The current price exceeds 98% of its 52-week high while RSI remains below 70, identifying a near-high breakout with room for further upside.
+            - GAP_UP: The price opens significantly higher than the previous close (e.g. > 2%) with a volume Z-score above 0.5, indicating a strong bullish gap.
+            - MOMENTUM_SURGE: The price has surged more than 3% over the last 5 days with a volume increase of over 50%, indicating a strong momentum shift.
         - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
         - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
             - `trailing_pe`: Trailing Price-to-Earnings ratio.
@@ -653,14 +764,15 @@ class SignalService:
         - `news`: Recent news headlines (sentiment analysis currently unavailable).
 
         ```json
-        - ticker: {data.ticker}
-        - last_price: {data.last_price}
-        - price_change_pct: {data.price_change_pct}
-        - triggered_strategies: {data.triggered_strategies}
-        - technical_details: {data.technical_details}
-        - fundamentals: {data.fundamentals}
-        - news: {data.news}
-        - additional_info: {data.additional_info}
+            - ticker: {data.ticker}
+            - last_price: {data.last_price}
+            - price_change_pct: {data.price_change_pct}
+            - triggered_strategies: {data.triggered_strategies}
+            - technical_details: {data.technical_details}
+            - fundamentals: {data.fundamentals}
+            - news: {data.news}
+            - dataframe: {data.dataframe}
+            - additional_info: {data.additional_info}
         ```
 
         ## Instructions

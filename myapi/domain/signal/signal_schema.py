@@ -1,6 +1,4 @@
-from fastapi.datastructures import Default
-from matplotlib import ticker
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from datetime import date
 from typing import List, Dict, Literal, Optional
 
@@ -13,9 +11,12 @@ Strategy = Literal[
     "GOLDEN_CROSS",
     "MEAN_REVERSION",
     "BREAKOUT",
+    "GAP_UP",
+    "VWAP_BOUNCE",
+    "MOMENTUM_SURGE",
 ]
 
-DefaultStrategies: List[Literal[Strategy]] = [
+DefaultStrategies: List[Strategy] = [
     "PULLBACK",
     "OVERSOLD",
     "MACD_LONG",
@@ -24,6 +25,9 @@ DefaultStrategies: List[Literal[Strategy]] = [
     "GOLDEN_CROSS",
     "MEAN_REVERSION",
     "BREAKOUT",
+    "GAP_UP",
+    "VWAP_BOUNCE",
+    "MOMENTUM_SURGE",
 ]
 
 DefaultTickers = [
@@ -67,7 +71,6 @@ DefaultTickers = [
     "FSLR",  # First Solar, Inc.
     "PLTR",  # Palantir Technologies Inc.
     "RBLX",  # Roblox Corporation
-    "HOOD",  # Robinhood Markets, Inc.
     "LMT",  # Lockheed Martin Corporation
     "MMM",  # 3M Company
 ]
@@ -87,16 +90,7 @@ class SignalRequest(BaseModel):
     tickers: List[str] | None = DefaultTickers
     strategies: List[Strategy] = Field(
         # default=["PULLBACK", "OVERSOLD", "MACD_LONG", "GAPPER"],
-        default_factory=lambda: [
-            "PULLBACK",
-            "OVERSOLD",
-            "MACD_LONG",
-            "GAPPER",
-            "GOLDEN_CROSS",
-            "MEAN_REVERSION",
-            "VOL_DRY_BOUNCE",
-            "BREAKOUT",
-        ],
+        default_factory=lambda: DefaultStrategies,
     )
     # start: date | None = None  # 없으면 settings.START_DAYS_BACK 로 계산
     with_fundamental: bool = True
@@ -185,6 +179,7 @@ class SignalPromptResponse(BaseModel):
 
     ticker: str
     reasoning: str
+    probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
     entry_price: float | None = None
     stop_loss_price: float | None = None
