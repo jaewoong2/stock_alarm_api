@@ -331,3 +331,32 @@ class AIService:
             raise ValueError(
                 "The response is not in valid JSON format. Response: " + str(result_str)
             ) from e
+
+    def completion(
+        self,
+        system_prompt: str,
+        prompt: str,
+        chat_model: ChatModel = ChatModel.O3_MINI,
+    ):
+        """
+        OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
+        결과는 아래 JSON 스키마 형식으로 반환됩니다:
+        """
+        client = openai.OpenAI(
+            api_key=self.open_api_key,  # This is the default and can be omitted
+        )
+
+        response = client.chat.completions.create(
+            model=chat_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.2,
+            top_p=1.0,
+        )
+
+        return response.choices[0].message.content

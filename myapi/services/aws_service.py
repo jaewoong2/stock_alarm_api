@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from fastapi import HTTPException
 import boto3
 import json
@@ -135,3 +135,52 @@ class AwsService:
             raise HTTPException(
                 status_code=500, detail=f"Error sending message to SQS: {str(e)}"
             )
+
+    def generate_queue_message_http(
+        self,
+        body: str,
+        path: str,
+        method: Literal["GET", "POST", "PUT", "DELETE"],
+        query_string_parameters: Optional[dict] = None,
+    ) -> dict:
+        """
+        HTTP 요청을 SQS 메시지 형식으로 변환합니다.
+
+        Args:
+            body (str): HTTP 요청 본문
+            path (str): HTTP 요청 경로
+
+        Returns:
+            dict: SQS 메시지 형식으로 변환된 데이터
+        """
+
+        result = {
+            "body": body,
+            "resource": "/{proxy+}",
+            "path": f"/{path}",
+            "httpMethod": method,
+            "isBase64Encoded": False,
+            "pathParameters": {"proxy": path},
+            "queryStringParameters": query_string_parameters,
+            "headers": {
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "*/*",
+                "Accept-Encoding": "gzip, deflate, sdch",
+                "Accept-Language": "ko",
+                "Accept-Charset": "utf-8",
+            },
+            "requestContext": {
+                "path": f"/{path}",
+                "resourcePath": "/{proxy+}",
+                "httpMethod": method,
+            },
+        }
+        if query_string_parameters is None:
+            query_string_parameters = {}
+
+        if method == "GET":
+            result["body"] = None
+
+            return result
+
+        return result

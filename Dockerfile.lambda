@@ -1,18 +1,14 @@
-# Python 람다 함수를 위한 Dockerfile(Linux/ARM64)
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.12  
 
-# AWS Lambda는 /var/task를 코드 디렉토리로 사용
 WORKDIR /var/task
 
-# requirements.txt를 /var/task에 복사
-COPY ./requirements.txt .
+# 3) Python 래퍼 설치
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt \
+    && pip install yfinance --upgrade --no-cache-dir
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-RUN pip install yfinance --upgrade --no-cache-dir
-# 애플리케이션 코드 복사
+# 4) 애플리케이션 코드 복사 & Lambda 핸들러 지정
 COPY . .
 COPY ./myapi ./myapi
-
-# 람다 함수의 핸들러를 지정 (myapi.main.handler)
-CMD [ "myapi.main.handler" ]
+CMD ["myapi.main.handler"]

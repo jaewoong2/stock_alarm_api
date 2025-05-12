@@ -2,6 +2,7 @@ from dependency_injector import containers, providers
 
 from myapi.database import get_db
 from myapi.repositories.futures_repository import FuturesRepository
+from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.trading_repository import TradingRepository
 from myapi.services import futures_service
 from myapi.services.ai_service import AIService
@@ -26,6 +27,7 @@ class RepositoryModule(containers.DeclarativeContainer):
     """데이터베이스 관련 의존성 관리"""
 
     get_db = providers.Resource(get_db)
+    signals_repository = providers.Factory(SignalsRepository, db_session=get_db)
     trading_repository = providers.Factory(TradingRepository, db_session=get_db)
     futures_repository = providers.Factory(FuturesRepository, db_session=get_db)
 
@@ -71,6 +73,7 @@ class ServiceModule(containers.DeclarativeContainer):
 
     signal_service = providers.Factory(
         SignalService,
+        signals_repository=repositories.signals_repository,
         settings=config.config,
     )
 

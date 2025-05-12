@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 from typing import List, Dict, Literal, Optional
 
 Strategy = Literal[
@@ -14,6 +14,7 @@ Strategy = Literal[
     "GAP_UP",
     "VWAP_BOUNCE",
     "MOMENTUM_SURGE",
+    "VOLUME_SPIKE",
 ]
 
 DefaultStrategies: List[Strategy] = [
@@ -28,6 +29,7 @@ DefaultStrategies: List[Strategy] = [
     "GAP_UP",
     "VWAP_BOUNCE",
     "MOMENTUM_SURGE",
+    "VOLUME_SPIKE",
 ]
 
 DefaultTickers = [
@@ -40,7 +42,7 @@ DefaultTickers = [
     "TQQQ",  # ProShares UltraPro QQQ
     "SQQQ",  # ProShares UltraPro QQQ
     "SOXL",  # Direxion Daily Semiconductor Bull 3X Shares
-    "FNGU",  # MicroSectors FANG+ Index 3X Leveraged ETN
+    "FNGA",  # MicroSectors FANG+ Index 3X Leveraged ETN
     "SPXL",  # S&P 500 Bull 3X Shares
     "XBI",  # SPDR S&P Biotech ETF
     "XOP",  # SPDR S&P Oil & Gas Exploration & Production ETF
@@ -53,6 +55,11 @@ DefaultTickers = [
     "VWO",  # Vanguard FTSE Emerging Markets ETF
     "ARKK",  # ARK Innovation ETF
     # Stocks
+    "META",  # Meta Platforms, Inc.
+    "MU",  # Micron Technology, Inc.
+    "GOOGL",  # Alphabet Inc. (Class A)
+    "AVGO",  # Broadcom, Inc.
+    "NFLX",  # Netflix, Inc.
     "AAPL",  # Apple Inc.
     "MSFT",  # Microsoft Corporation
     "NVDA",  # NVIDIA Corporation
@@ -165,7 +172,25 @@ class SignalPromptData(BaseModel):
     technical_details: Dict[str, Dict[str, float | None]]
     fundamentals: FundamentalData | None = None
     news: List[NewsHeadline] | None = None
-    additional_info: Dict[str, str] | None = None
+    additional_info: str | None = None
+
+
+class AnalyticsReportPromptResponse(BaseModel):
+    # 1) Price Action
+    # 2) Volume
+    # 3) Trend & Pattern
+    # 4) Technical Signals
+    # 5) Support & Resistance
+    # 6) Expected Volatility & Risk
+    # 7) Overall Assessment.
+
+    price_action: str
+    volume: str
+    trend_and_pattern: str
+    technical_signals: str
+    support_and_resistance: str
+    expected_volatility_and_risk: str
+    overall_assessment: str
 
 
 class SignalPromptResponse(BaseModel):
@@ -181,6 +206,7 @@ class SignalPromptResponse(BaseModel):
     reasoning: str
     probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
+    senarios: str | None = None
     entry_price: float | None = None
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
@@ -191,3 +217,53 @@ class SignalResponse(BaseModel):
     run_date: date
     reports: List[TickerReport]
     market_condition: Optional[str] = None
+
+
+class SignalBase(BaseModel):
+    """시그널 기본 스키마"""
+
+    ticker: str
+    entry_price: float
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    action: str  # "buy" or "sell" or "hold"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    probability: Optional[str] = None
+    result_description: Optional[str] = None
+    report_summary: Optional[str] = None
+
+
+class SignalVO(SignalBase):
+    """시그널 값 객체(Value Object) 스키마"""
+
+    id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SignalCreate(SignalBase):
+    """시그널 생성 요청 스키마"""
+
+    pass
+
+
+class SignalBaseResponse(SignalBase):
+    """시그널 응답 스키마"""
+
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class SignalUpdate(BaseModel):
+    """시그널 업데이트 요청 스키마"""
+
+    ticker: Optional[str] = None
+    entry_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    action: Optional[str] = None
+    probability: Optional[float] = None
+    result_description: Optional[str] = None

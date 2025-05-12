@@ -1,3 +1,4 @@
+import json
 import logging
 from venv import logger
 from fastapi import APIRouter, Depends
@@ -17,6 +18,7 @@ from myapi.domain.signal.signal_schema import (
     TechnicalSignal,
     TickerReport,
 )
+from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.discord_service import DiscordService
@@ -28,10 +30,40 @@ router = APIRouter(prefix="/signals", tags=["signals"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/llm-query", response_model=SignalResponse)
+@router.post(
+    "/investment-pdf",
+)
+@inject
+def get_investment_pdf(
+    ticker: str,
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+):
+    """
+    투자 PDF를 얻어오는 엔드포인트.
+    """
+    pdf_bytes, text_content = None, None
+    try:
+        pdf_bytes = signal_service.fetch_pdf_stock_investment(ticker=ticker.upper())
+
+    except Exception as err:
+        return None
+
+    if pdf_bytes is not None:
+        text_content = signal_service.extract_text_only(pdf_bytes)
+
+    if text_content:
+        return text_content
+
+    return None
+
+
+@router.post("/llm-query")
 @inject
 def llm_query(
     req: SignalPromptData,
+    signals_repository: SignalsRepository = Depends(
+        Provide[Container.repositories.signals_repository]
+    ),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
     discord_service: DiscordService = Depends(
@@ -41,7 +73,26 @@ def llm_query(
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
     """
-    prompt = signal_service.generate_prompt(data=req)
+
+    pdf_report, summary = None, None
+
+    try:
+        pdf_report = get_investment_pdf(ticker=req.ticker)
+    except Exception as e:
+        logger.error(f"Error fetching PDF report: {e}")
+
+    if isinstance(pdf_report, str):
+        report_system_prompt, report_prompt = signal_service.report_summary_prompt(
+            ticker=req.ticker, report_text=pdf_report
+        )
+
+        summary = ai_service.completion(
+            system_prompt=report_system_prompt,
+            prompt=report_prompt,
+            chat_model=ChatModel.GPT_4_1_MINI,
+        )
+
+    prompt = signal_service.generate_prompt(data=req, report_summary=summary)
 
     result = ai_service.completions_parse(
         system_prompt="",
@@ -50,6 +101,21 @@ def llm_query(
         schema=SignalPromptResponse,
         chat_model=ChatModel.O4_MINI,
     )
+
+    try:
+        signals_repository.create_signal(
+            ticker=req.ticker,
+            action=result.recommendation.lower(),
+            entry_price=result.entry_price or 0.0,
+            stop_loss=result.stop_loss_price,
+            take_profit=result.take_profit_price,
+            probability=result.probability_of_rising_up,
+            strategy=",".join(req.triggered_strategies),
+            result_description=result.reasoning,
+            report_summary=summary,
+        )
+    except Exception as e:
+        logger.error(f"Error saving signal to database: {e}")
 
     discord_service.send_message(content=f"{format_signal_response(result)}")
 
@@ -62,9 +128,6 @@ def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
-    discord_service: DiscordService = Depends(
-        Provide[Container.services.discord_service]
-    ),
 ):
     START_DAYS_BACK: int = 100
     run_date = date.today()
@@ -144,42 +207,20 @@ def get_signals(
             additional_info=None,
         )
 
-        message = {
-            "body": data.model_dump_json(),
-            "resource": "/{proxy+}",
-            "path": "/signals/llm-query",
-            "httpMethod": "POST",
-            "isBase64Encoded": False,
-            "pathParameters": {"proxy": "signals/llm-query"},
-            "queryStringParameters": {},
-            "headers": {
-                "Content-Type": "application/json; charset=utf-8",
-                "Accept": "*/*",
-                "Accept-Encoding": "gzip, deflate, sdch",
-                "Accept-Language": "ko",
-                "Accept-Charset": "utf-8",
-            },
-            "requestContext": {
-                "path": "/signals/llm-query",
-                "resourcePath": "/{proxy+}",
-                "httpMethod": "POST",
-            },
-        }
+        message = aws_service.generate_queue_message_http(
+            body=data.model_dump_json(),
+            path="signals/llm-query",
+            method="POST",
+            query_string_parameters={},
+        )
 
         try:
-            response = llm_query(req=data)
-            logger.info(f"LLM Query Response: {response}")
-            # aws_service.send_sqs_message(
-            #     queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
-            #     message_body=json.dumps(message),
-            # )
+            aws_service.send_sqs_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+                message_body=json.dumps(message),
+            )
         except Exception as e:
             print(f"Error sending SQS message: {e}")
-            raise
-
-        discord_service.send_message(
-            content=f"SQS Message For AI Query Sended, Signal detected for {report.ticker} with strategies: {triggered_strategies}"
-        )
 
     return SignalResponse(
         run_date=run_date,

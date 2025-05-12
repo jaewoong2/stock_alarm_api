@@ -22,3 +22,5 @@ threads_api==1.2.0
 playwright==1.47.0
 pandas_ta==0.3.14b0
 pandas_datareader==0.10.0
+cloudscraper==1.2.71
+pdfplumber==0.11.6

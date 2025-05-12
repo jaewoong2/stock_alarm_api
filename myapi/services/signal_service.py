@@ -1,7 +1,10 @@
 from datetime import date, timedelta
+from io import BytesIO
 import logging
-from typing import List, Optional, Literal, Union, cast
+from typing import List, Optional, Union
+import cloudscraper
 import pandas as pd
+import pdfplumber
 import yfinance as yf
 import pandas_ta as ta  # Ensure 'ta' is installed via pip install ta
 import requests
@@ -9,8 +12,7 @@ import datetime as dt
 
 from pandas_datareader import data as pdr  # pip install pandas_datareader
 
-# from nltk.sentiment import SentimentIntensityAnalyzer
-
+from myapi.repositories.signals_repository import SignalsRepository
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     SignalPromptData,
@@ -18,7 +20,6 @@ from myapi.domain.signal.signal_schema import (
     Strategy,
     FundamentalData,
     NewsHeadline,
-    TickerReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,10 +73,11 @@ def flatten_price_columns(df: pd.DataFrame, ticker: str | None = None) -> pd.Dat
 
 
 class SignalService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, signals_repository: SignalsRepository):
         self.settings = settings
         self.DEFAULT_UNIVERSE: str = "SPY,QQQ,AAPL,MSFT,TSLA"
         self.START_DAYS_BACK: int = 365
+        self.signals_repository = signals_repository
         # self.sia = SentimentIntensityAnalyzer()
 
     def market_ok(self, index_ticker="SPY") -> bool:
@@ -379,6 +381,8 @@ class SignalService:
         df["VOL20"] = df.Volume.rolling(20).mean()
         df["VOL_Z"] = (df.Volume - df.VOL20) / df.Volume.rolling(20).std()
         df["VOL_PCTL60"] = df.Volume.rank(pct=True, method="max")
+        df["VolumeSpike"] = df["Volume"] > df["VOL20"] * 2
+        df["VolumeSpikeStrength"] = df["Volume"] / df["VOL20"]  # 급등 강도
 
         df["RSI14"] = ta.rsi(df["Close"], length=14)
         df["ATR14"] = ta.atr(
@@ -399,7 +403,7 @@ class SignalService:
             df = pd.concat([df, macd], axis=1)
 
         # 추가: VWAP와 ROC
-        df["VWAP"] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
+        # df["VWAP"] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
         df["ROC5"] = ta.roc(df.Close, length=5)
 
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
@@ -427,9 +431,29 @@ class SignalService:
         high_52w = (
             df["High"].rolling(252).max().iloc[-1] if len(df) >= 252 else None
         )  # 추가
-        vwap_last = df["VWAP"].iloc[-1] if "VWAP" in cols else None
+        # vwap_last = df["VWAP"].iloc[-1] if "VWAP" in cols else None
         roc5_last = df["ROC5"].iloc[-1] if "ROC5" in cols else None
         close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
+
+        rsi_last = df["RSI_14"].iloc[-1] if "RSI_14" in df.columns else None
+
+        if "VOLUME_SPIKE" in strategies and df["VolumeSpike"].iloc[-1]:
+            price_change = df["Close"].pct_change().iloc[-1] if len(df) > 1 else 0
+            triggered = (
+                rsi_last is not None and rsi_last < 50 and price_change > 0.01
+            )  # 상승 + 과매수 아님
+            out.append(
+                TechnicalSignal(
+                    strategy="VOLUME_SPIKE",
+                    triggered=triggered,
+                    details={
+                        "volume": df["Volume"].iloc[-1],
+                        "vol20": df["VOL20"].iloc[-1],
+                        "rsi": rsi_last,
+                        "price_change_pct": price_change * 100,
+                    },
+                )
+            )
 
         # 변경: PULLBACK 조건 완화 (1% 이내)
         if "PULLBACK" in strategies:
@@ -578,23 +602,6 @@ class SignalService:
                 )
             )
 
-        # # VWAP_BOUNCE (신규 전략) => 폐기 (너무 많이 잡음)
-        # if "VWAP_BOUNCE" in strategies:
-        #     triggered = (
-        #         vwap_last is not None
-        #         and rsi_last is not None
-        #         and close_last >= vwap_last * 0.98
-        #         and close_last <= vwap_last * 1.02
-        #         and rsi_last >= 40
-        #     )
-        #     out.append(
-        #         TechnicalSignal(
-        #             strategy="VWAP_BOUNCE",
-        #             triggered=triggered,
-        #             details={"close": close_last, "vwap": vwap_last, "rsi": rsi_last},
-        #         )
-        #     )
-
         # 단기간 급격한 가격/거래량 변화 포착
         if "MOMENTUM_SURGE" in strategies:
             if "Volume" in df.columns and len(df) >= 5:
@@ -643,15 +650,6 @@ class SignalService:
             debt_to_equity=debt_to_equity,
             fcf_yield=fcf_yield,
         )
-
-    def _get_sentiment(self, text: str) -> Literal["positive", "neutral", "negative"]:
-        """Analysis sentiment of the given text."""
-        # score = self.sia.polarity_scores(text)["compound"]
-        # if score > 0.05:
-        #     return "positive"
-        # if score < -0.05:
-        #     return "negative"
-        return "neutral"
 
     def fetch_news(
         self, ticker: str, days_back: int = 5, max_items: int = 5
@@ -730,16 +728,39 @@ class SignalService:
             "last_updated": dt.datetime.now().isoformat(),
         }
 
-    def generate_prompt(self, data: SignalPromptData):
+    def report_summary_prompt(self, ticker: str, report_text: str):
+        system_prompt = f"""
+            You are a financial analyst Summarize a {ticker} technical report
+            
+            The summary must include:
+                1) Price Action (1~3 sentences)
+                2) Volume (1~3 sentences)
+                3) Trend & Pattern (1~3 sentences)
+                4) Technical Signals (1~3 sentences)
+                5) Support & Resistance (1~3 sentences)
+                6) Expected Volatility & Risk (1~3 sentences)
+                7) Overall Assessment. (1~3 sentences)
+        """
+
+        prompt = f"""
+        Please summarize the following original report.
+        
+        # Report
+        {report_text}
+        """
+
+        return system_prompt, prompt
+
+    def generate_prompt(self, data: SignalPromptData, report_summary: str | None = ""):
         """
         Generate a prompt for the AI model based on the report and description.
         """
 
         prompt = f"""
-        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today (May 5, 2025). For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-3 days).
-
+        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today. For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-3 days).
+        {"\n\n"}
         ### Input Data
-        Below is a JSON array of stocks/ETFs with their previous day's data (May 4, 2025). Each item includes:
+        Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
         - `ticker`: Stock/ETF ticker symbol.
         - `last_price`: Closing price from the previous day.
         - `price_change_pct`: Percentage price change from the day before.
@@ -762,19 +783,29 @@ class SignalService:
             - `debt_to_equity`: Debt-to-equity ratio.
             - `fcf_yield`: Free cash flow yield percentage.
         - `news`: Recent news headlines (sentiment analysis currently unavailable).
-
+        {"\n\n"}
         ```json
             - ticker: {data.ticker}
+            {"\n"}
             - last_price: {data.last_price}
+            {"\n"}
             - price_change_pct: {data.price_change_pct}
+            {"\n"}
             - triggered_strategies: {data.triggered_strategies}
+            {"\n"}
             - technical_details: {data.technical_details}
+            {"\n"}
             - fundamentals: {data.fundamentals}
+            {"\n"}
             - news: {data.news}
+            {"\n"}
             - dataframe: {data.dataframe}
+            {"\n"}
+            - report_summary: {report_summary}
+            {"\n"}
             - additional_info: {data.additional_info}
         ```
-
+        {"\n\n"}
         ## Instructions
 
             ### Analyze Each Stock/ETF:
@@ -782,7 +813,8 @@ class SignalService:
             - Consider fundamental data (e.g., high ROE, low debt-to-equity) for stock quality.
             - Factor in news headlines for sentiment or catalysts (e.g., earnings beats).
             - Assess price_change_pct for momentum or reversal potential.
-
+            
+            {"\n\n"}
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
                 For BUY/SELL:
@@ -792,16 +824,18 @@ class SignalService:
                 
                 For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
 
+            {"\n\n"}
             ### Reasoning:
             - Explain your recommendation step-by-step, referencing specific technical/fundamental data and news.
 
-
+            {"\n\n"}
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic (within 10% of last_price unless justified).
             - Consider short-term trading horizon (1-3 days).
             - Avoid recommending stocks with no triggered strategies.
             - If fundamentals are unavailable (e.g., ETFs), focus on technicals and news.
 
+            {"\n\n"}
             ### Output Format
             Return a JSON array of recommendations, one per stock/ETF. Each recommendation should include:
             - ticker: Stock/ETF ticker.
@@ -813,3 +847,45 @@ class SignalService:
         """
 
         return prompt
+
+    def extract_text_only(self, pdf_bytes: bytes) -> str:
+        """PDF bytes에서 이미지·벡터 그림을 제외한 순수 텍스트만 추출"""
+        full_text: list[str] = []
+
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()  # 이미지·도형 제외, 글자 서치
+                if text:
+                    full_text.append(text)
+
+        return "\n\n".join(full_text)
+
+    def fetch_pdf_stock_investment(self, ticker: str) -> bytes:
+        """
+        Fetch a PDF report for the given stock ticker.
+        Returns binary PDF data as bytes.
+        """
+        url = f"https://stockinvest.us/pdf/technical-analysis/{ticker}"
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False},
+        )
+        # 페이지 먼저 열기
+        scraper.get(f"https://stockinvest.us/stock/{ticker}", timeout=20)
+        r = scraper.get(
+            url=url,
+            timeout=20,
+            headers={
+                "Accept": "application/pdf",
+                "Referer": f"https://stockinvest.us/stock/{ticker}",
+            },
+            stream=True,  # chunk 전송 → text 속성 미생성
+        )
+
+        r.raise_for_status()
+        if not r.headers.get("Content-Type", "").startswith("application/pdf"):
+            print("Not a PDF, got:", r.headers.get("Content-Type"))
+            return b"None"
+
+        # ★ content를 직접 bytes로 읽기
+        raw_pdf = r.content  # 여기서는 decode 없음
+        return raw_pdf
