@@ -15,6 +15,9 @@ Strategy = Literal[
     "VWAP_BOUNCE",
     "MOMENTUM_SURGE",
     "VOLUME_SPIKE",
+    "TREND_UP",
+    "TREND_DOWN",
+    "DONCHIAN_BREAKOUT",
 ]
 
 DefaultStrategies: List[Strategy] = [
@@ -30,6 +33,9 @@ DefaultStrategies: List[Strategy] = [
     "VWAP_BOUNCE",
     "MOMENTUM_SURGE",
     "VOLUME_SPIKE",
+    "TREND_UP",
+    "TREND_DOWN",
+    "DONCHIAN_BREAKOUT",
 ]
 
 DefaultTickers = [
@@ -42,7 +48,6 @@ DefaultTickers = [
     "TQQQ",  # ProShares UltraPro QQQ
     "SQQQ",  # ProShares UltraPro QQQ
     "SOXL",  # Direxion Daily Semiconductor Bull 3X Shares
-    "FNGA",  # MicroSectors FANG+ Index 3X Leveraged ETN
     "SPXL",  # S&P 500 Bull 3X Shares
     "XBI",  # SPDR S&P Biotech ETF
     "XOP",  # SPDR S&P Oil & Gas Exploration & Production ETF

@@ -132,7 +132,7 @@ def get_signals(
     START_DAYS_BACK: int = 100
     run_date = date.today()
     tickers = req.tickers or DefaultTickers
-    strategies = req.strategies or DefaultStrategies
+    strategies = DefaultStrategies
 
     start = run_date - timedelta(days=START_DAYS_BACK)
 

@@ -6,11 +6,11 @@ import cloudscraper
 import pandas as pd
 import pdfplumber
 import yfinance as yf
-import pandas_ta as ta  # Ensure 'ta' is installed via pip install ta
+import pandas_ta as ta
 import requests
 import datetime as dt
 
-from pandas_datareader import data as pdr  # pip install pandas_datareader
+from pandas_datareader import data as pdr
 
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.utils.config import Settings
@@ -406,6 +406,28 @@ class SignalService:
         # df["VWAP"] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
         df["ROC5"] = ta.roc(df.Close, length=5)
 
+        # ────────── 신규 ‘추세’ 지표 ──────────
+        # ① ADX(+DI/-DI) – 추세 강도
+        df = pd.concat(
+            [df, ta.adx(df.High, df.Low, df.Close, length=14)], axis=1
+        )  # ADX_14, DMP_14, DMN_14
+
+        # ② SuperTrend (ATR 기반 추세 필터) – ta 패키지에 존재
+        df = pd.concat(
+            [df, ta.supertrend(df.High, df.Low, df.Close, length=10, multiplier=3)],
+            axis=1,
+        )
+        # 컬럼: SUPERT_10_3.0, SUPERTd_10_3.0 (direction)
+
+        # ③ Donchian Channel(20) – 추세 돌파용
+        donch = ta.donchian(
+            df.High, df.Low, length=20
+        )  # DONCHU_20, DONCHL_20, DONCHM_20
+        df = pd.concat([df, donch], axis=1)
+
+        # ④ 이동평균 기울기(∇) – SMA50 기울기
+        df["SMA50_SLOPE"] = df["SMA50"].diff()
+
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
 
         return df
@@ -628,6 +650,92 @@ class SignalService:
             out.append(
                 TechnicalSignal(
                     strategy="MOMENTUM_SURGE", triggered=triggered, details=details
+                )
+            )
+
+        if "TREND_UP" in strategies:
+            adx_last = df["ADX_14"].iloc[-1]
+            dip_last = df["DMP_14"].iloc[-1]  # +DI
+            dim_last = df["DMN_14"].iloc[-1]  # -DI
+            st_dir = df["SUPERTd_10_3.0"].iloc[-1]  # 1이면 상승, -1이면 하락
+            slope_50 = df["SMA50_SLOPE"].iloc[-1]
+
+            if sma50_last is None or sma200_last is None:
+                return out
+
+            triggered = bool(
+                adx_last > 25  # 추세 강함
+                and dip_last > dim_last  # 매수우위
+                and st_dir == 1  # SuperTrend 상승
+                and close_last > sma50_last > sma200_last  # 가격 구조
+                and slope_50 > 0  # SMA50 우상향
+            )
+            out.append(
+                TechnicalSignal(
+                    strategy="TREND_UP",
+                    triggered=triggered,
+                    details={
+                        "adx": adx_last,
+                        "+di": dip_last,
+                        "-di": dim_last,
+                        "supertrend_dir": st_dir,
+                        "sma50_slope": slope_50,
+                    },
+                )
+            )
+
+        if "TREND_DOWN" in strategies:
+            adx_last = df["ADX_14"].iloc[-1]
+            dip_last = df["DMP_14"].iloc[-1]
+            dim_last = df["DMN_14"].iloc[-1]
+            st_dir = df["SUPERTd_10_3.0"].iloc[-1]
+            slope_50 = df["SMA50_SLOPE"].iloc[-1]
+
+            if sma50_last is None or sma200_last is None:
+                return out
+
+            triggered = bool(
+                adx_last > 25
+                and dim_last > dip_last  # 매도우위
+                and st_dir == -1  # SuperTrend 하락
+                and close_last < sma50_last < sma200_last
+                and slope_50 < 0
+            )
+
+            out.append(
+                TechnicalSignal(
+                    strategy="TREND_DOWN",
+                    triggered=triggered,
+                    details={
+                        "adx": adx_last,
+                        "+di": dip_last,
+                        "-di": dim_last,
+                        "supertrend_dir": st_dir,
+                        "sma50_slope": slope_50,
+                    },
+                )
+            )
+
+        if "DONCHIAN_BREAKOUT" in strategies:
+            donch_high_prev = df["DONCHU_20"].iloc[-2]
+            donch_high_now = df["DONCHU_20"].iloc[-1]
+
+            triggered = bool(
+                close_last > donch_high_prev  # 20일 고가 돌파
+                and adx_last > 20  # 추세 강화
+                and vol_z is not None
+                and vol_z > 0  # 거래량 ↑  (기존 계산값 활용)
+            )
+            out.append(
+                TechnicalSignal(
+                    strategy="DONCHIAN_BREAKOUT",
+                    triggered=triggered,
+                    details={
+                        "close": close_last,
+                        "prev_donch_high": donch_high_prev,
+                        "adx": adx_last,
+                        "vol_z": vol_z,
+                    },
                 )
             )
 
