@@ -207,6 +207,9 @@ async def get_signals(
             technical_details=technical_details,
             fundamentals=report.fundamentals,
             news=report.news,
+            spy_description=(
+                "S&P500(SPY) is Abobe SMA20" if mkt_ok else "S&P500(SPY) is Below SMA20"
+            ),
             additional_info=None,
         )
 

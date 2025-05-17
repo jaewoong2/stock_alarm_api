@@ -18,6 +18,10 @@ Strategy = Literal[
     "TREND_UP",
     "TREND_DOWN",
     "DONCHIAN_BREAKOUT",
+    "PREV_HIGH_BREAK",
+    "VOLUME_EXPANSION",
+    "QUIET_PULLBACK",
+    "VOLATILITY_COMPRESSION",
 ]
 
 DefaultStrategies: List[Strategy] = [
@@ -36,6 +40,10 @@ DefaultStrategies: List[Strategy] = [
     "TREND_UP",
     "TREND_DOWN",
     "DONCHIAN_BREAKOUT",
+    "PREV_HIGH_BREAK",
+    "VOLUME_EXPANSION",
+    "QUIET_PULLBACK",
+    "VOLATILITY_COMPRESSION",
 ]
 
 DefaultTickers = [
@@ -178,6 +186,8 @@ class SignalPromptData(BaseModel):
     fundamentals: FundamentalData | None = None
     news: List[NewsHeadline] | None = None
     additional_info: str | None = None
+
+    spy_description: str | None = None
 
 
 class AnalyticsReportPromptResponse(BaseModel):

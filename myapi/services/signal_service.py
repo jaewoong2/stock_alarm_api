@@ -88,7 +88,7 @@ class SignalService:
         # self.sia = SentimentIntensityAnalyzer()
 
     def market_ok(self, index_ticker="SPY") -> bool:
-        """시장 필터: 지수 종가가 50일 SMA 위면 True"""
+        """시장 필터: 지수 종가가 20일 SMA 위면 True"""
         df = yf.download(index_ticker, period="6mo", auto_adjust=True, progress=False)
 
         if df is None:
@@ -97,8 +97,8 @@ class SignalService:
         if df.empty:
             return False
 
-        df["SMA50"] = ta.sma(df["Close"], length=50)
-        return bool((df["Close"].iloc[-1] > df["SMA50"].iloc[-1])[index_ticker])
+        df["SMA20"] = ta.sma(df["Close"], length=20)
+        return bool((df["Close"].iloc[-1] > df["SMA20"].iloc[-1])[index_ticker])
 
     def rs_ok(self, ticker: str, benchmark="SPY", lookback_weeks=13) -> bool:
         """종목 상대강도 필터: 최근 13주 수익률 랭크가 상위 30%면 True"""
@@ -435,6 +435,35 @@ class SignalService:
         # ④ 이동평균 기울기(∇) – SMA50 기울기
         df["SMA50_SLOPE"] = df["SMA50"].diff()
 
+        df["VWAP"] = ta.vwap(
+            df["High"], df["Low"], df["Close"], df["Volume"]
+        )  # 장중 기준선
+        df["RSI5"] = ta.rsi(df["Close"], length=5)  # 단기 RSI
+        # 볼린저 밴드 폭 (%)
+        df["BB_WIDTH"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["Close"]
+
+        df["AVG_VOL20"] = df["Volume"].rolling(20).mean()
+        df["LIQUIDITY_FILTER"] = df["AVG_VOL20"] > 500000  # 최소 거래량 기준
+
+        df["ATR_PCT"] = (df["ATR14"] / df["Close"]) * 100  # 변동성 비율
+
+        df["GAP_PCT"] = df["Open"] / df["Close"].shift(1) - 1
+
+        # True-Range Ratio: 오늘 변동성 / 20일 평균 변동성
+        avg_atr20 = df["ATR14"].rolling(20).mean()
+        df["ATR_RATIO"] = df["ATR14"] / avg_atr20
+
+        # 초단기 모멘텀
+        df["ROC1"] = ta.roc(df["Close"], length=1)
+        df["ROC3"] = ta.roc(df["Close"], length=3)
+
+        # ─── 캔들 패턴 예: 상승장악(Engulfing) ────────────
+        df["BULL_ENGULF"] = (
+            (df["Close"].shift(1) < df["Open"].shift(1))  # 전일 음봉
+            & (df["Open"] < df["Close"].shift(1))  # 오늘 시가 < 전일 종가
+            & (df["Close"] > df["Open"].shift(1))  # 오늘 종가 > 전일 시가
+        )
+
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
 
         return df
@@ -460,11 +489,77 @@ class SignalService:
         high_52w = (
             df["High"].rolling(252).max().iloc[-1] if len(df) >= 252 else None
         )  # 추가
-        # vwap_last = df["VWAP"].iloc[-1] if "VWAP" in cols else None
-        roc5_last = df["ROC5"].iloc[-1] if "ROC5" in cols else None
-        close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
 
+        close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
         rsi_last = df["RSI_14"].iloc[-1] if "RSI_14" in df.columns else None
+
+        # 최신 값 준비
+        gap_pct = df["GAP_PCT"].iloc[-1]
+        roc1, roc3 = df["ROC1"].iloc[-1], df["ROC3"].iloc[-1]
+        atr_ratio = df["ATR_RATIO"].iloc[-1]
+        vol_ratio20 = df["Volume"].iloc[-1] / df["Volume"].rolling(20).mean().iloc[-1]
+        bb_width = df["BB_WIDTH"].iloc[-1]
+
+        # 전일(shift 1) high·volume·close
+        prev_high = df["High"].iloc[-2]
+        prev_close = df["Close"].iloc[-2]
+
+        # 2) PREV_HIGH_BREAK
+        if "PREV_HIGH_BREAK" in strategies:
+            open_px = df["Open"].iloc[-1]
+            triggered = (open_px >= prev_high * 0.99) and (open_px <= prev_high * 1.01)
+            out.append(
+                TechnicalSignal(
+                    strategy="PREV_HIGH_BREAK",
+                    triggered=triggered,
+                    details={"open": open_px, "prev_high": prev_high},
+                )
+            )
+
+        # 3) VOLUME_EXPANSION
+        if "VOLUME_EXPANSION" in strategies:
+            triggered = (vol_ratio20 >= 1.5) and (roc1 >= 0.02)
+            out.append(
+                TechnicalSignal(
+                    strategy="VOLUME_EXPANSION",
+                    triggered=triggered,
+                    details={
+                        "vol_ratio20": round(vol_ratio20, 2),
+                        "roc1": round(roc1 * 100, 2),
+                    },
+                )
+            )
+
+        # 4) QUIET_PULLBACK
+        if "QUIET_PULLBACK" in strategies:
+            triggered = (abs(prev_close / sma10_last - 1) <= 0.01) and (atr_ratio < 0.7)
+            out.append(
+                TechnicalSignal(
+                    strategy="QUIET_PULLBACK",
+                    triggered=triggered,
+                    details={
+                        "prev_close": prev_close,
+                        "sma10": sma10_last,
+                        "atr_ratio": round(atr_ratio, 2),
+                    },
+                )
+            )
+
+        # 5) VOLATILITY_COMPRESSION
+        if "VOLATILITY_COMPRESSION" in strategies:
+            # 6개월(≈126거래일) 최저 BB 폭인지 확인
+            min_bw_6m = df["BB_WIDTH"].rolling(126).min().iloc[-1]
+            triggered = bb_width <= min_bw_6m * 1.05  # 여유 5 %
+            out.append(
+                TechnicalSignal(
+                    strategy="VOLATILITY_COMPRESSION",
+                    triggered=triggered,
+                    details={
+                        "bb_width": round(bb_width, 4),
+                        "min_bw_6m": round(min_bw_6m, 4),
+                    },
+                )
+            )
 
         if "VOLUME_SPIKE" in strategies and df["VolumeSpike"].iloc[-1]:
             price_change = df["Close"].pct_change().iloc[-1] if len(df) > 1 else 0
@@ -872,7 +967,7 @@ class SignalService:
         """
 
         prompt = f"""
-        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today. For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-3 days).
+        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today. For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-2 days).
         {"\n\n"}
         ### Input Data
         Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
@@ -889,6 +984,10 @@ class SignalService:
             - BREAKOUT: The current price exceeds 98% of its 52-week high while RSI remains below 70, identifying a near-high breakout with room for further upside.
             - GAP_UP: The price opens significantly higher than the previous close (e.g. > 2%) with a volume Z-score above 0.5, indicating a strong bullish gap.
             - MOMENTUM_SURGE: The price has surged more than 3% over the last 5 days with a volume increase of over 50%, indicating a strong momentum shift.
+            - PREV_HIGH_BREAK: Today’s opening price sits within ±1 % of yesterday’s high, positioning the stock for an early breakout through the prior high.
+            - VOLUME_EXPANSION: Yesterday’s volume was ≥ 150 % of the 20-day average and today’s 1-day ROC is already ≥ +2 %, signaling sustained momentum with fresh money inflow.
+            - QUIET_PULLBACK: After a quiet day (True Range ≤ 70 % of its 20-day average), yesterday’s close finished within ±1 % of the 10-day SMA—setting up a low-volatility dip-buy.
+            - VOLATILITY_COMPRESSION: The 20-day Bollinger Band width has contracted to its lowest level in the past six months, indicating an imminent range expansion.
         - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
         - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
             - `trailing_pe`: Trailing Price-to-Earnings ratio.
@@ -912,53 +1011,39 @@ class SignalService:
             {"\n"}
             - fundamentals: {data.fundamentals}
             {"\n"}
-            - news: {data.news}
-            {"\n"}
             - dataframe: {data.dataframe}
             {"\n"}
             - report_summary: {report_summary}
+            {"\n"}
+            - S&P 500 Status: {data.spy_description} 
             {"\n"}
             - additional_info: {data.additional_info}
         ```
         {"\n\n"}
         ## Instructions
-
             ### Analyze Each Stock/ETF:
-            - Evaluate the triggered strategies and their technical details (e.g., RSI, MACD).
-            - Consider fundamental data (e.g., high ROE, low debt-to-equity) for stock quality.
-            - Factor in news headlines for sentiment or catalysts (e.g., earnings beats).
-            - Assess price_change_pct for momentum or reversal potential.
+            - Evaluate the triggered strategies and their technical details
+            - Consider fundamental data for stock quality.
             
             {"\n\n"}
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
-                For BUY/SELL:
-                - Entry Price: Suggested price to enter today (e.g., near last_price or a breakout level).
-                - Stop-Loss Price: Price to exit to limit losses (e.g., 2-5% below entry, based on ATR or support levels).
-                - Take-Profit Price: Price to exit for profit (e.g., 5-10% above entry, based on resistance or strategy).
+                For BUY/SELL: [Think First "WHY"]
+                - Entry Price: Suggested price to enter today
+                - Stop-Loss Price: Suggested Price to exit to limit losses
+                - Take-Profit Price: Suggested Price to exit for profit
                 
                 For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
 
             {"\n\n"}
             ### Reasoning:
-            - Explain your recommendation step-by-step, referencing specific technical/fundamental data and news.
+            - Explain your recommendation step-by-step, referencing specific technical/fundamental data.
 
             {"\n\n"}
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic (within 10% of last_price unless justified).
             - Consider short-term trading horizon (1-3 days).
-            - Avoid recommending stocks with no triggered strategies.
             - If fundamentals are unavailable (e.g., ETFs), focus on technicals and news.
-
-            {"\n\n"}
-            ### Output Format
-            Return a JSON array of recommendations, one per stock/ETF. Each recommendation should include:
-            - ticker: Stock/ETF ticker.
-            - recommendation: "BUY", "SELL", or "HOLD".
-            - entry_price: Suggested entry price (null for HOLD).
-            - stop_loss_price: Suggested stop-loss price (null for HOLD).
-            - take_profit_price: Suggested take-profit price (null for HOLD).
-            - reasoning: Step-by-step explanation of the recommendation.
         """
 
         return prompt
