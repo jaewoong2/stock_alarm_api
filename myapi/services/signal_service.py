@@ -5,12 +5,9 @@ import html
 from io import BytesIO
 import logging
 import re
-import time
 from typing import List, Optional, Union
-from urllib.parse import quote_plus
 import aiohttp
 import cloudscraper
-import feedparser
 import pandas as pd
 import pdfplumber
 import yfinance as yf
