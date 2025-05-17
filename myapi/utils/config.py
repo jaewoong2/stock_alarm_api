@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     BINANCE_FUTURES_API_KEY: str = ""
     BINANCE_FUTURES_API_SECRET: str = ""
 
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_DEFAULT_REGION: str = ""

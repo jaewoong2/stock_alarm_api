@@ -1,8 +1,16 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
+import datetime
+from email.utils import parsedate_to_datetime
+import html
 from io import BytesIO
 import logging
+import re
+import time
 from typing import List, Optional, Union
+from urllib.parse import quote_plus
+import aiohttp
 import cloudscraper
+import feedparser
 import pandas as pd
 import pdfplumber
 import yfinance as yf
@@ -15,6 +23,8 @@ from pandas_datareader import data as pdr
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
+    Article,
+    NewsResponse,
     SignalPromptData,
     TechnicalSignal,
     Strategy,
@@ -997,3 +1007,60 @@ class SignalService:
         # ★ content를 직접 bytes로 읽기
         raw_pdf = r.content  # 여기서는 decode 없음
         return raw_pdf
+
+    async def _fetch_page(self, start: int = 1) -> list[dict]:
+        NAVER_BASE = "https://openapi.naver.com/v1/search/news.json"
+        QUERIES = ["nasdaq", "s&p500"]
+
+        items = []
+
+        for query in QUERIES:
+            params = {"query": query, "display": 100, "start": start, "sort": "date"}
+            async with aiohttp.ClientSession(
+                headers={
+                    "X-Naver-Client-Id": self.settings.NAVER_CLIENT_ID,
+                    "X-Naver-Client-Secret": self.settings.NAVER_CLIENT_SECRET,
+                }
+            ) as session:
+                async with session.get(NAVER_BASE, params=params) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    items.extend(data["items"])
+
+        if not items:
+            return []
+
+        items.sort(key=lambda x: x["pubDate"], reverse=True)
+        items = items[:100]
+
+        if len(items) < 100:
+            return items
+        # 100개 이상인 경우, 최근 100개만 반환
+        items = items[:100]
+        return items
+
+    async def get_today_items(self) -> List[Article]:
+        items, start = [], 1
+
+        items = await self._fetch_page(start)
+
+        three_days_ago = datetime.datetime.now(
+            timezone.utc
+        ).astimezone().date() - timedelta(days=3)
+        today = datetime.datetime.now(timezone.utc).astimezone().date()
+
+        return [
+            Article(
+                id=it["link"],
+                title=html.unescape(re.sub(r"<\/?b>", "", it["title"])),
+                summary=html.unescape(re.sub(r"<\/?b>", "", it["description"])),
+                url=it["originallink"] or it["link"],
+                published=parsedate_to_datetime(it["pubDate"]),
+                category="naver",
+            )
+            for it in items
+            if (
+                parsedate_to_datetime(it["pubDate"]).date() >= three_days_ago
+                and parsedate_to_datetime(it["pubDate"]).date() <= today
+            )
+        ]

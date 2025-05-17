@@ -43,6 +43,15 @@ app.add_middleware(
 register_exception_handlers(app)
 
 
+# Middleware for logging requests and responses
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response: {response.status_code}")
+    return response
+
+
 # Exception handler for ServiceException
 @app.exception_handler(ServiceException)
 async def service_exception_handler(request: Request, exc: ServiceException):

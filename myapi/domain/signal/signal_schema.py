@@ -272,3 +272,35 @@ class SignalUpdate(BaseModel):
     action: Optional[str] = None
     probability: Optional[float] = None
     result_description: Optional[str] = None
+
+
+# models.py
+from datetime import date, datetime
+from typing import Literal, List
+from pydantic import BaseModel, Field
+
+
+class Article(BaseModel):
+    id: str
+    title: str
+    summary: str
+    url: str
+    published: datetime
+    category: str = Field(..., examples=["earnings", "m&a", "regulatory"])
+
+
+class NewsResponse(BaseModel):
+    date: date
+    articles: List[Article]
+
+
+class TickerImpact(BaseModel):
+    ticker: str
+    catalyst: str
+    sentiment: Literal["positive", "neutral", "negative"]
+    source_article_id: str
+
+
+class DateRange(BaseModel):
+    start: date
+    end: date

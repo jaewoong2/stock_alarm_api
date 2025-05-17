@@ -1,7 +1,8 @@
+from asyncio import sleep
 import json
 import logging
 from venv import logger
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
@@ -11,11 +12,13 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
     DefaultStrategies,
     DefaultTickers,
+    NewsResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
     SignalResponse,
     TechnicalSignal,
+    TickerImpact,
     TickerReport,
 )
 from myapi.repositories.signals_repository import SignalsRepository
@@ -124,7 +127,7 @@ def llm_query(
 
 @router.post("/", response_model=SignalResponse)
 @inject
-def get_signals(
+async def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
@@ -207,6 +210,8 @@ def get_signals(
             additional_info=None,
         )
 
+        await sleep(3)
+
         message = aws_service.generate_queue_message_http(
             body=data.model_dump_json(),
             path="signals/llm-query",
@@ -231,3 +236,11 @@ def get_signals(
             else "시장 컨디션이 좋지 않습니다. (예: 지수가 50 SMA 아래)"
         ),
     )
+
+
+@router.get("/naver/news/today")
+@inject
+async def naver_today_news(
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+):
+    return await signal_service.get_today_items()
