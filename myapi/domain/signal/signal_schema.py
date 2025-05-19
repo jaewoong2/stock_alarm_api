@@ -1,3 +1,4 @@
+from tkinter import NO
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 from typing import List, Dict, Literal, Optional
@@ -18,7 +19,6 @@ Strategy = Literal[
     "TREND_UP",
     "TREND_DOWN",
     "DONCHIAN_BREAKOUT",
-    "PREV_HIGH_BREAK",
     "VOLUME_EXPANSION",
     "QUIET_PULLBACK",
     "VOLATILITY_COMPRESSION",
@@ -40,7 +40,6 @@ DefaultStrategies: List[Strategy] = [
     "TREND_UP",
     "TREND_DOWN",
     "DONCHIAN_BREAKOUT",
-    "PREV_HIGH_BREAK",
     "VOLUME_EXPANSION",
     "QUIET_PULLBACK",
     "VOLATILITY_COMPRESSION",
@@ -164,7 +163,7 @@ class NewsHeadline(BaseModel):
 class TickerReport(BaseModel):
     ticker: str
     last_price: float | None = None
-    price_change_pct: float
+    price_change_pct: float | None = None
 
     signals: List[TechnicalSignal]
     fundamentals: FundamentalData | None = None
@@ -179,8 +178,8 @@ class SignalPromptData(BaseModel):
 
     ticker: str
     dataframe: str | None = None
-    last_price: float
-    price_change_pct: float
+    last_price: float | None = None
+    price_change_pct: float | None = None
     triggered_strategies: list[str]
     technical_details: Dict[str, Dict[str, float | None]]
     fundamentals: FundamentalData | None = None

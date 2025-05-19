@@ -202,7 +202,7 @@ async def get_signals(
             ticker=report.ticker,
             dataframe=report.dataframe,
             last_price=report.last_price or 0.0,
-            price_change_pct=report.price_change_pct,
+            price_change_pct=report.price_change_pct or 0.0,
             triggered_strategies=triggered_strategies,
             technical_details=technical_details,
             fundamentals=report.fundamentals,
@@ -215,12 +215,15 @@ async def get_signals(
 
         await sleep(3)
 
-        message = aws_service.generate_queue_message_http(
-            body=data.model_dump_json(),
-            path="signals/llm-query",
-            method="POST",
-            query_string_parameters={},
-        )
+        try:
+            message = aws_service.generate_queue_message_http(
+                body=data.model_dump_json(),
+                path="signals/llm-query",
+                method="POST",
+                query_string_parameters={},
+            )
+        except Exception as e:
+            logger.error(f"Error generating SQS message: {e}")
 
         try:
             aws_service.send_sqs_message(
@@ -228,7 +231,7 @@ async def get_signals(
                 message_body=json.dumps(message),
             )
         except Exception as e:
-            print(f"Error sending SQS message: {e}")
+            logger.error(f"Error Sending SQS message: {e}")
 
     return SignalResponse(
         run_date=run_date,

@@ -504,18 +504,6 @@ class SignalService:
         prev_high = df["High"].iloc[-2]
         prev_close = df["Close"].iloc[-2]
 
-        # 2) PREV_HIGH_BREAK
-        if "PREV_HIGH_BREAK" in strategies:
-            open_px = df["Open"].iloc[-1]
-            triggered = (open_px >= prev_high * 0.99) and (open_px <= prev_high * 1.01)
-            out.append(
-                TechnicalSignal(
-                    strategy="PREV_HIGH_BREAK",
-                    triggered=triggered,
-                    details={"open": open_px, "prev_high": prev_high},
-                )
-            )
-
         # 3) VOLUME_EXPANSION
         if "VOLUME_EXPANSION" in strategies:
             triggered = (vol_ratio20 >= 1.5) and (roc1 >= 0.02)
