@@ -2,7 +2,7 @@ from asyncio import sleep
 import json
 import logging
 from venv import logger
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
@@ -12,13 +12,11 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
     DefaultStrategies,
     DefaultTickers,
-    NewsResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
     SignalResponse,
     TechnicalSignal,
-    TickerImpact,
     TickerReport,
 )
 from myapi.repositories.signals_repository import SignalsRepository

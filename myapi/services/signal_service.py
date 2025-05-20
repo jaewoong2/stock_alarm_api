@@ -21,7 +21,6 @@ from myapi.repositories.signals_repository import SignalsRepository
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     Article,
-    NewsResponse,
     SignalPromptData,
     TechnicalSignal,
     Strategy,

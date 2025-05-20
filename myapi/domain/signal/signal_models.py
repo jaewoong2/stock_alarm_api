@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, Column, Integer, Float, String, DateTime
+from sqlalchemy import Column, Integer, Float, String, DateTime
 from datetime import datetime
 from myapi.database import Base
 
