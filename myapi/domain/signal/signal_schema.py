@@ -21,6 +21,7 @@ Strategy = Literal[
     "VOLUME_EXPANSION",
     "QUIET_PULLBACK",
     "VOLATILITY_COMPRESSION",
+    "VCP_DAILY",
 ]
 
 DefaultStrategies: List[Strategy] = [
@@ -42,6 +43,7 @@ DefaultStrategies: List[Strategy] = [
     "VOLUME_EXPANSION",
     "QUIET_PULLBACK",
     "VOLATILITY_COMPRESSION",
+    "VCP_DAILY",
 ]
 
 DefaultTickers = [

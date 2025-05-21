@@ -463,6 +463,21 @@ class SignalService:
             & (df["Close"] > df["Open"].shift(1))  # 오늘 종가 > 전일 시가
         )
 
+        # (신규) 장기 추세용 SMA150 ─ VCP 필터에서 사용
+        df["SMA150"] = ta.sma(df["Close"], length=150)
+
+        # (신규) VCP 보조지표 -------------------------------
+        long_win, short_win = 20, 5  # ‘긴 변동성’/‘짧은 변동성’ 구간
+        # ­♠ ① 구간별 변동폭(%)
+        df["RANGE_LONG"] = (
+            df["High"].rolling(long_win).max() - df["Low"].rolling(long_win).min()
+        ) / df["Low"].rolling(long_win).min()
+        df["RANGE_SHORT"] = (
+            df["High"].rolling(short_win).max() - df["Low"].rolling(short_win).min()
+        ) / df["Low"].rolling(short_win).min()
+        # ­♠ ② 거래량 드라이-업 지표(당일-vs-20일 평균 비율)
+        df["VCP_VOL_REL"] = df["Volume"] / df["Volume"].rolling(long_win).mean()
+
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
 
         return df
@@ -824,6 +839,51 @@ class SignalService:
                         "prev_donch_high": donch_high_prev,
                         "adx": adx_last,
                         "vol_z": vol_z,
+                    },
+                )
+            )
+
+        if "VCP_DAILY" in strategies:
+            # 트렌드 필터: SMA50 > SMA150 > SMA200
+            trend_ok = (
+                "SMA50" in cols
+                and "SMA150" in cols
+                and "SMA200" in cols
+                and df["SMA50"].iloc[-1] > df["SMA150"].iloc[-1] > df["SMA200"].iloc[-1]
+            )
+
+            # 변동성 수축(‘널널’ 버전): 최근 5일 폭이 최근 20일 폭의 75% 미만
+            range_long = df["RANGE_LONG"].iloc[-1] if "RANGE_LONG" in cols else None
+            range_short = df["RANGE_SHORT"].iloc[-1] if "RANGE_SHORT" in cols else None
+            contraction = (
+                range_long is not None
+                and range_short is not None
+                and range_short < range_long * 0.75
+            )
+
+            # 거래량 드라이-업(‘널널’): 오늘 볼륨이 20일 평균의 0.8 미만
+            vol_rel = df["VCP_VOL_REL"].iloc[-1] if "VCP_VOL_REL" in cols else None
+            vol_dry = vol_rel is not None and vol_rel < 0.8
+
+            # 피벗: 전일 포함 10일 최고가 돌파(살짝 여유 0.5% 버퍼)
+            pivot_high = df["High"].rolling(10).max().iloc[-2]
+            price_break = df["Close"].iloc[-1] > pivot_high * 1.005
+
+            triggered = bool(trend_ok and contraction and vol_dry)
+
+            out.append(
+                TechnicalSignal(
+                    strategy="VCP_DAILY",
+                    triggered=triggered,
+                    details={
+                        "range_long_pct": (
+                            round(range_long * 100, 2) if range_long else None
+                        ),
+                        "range_short_pct": (
+                            round(range_short * 100, 2) if range_short else None
+                        ),
+                        "vol_rel20": round(vol_rel, 2) if vol_rel else None,
+                        "pivot_high": pivot_high,
                     },
                 )
             )
