@@ -47,52 +47,66 @@ DefaultStrategies: List[Strategy] = [
 ]
 
 DefaultTickers = [
-    # ETF
-    "SPY",  # SPDR S&P 500 ETF Trust
-    "QQQ",  # Invesco QQQ Trust
-    "IWM",  # iShares Russell 2000 ETF
-    "XLK",  # Technology Select Sector SPDR Fund
-    "XLF",  # Financial Select Sector SPDR Fund
-    "TQQQ",  # ProShares UltraPro QQQ
-    "SQQQ",  # ProShares UltraPro QQQ
-    "SOXL",  # Direxion Daily Semiconductor Bull 3X Shares
-    "SPXL",  # S&P 500 Bull 3X Shares
-    "XBI",  # SPDR S&P Biotech ETF
-    "XOP",  # SPDR S&P Oil & Gas Exploration & Production ETF
-    "KRE",  # SPDR S&P Regional Banking ETF
-    "SMH",  # VanEck Vectors Semiconductor ETF
-    "XLE",  # Energy Select Sector SPDR Fund
-    "GDX",  # VanEck Vectors Gold Miners ETF
-    "XRT",  # SPDR S&P Retail ETF
-    "UVXY",  # ProShares Ultra VIX Short-Term Futures ETF
-    "VWO",  # Vanguard FTSE Emerging Markets ETF
-    "ARKK",  # ARK Innovation ETF
-    # Stocks
-    "META",  # Meta Platforms, Inc.
-    "MU",  # Micron Technology, Inc.
-    "GOOGL",  # Alphabet Inc. (Class A)
-    "AVGO",  # Broadcom, Inc.
-    "NFLX",  # Netflix, Inc.
-    "AAPL",  # Apple Inc.
-    "MSFT",  # Microsoft Corporation
-    "NVDA",  # NVIDIA Corporation
-    "AMD",  # Advanced Micro Devices, Inc.
-    "TSLA",  # Tesla, Inc.
-    "JPM",  # JPMGan Chase & Co.
-    "BAC",  # Bank of America Corporation
-    "AMZN",  # Amazon.com, Inc.
-    "WMT",  # Walmart Inc.
-    "COIN",  # Coinbase Global, Inc.
-    "HOOD",  # Robinhood Markets, Inc.
-    "MSTR",  # MicroStrategy
-    "SMCI",  # Super Micro Computer, Inc.
-    "CRM",  # Salesforce, Inc.
-    "MRVL",  # Marvell Technology, Inc.
-    "FSLR",  # First Solar, Inc.
-    "PLTR",  # Palantir Technologies Inc.
-    "RBLX",  # Roblox Corporation
-    "LMT",  # Lockheed Martin Corporation
-    "MMM",  # 3M Company
+    "TSLA",
+    "NVDA",
+    "AMZN",
+    "MSFT",
+    "GOOGL",
+    "ORCL",
+    "TSM",
+    "ASML",
+    "CEG",
+    "VST",
+    "OKLO",
+    "SMR",
+    "EQT",
+    "LNG",
+    "KMI",
+    "JPM",
+    "GS",
+    "BLK",
+    "AFRM",
+    "SOFI",
+    "MSTR",
+    "HOOD",
+    "COIN",
+    "RCAT",
+    "UMAC",
+    "JOBY",
+    "ACHR",
+    "PLTR",
+    "RDDT",
+    "SOUN",
+    "CRNC",
+    "SERV",
+    "ARBE",
+    "DXYZ",
+    "RKLB",
+    "LUNR",
+    "PL",
+    "IONQ",
+    "RGTI",
+    "QBTS",
+    "GEO",
+    "AXON",
+    "SPY",
+    "QQQ",
+    "ARKK",
+    "META",
+    "MU",
+    "AVGO",
+    "NFLX",
+    "AAPL",
+    "AMD",
+    "BAC",
+    "WMT",
+    "SMCI",
+    "CRM",
+    "MRVL",
+    "FSLR",
+    "RBLX",
+    "LMT",
+    "MMM",
 ]
 
 
