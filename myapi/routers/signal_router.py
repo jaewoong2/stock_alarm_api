@@ -1,6 +1,7 @@
 from asyncio import sleep
 import json
 import logging
+from typing import List, Literal
 from venv import logger
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
@@ -12,6 +13,7 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
     DefaultStrategies,
     DefaultTickers,
+    SignalBaseResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
@@ -22,6 +24,7 @@ from myapi.domain.signal.signal_schema import (
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
+from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
 from myapi.utils.utils import format_signal_response
@@ -248,3 +251,41 @@ async def naver_today_news(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
     return await signal_service.get_today_items()
+
+
+@router.get("/today", response_model=List[SignalBaseResponse])
+@inject
+async def get_today_signals(
+    action: Literal["buy", "sell", "hold", "all"] = "buy",
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    오늘 생성된 모든 시그널을 조회합니다.
+    """
+    return await db_signal_service.get_today_signals(action=action)
+
+
+@router.get("/today/{ticker}", response_model=List[SignalBaseResponse])
+@inject
+async def get_today_signals_by_ticker(
+    ticker: str,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    오늘 생성된 특정 티커의 시그널을 조회합니다.
+    """
+    # 오늘 날짜에 해당하는 모든 시그널 가져오기
+    all_today_signals = await db_signal_service.get_today_signals()
+
+    # 특정 티커에 해당하는 시그널만 필터링
+    ticker_signals = [
+        signal
+        for signal in all_today_signals
+        if signal.ticker.upper() == ticker.upper()
+    ]
+
+    return ticker_signals

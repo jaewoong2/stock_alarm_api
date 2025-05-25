@@ -8,6 +8,7 @@ from myapi.services import futures_service
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.coinone_service import CoinoneService
+from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
@@ -75,6 +76,10 @@ class ServiceModule(containers.DeclarativeContainer):
         SignalService,
         signals_repository=repositories.signals_repository,
         settings=config.config,
+    )
+
+    db_signal_service = providers.Factory(
+        DBSignalService, repository=repositories.signals_repository
     )
 
 

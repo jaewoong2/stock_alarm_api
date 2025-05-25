@@ -211,7 +211,10 @@ class SignalsRepository:
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
     def get_signals_by_date_range(
-        self, start_date: datetime, end_date: Optional[datetime] = None
+        self,
+        start_date: datetime,
+        end_date: Optional[datetime] = None,
+        action: Optional[str] = None,
     ) -> List[SignalBaseResponse]:
         """
         특정 날짜 범위 내의 신호를 가져옵니다.
@@ -224,9 +227,12 @@ class SignalsRepository:
             self.db_session.query(Signals)
             .filter(Signals.timestamp.between(start_date, end_date))
             .order_by(desc(Signals.timestamp))
-            .all()
         )
-        return [SignalBaseResponse.model_validate(s) for s in signals]
+
+        if action == "buy" or action == "sell" or action == "hold":
+            signals = signals.filter(Signals.action == action)
+
+        return [SignalBaseResponse.model_validate(s) for s in signals.all()]
 
     def get_signals_by_probability(
         self, min_probability: float, max_probability: Optional[float] = None

@@ -246,6 +246,7 @@ class SignalBase(BaseModel):
     probability: Optional[str] = None
     result_description: Optional[str] = None
     report_summary: Optional[str] = None
+    strategy: Optional[str] = None
 
 
 class SignalVO(SignalBase):

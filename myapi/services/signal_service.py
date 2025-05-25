@@ -843,13 +843,15 @@ class SignalService:
                 )
             )
 
+        sma150_last = df["SMA150"].iloc[-1] if "SMA150" in cols else None
+
         if "VCP_DAILY" in strategies:
             # 트렌드 필터: SMA50 > SMA150 > SMA200
             trend_ok = (
-                "SMA50" in cols
-                and "SMA150" in cols
-                and "SMA200" in cols
-                and df["SMA50"].iloc[-1] > df["SMA150"].iloc[-1] > df["SMA200"].iloc[-1]
+                sma50_last is not None
+                and sma150_last is not None
+                and sma200_last is not None
+                and sma50_last > sma150_last > sma200_last
             )
 
             # 변동성 수축(‘널널’ 버전): 최근 5일 폭이 최근 20일 폭의 75% 미만
@@ -863,7 +865,7 @@ class SignalService:
 
             # 거래량 드라이-업(‘널널’): 오늘 볼륨이 20일 평균의 0.8 미만
             vol_rel = df["VCP_VOL_REL"].iloc[-1] if "VCP_VOL_REL" in cols else None
-            vol_dry = vol_rel is not None and vol_rel < 0.8
+            vol_dry = vol_rel is not None and vol_rel < 1.0
 
             # 피벗: 전일 포함 10일 최고가 돌파(살짝 여유 0.5% 버퍼)
             pivot_high = df["High"].rolling(10).max().iloc[-2]
