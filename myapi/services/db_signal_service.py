@@ -13,7 +13,6 @@ from myapi.domain.signal.signal_schema import (
 
 
 class DBSignalService:
-
     def __init__(self, repository: SignalsRepository):
         self.repository = repository
         self.logger = logging.getLogger(__name__)

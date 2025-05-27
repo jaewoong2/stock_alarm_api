@@ -133,13 +133,15 @@ async def get_signals(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
-    START_DAYS_BACK: int = 100
+    START_DAYS_BACK: int = 400
     run_date = date.today()
     tickers = req.tickers or DefaultTickers
     strategies = DefaultStrategies
 
     start = run_date - timedelta(days=START_DAYS_BACK)
 
+    spy_persentage_from_200ma = 0.0
+    mkt_ok = False
     reports: list[TickerReport] = []
     for t in tickers:
         df = signal_service.fetch_ohlcv(t, start=start)
@@ -148,6 +150,12 @@ async def get_signals(
             continue
 
         df = signal_service.add_indicators(df)
+
+        if t == "SPY":
+            spy_persentage_from_200ma = (
+                (df["Close"].iloc[-1] - df["SMA200"].iloc[-1]) / df["SMA200"].iloc[-1]
+            ) * 100
+            mkt_ok = spy_persentage_from_200ma > 0.0
 
         tech_sigs = [
             TechnicalSignal(
@@ -172,8 +180,6 @@ async def get_signals(
                 dataframe=df.tail(20).round(3).to_csv(),
             )
         )
-
-    mkt_ok = signal_service.market_ok()
 
     triggered_report = [
         report
@@ -209,7 +215,9 @@ async def get_signals(
             fundamentals=report.fundamentals,
             news=report.news,
             spy_description=(
-                "S&P500(SPY) is Abobe SMA20" if mkt_ok else "S&P500(SPY) is Below SMA20"
+                f"S&P500(SPY) is Abobe SMA20 above {spy_persentage_from_200ma}%"
+                if mkt_ok
+                else f"S&P500(SPY) is Below SMA20 below {spy_persentage_from_200ma}%"
             ),
             additional_info=None,
         )

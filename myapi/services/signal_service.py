@@ -821,8 +821,8 @@ class SignalService:
             )
 
         if "DONCHIAN_BREAKOUT" in strategies:
-            donch_high_prev = df["DONCHU_20"].iloc[-2]
-            donch_high_now = df["DONCHU_20"].iloc[-1]
+            donch_high_prev = df["DCU_20_20"].iloc[-2]
+            donch_high_now = df["DCU_20_20"].iloc[-1]
 
             triggered = bool(
                 close_last > donch_high_prev  # 20일 고가 돌파
