@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     database_port: str = ""
     database_schema: str = ""
 
+    GEMINI_API_KEY: str = ""
+
 
 @lru_cache
 def get_settings():

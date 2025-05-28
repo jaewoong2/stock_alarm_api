@@ -10,6 +10,8 @@ from myapi.domain.ai.ai_schema import ChatModel, TradingResponse
 from myapi.domain.ai.const import generate_prompt
 from myapi.domain.trading.coinone_schema import ActiveOrder
 from myapi.utils.config import Settings
+from google import genai
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
 # T는 BaseModel을 상속하는 타입이어야 합니다.
 T = TypeVar("T", bound=BaseModel)
@@ -19,6 +21,57 @@ class AIService:
     def __init__(self, settings: Settings):
         self.hyperbolic_api_key = settings.HYPERBOLIC_API_KEY
         self.open_api_key = settings.OPENAI_API_KEY
+        self.gemini_api_key = settings.GEMINI_API_KEY
+
+    def gemini_search_grounding(
+        self,
+        prompt: str,
+    ):
+        client = genai.Client(api_key=self.gemini_api_key)
+
+        google_search_tool = Tool(google_search=GoogleSearch())
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-05-20",
+            contents=prompt,
+            config=GenerateContentConfig(
+                tools=[google_search_tool],
+                response_modalities=["TEXT"],
+            ),
+        )
+
+        result = ""
+        if (
+            response.candidates
+            and response.candidates[0].content
+            and hasattr(response.candidates[0].content, "parts")
+        ):
+            if response.candidates[0].content.parts:
+                for each in response.candidates[0].content.parts:
+                    if each.text is not None:
+                        result += each.text
+
+        return result if result != "" else "No results found."
+
+    def gemini_completion(
+        self,
+        prompt: str,
+        schema: Type[T],
+    ):
+        """
+        OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
+        결과는 아래 JSON 스키마 형식으로 반환됩니다:
+        """
+        client = genai.Client(api_key=self.gemini_api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-05-20",
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+            },
+        )
+
+        return response.parsed
 
     def analyze_grid(
         self,

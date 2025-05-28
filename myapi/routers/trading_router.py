@@ -2,6 +2,7 @@
 import logging
 from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from myapi.domain.trading.trading_schema import TechnicalAnalysisResponse
 from myapi.services.ai_service import AIService
 from myapi.services.discord_service import DiscordService
@@ -145,3 +146,26 @@ def grid_trading(
         size=200,
         market_data={},
     )
+
+
+@router.post("/ai/search", tags=["ai"])
+@inject
+def gemini_search(
+    prompt: str,
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+):
+
+    return ai_service.gemini_search_grounding(prompt=prompt)
+
+
+@router.post("/ai/completion", tags=["ai"])
+@inject
+def gemini_complemtion(
+    prompt: str,
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+):
+
+    class TextBaseModel(BaseModel):
+        text: str
+
+    return ai_service.gemini_completion(prompt=prompt, schema=TextBaseModel)
