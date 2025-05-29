@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
+from numpy import add
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -27,7 +28,7 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
-from myapi.utils.utils import format_signal_response
+from myapi.utils.utils import export_slim_tail_csv, format_signal_response
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -78,7 +79,26 @@ def llm_query(
     LLM 쿼리를 처리하는 엔드포인트입니다.
     """
 
-    pdf_report, summary = None, None
+    pdf_report, summary, web_search_gemini_result = None, None, None
+
+    try:
+
+        today = date.today()
+        today_YYYY_MM_DD = today.strftime("%Y-%m-%d")
+        web_search_gemini_result = ai_service.gemini_search_grounding(
+            prompt=signal_service.generate_web_search_prompt(
+                req.ticker, today_YYYY_MM_DD
+            )
+        )
+        if req.additional_info:
+            req.additional_info = (
+                req.additional_info + "\n\n" + web_search_gemini_result
+            )
+        else:
+            req.additional_info = web_search_gemini_result
+    except Exception as e:
+        logger.error(f"Error fetching web search results: {e}")
+        web_search_gemini_result = None
 
     try:
         pdf_report = get_investment_pdf(ticker=req.ticker)
@@ -153,8 +173,9 @@ async def get_signals(
 
         if t == "SPY":
             spy_persentage_from_200ma = (
-                (df["Close"].iloc[-1] - df["SMA200"].iloc[-1]) / df["SMA200"].iloc[-1]
-            ) * 100
+                ((df["Close"].iloc[-1] - df["SMA200"].iloc[-1]) / df["SMA200"].iloc[-1])
+                * 100
+            ) or 0.0
             mkt_ok = spy_persentage_from_200ma > 0.0
 
         tech_sigs = [
@@ -177,7 +198,7 @@ async def get_signals(
                 signals=tech_sigs,
                 fundamentals=funda,
                 news=None,
-                dataframe=df.tail(20).round(3).to_csv(),
+                dataframe=export_slim_tail_csv(df, 260),
             )
         )
 
@@ -215,9 +236,9 @@ async def get_signals(
             fundamentals=report.fundamentals,
             news=report.news,
             spy_description=(
-                f"S&P500(SPY) is Abobe SMA20 above {spy_persentage_from_200ma}%"
+                f"S&P500(SPY) is Abobe SMA20 above {round(spy_persentage_from_200ma, 3)}%"
                 if mkt_ok
-                else f"S&P500(SPY) is Below SMA20 below {spy_persentage_from_200ma}%"
+                else f"S&P500(SPY) is Below SMA20 below {round(spy_persentage_from_200ma, 3)}%"
             ),
             additional_info=None,
         )

@@ -137,6 +137,15 @@ class TechnicalSignal(BaseModel):
     details: Dict[str, float | None]
     triggered_description: str | None = None
 
+    def model_post_init(self, __context):
+        """
+        Post-initialization hook to round float values in details to 2 decimal places.
+        """
+        if self.details:
+            for key, value in self.details.items():
+                if isinstance(value, float) and value is not None:
+                    self.details[key] = round(value, 2)
+
     @property
     def description(self) -> str:
         """

@@ -1016,35 +1016,25 @@ class SignalService:
         """
 
         prompt = f"""
-        You are an expert stock trader with deep knowledge of technical and fundamental analysis. Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today. For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price. Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility. Ensure recommendations are realistic and aligned with short-term trading (1-2 days).
+        You are an expert stock trader with deep knowledge of technical and fundamental analysis.
+        Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today.
+        For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price.
+        Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility.
+        Ensure recommendations are realistic and aligned with short-term trading (1-2 days).
+        
+        ### Step-by-Step Instructions
+        1. THINK: Extract all bullish/bearish signals from the last row of the CSV And Signals. 
+        2. REFLECT: Stress-test those signals against the prior 20 rows and list any conflicts.  
+        
         {"\n\n"}
         ### Input Data
         Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
         - `ticker`: Stock/ETF ticker symbol.
         - `last_price`: Closing price from the previous day.
         - `price_change_pct`: Percentage price change from the day before.
-        - `triggered_strategies`: List of technical strategies triggered, with descriptions:
-            - PULLBACK: Price has dipped close to the 10-day SMA while remaining above the 50-day SMA—aiming to “buy the dip” within an ongoing uptrend.
-            - OVERSOLD: RSI(14) falls below 40, the price trades near the lower Bollinger Band (BBL_20_2.0), and Stochastic %K is under 30, signaling potential oversold conditions.
-            - MACD_LONG: The MACD histogram (MACDh) moves from deep negative territory (e.g. below –0.20) to above –0.05, and the MACD line crosses above its signal line, indicating a bullish shift.
-            - VOL_DRY_BOUNCE: After a period of unusually low volume (“dry-up”), volume begins to recover and the price bounces—capturing a rebound from a low-volume pullback.
-            - GOLDEN_CROSS: The 50-day SMA crosses above (or nearly crosses) the 200-day SMA, accompanied by a volume Z-score (VOL_Z) above 0.5, suggesting a strong bullish reversal.
-            - MEAN_REVERSION: Price deviates significantly below the 20-day SMA (previous close < 95% of SMA20) then reverts back within ±10% of the SMA20—trading on the expectation of average-reversion.
-            - BREAKOUT: The current price exceeds 98% of its 52-week high while RSI remains below 70, identifying a near-high breakout with room for further upside.
-            - GAP_UP: The price opens significantly higher than the previous close (e.g. > 2%) with a volume Z-score above 0.5, indicating a strong bullish gap.
-            - MOMENTUM_SURGE: The price has surged more than 3% over the last 5 days with a volume increase of over 50%, indicating a strong momentum shift.
-            - PREV_HIGH_BREAK: Today’s opening price sits within ±1 % of yesterday’s high, positioning the stock for an early breakout through the prior high.
-            - VOLUME_EXPANSION: Yesterday’s volume was ≥ 150 % of the 20-day average and today’s 1-day ROC is already ≥ +2 %, signaling sustained momentum with fresh money inflow.
-            - QUIET_PULLBACK: After a quiet day (True Range ≤ 70 % of its 20-day average), yesterday’s close finished within ±1 % of the 10-day SMA—setting up a low-volatility dip-buy.
-            - VOLATILITY_COMPRESSION: The 20-day Bollinger Band width has contracted to its lowest level in the past six months, indicating an imminent range expansion.
+        - `triggered_strategies`: List of triggered strategies (e.g., VOLUME_EXPANSION, PULLBACK).
         - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
         - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
-            - `trailing_pe`: Trailing Price-to-Earnings ratio.
-            - `eps_surprise_pct`: Earnings per share surprise percentage.
-            - `revenue_growth`: Year-over-year revenue growth percentage.
-            - `roe`: Return on equity percentage.
-            - `debt_to_equity`: Debt-to-equity ratio.
-            - `fcf_yield`: Free cash flow yield percentage.
         - `news`: Recent news headlines (sentiment analysis currently unavailable).
         {"\n\n"}
         ```json
@@ -1195,3 +1185,48 @@ class SignalService:
                 and parsedate_to_datetime(it["pubDate"]).date() <= today
             )
         ]
+
+    def generate_web_search_prompt(
+        self,
+        ticker: str,
+        date: datetime.date | str,
+    ) -> str:
+        """
+        Generate a prompt for web search based on the stock ticker and report summary.
+        """
+        prompt = f"""
+        You are a sell-side research assistant with real-time web access and citation capability.
+        Act like a professional equity analyst preparing a morning brief.
+        If you use any web sources, cite them in IEEE style (e.g. [1]).
+        Think step by step, but reveal only the final answer to the user.
+
+        ╭─ TASK
+        │ 1. Search the open web for
+        │    • News articles about TICKER[{ticker}] published in the last 7 days [current_date = {date}].
+        │    • Sell-side research notes / rating changes / price-target updates on Ticekr[{ticker}] in the same window.
+        │ 2. Summarise each item.
+        │ 3. Output strictly in the JSON schema below.
+        ╰─ END TASK
+
+        ╭─ SEARCH PROTOCOL (follow exactly)
+        │ • Run two separate queries:
+        │   ① "{ticker} stock news past 7 days"  
+        │   ② "{ticker} analyst report OR price target OR upgrade OR downgrade past 7 days"
+        │ • Recency filter: --recency=7
+        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com, seekingalpha.com, marketwatch.com, barrons.com, investorplace.com
+        │ • Fetch max 8 total documents. Skip duplicates.
+        │ • If no valid hit → return "NO RECENT NEWS".
+        ╰─ END PROTOCOL
+
+        ╭─ OUTPUT SCHEMA
+        [
+            "date": "YYYY-MM-DD",
+            "type": "News | Research",
+            "summary": "string",
+            "description": "string",
+            "sentiment": "Positive | Neutral | Negative",
+            "recommendation": "Buy | Hold | Sell | None",
+        ]
+        ╰─ END SCHEMA
+        """
+        return prompt

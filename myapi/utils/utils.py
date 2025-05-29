@@ -1,3 +1,4 @@
+from pandas import DataFrame
 from myapi.domain.signal.signal_schema import SignalPromptResponse
 
 
@@ -179,3 +180,51 @@ def format_signal_response(response: SignalPromptResponse) -> str:
 
     # 문자열로 반환
     return "\n".join(lines)
+
+
+def export_slim_tail_csv(df: DataFrame, rows: int = 260):
+    """
+    마지막 `rows`행만 가져와 필요한 컬럼만 남기고
+    소수점 3자리로 반올림해 CSV로 저장한다.
+
+    Parameters
+    ----------
+    df   : pandas.DataFrame
+    path : str – 저장할 파일 경로
+    rows : int – 뒤에서부터 가져올 행 수 (기본 260)
+    """
+    keep_cols = [
+        "Date",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "SMA5",
+        "SMA20",
+        "SMA50",
+        "SMA150",
+        "SMA200",
+        "ATR14",
+        "ATR_PCT",
+        "RSI14",
+        "RSI5",
+        "MACD_12_26_9",
+        "MACDh_12_26_9",
+        "MACDs_12_26_9",
+        "VOL20",
+        "BBP_20_2.0",
+        "BB_WIDTH",
+        "ADX_14",
+        "DMP_14",
+        "DMN_14",
+        "ROC1",
+        "ROC5",
+        "VWAP",
+        "GAP_PCT",
+    ]
+
+    # 교집합만 선택해 예상치 못한 결측 컬럼 오류 방지
+    cols_to_use = [c for c in keep_cols if c in df.columns]
+
+    return df.loc[:, cols_to_use].round(3).tail(rows).to_csv()
