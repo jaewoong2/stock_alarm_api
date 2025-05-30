@@ -94,6 +94,58 @@ class AwsService:
             fileobj, bucket_name, object_key, ExtraArgs={"ContentType": content_type}
         )
 
+    def send_sqs_fifo_message(
+        self,
+        queue_url: str,
+        message_body: str,
+        message_group_id: str,
+        message_deduplication_id: Optional[str] = None,
+        delay_seconds: int = 0,
+    ) -> dict:
+        """
+        AWS SQS FIFO 큐에 메시지를 전송합니다.
+
+        Args:
+            queue_url (str): SQS FIFO 큐의 URL
+            message_body (str): 전송할 메시지 본문
+            message_group_id (str): 메시지 그룹 ID
+            message_deduplication_id (str, optional): 메시지 중복 방지 ID. 기본값은 None
+            delay_seconds (int, optional): 메시지 전송 지연 시간(초). 기본값은 0
+
+        Returns:
+            dict: SQS 서비스의 응답 데이터
+
+        Raises:
+            HTTPException: SQS 메시지 전송 중 오류 발생 시
+        """
+        try:
+            sqs = boto3.client(
+                "sqs",
+                region_name=REGION_NAME,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+            )
+
+            params = {
+                "QueueUrl": queue_url,
+                "MessageBody": message_body,
+                "MessageGroupId": message_group_id,
+            }
+
+            if message_deduplication_id:
+                params["MessageDeduplicationId"] = message_deduplication_id
+
+            if delay_seconds > 0:
+                params["DelaySeconds"] = str(delay_seconds)
+
+            response = sqs.send_message(**params)
+            return response
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error sending FIFO message to SQS: {str(e)}"
+            )
+
     def send_sqs_message(
         self,
         queue_url: str,

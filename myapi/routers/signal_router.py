@@ -136,6 +136,7 @@ def llm_query(
     discord_service: DiscordService = Depends(
         Provide[Container.services.discord_service]
     ),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -144,7 +145,6 @@ def llm_query(
     pdf_report, summary, web_search_gemini_result = None, None, None
 
     try:
-
         today = date.today()
         today_YYYY_MM_DD = today.strftime("%Y-%m-%d")
         web_search_gemini_result = ai_service.gemini_search_grounding(
@@ -191,57 +191,49 @@ def llm_query(
     google_result, openai_result = None, None
 
     try:
-        google_result = generate_signal_result(
-            prompt=prompt,
-            req=req,
-            ai="GOOGLE",  # "GOOGLE" based on your preference
-            signals_repository=signals_repository,
-            ai_service=ai_service,
-            discord_service=discord_service,
-            summary=summary or "No summary available",
+        google_result = aws_service.generate_queue_message_http(
+            body=req.model_dump_json(),
+            path="signals/generate-signal-reult",
+            method="POST",
+            query_string_parameters={
+                "prompt": prompt,
+                "summary": summary or "No summary available",
+                "ai": "GOOGLE",
+            },
         )
+        aws_service.send_sqs_fifo_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+            message_body=json.dumps(google_result),
+            message_group_id="google",
+            message_deduplication_id=req.ticker + str(date.today()),
+        )
+
     except Exception as e:
         logger.error(f"Error generating Google signal result: {e}")
+        logger.error(f"Error Sending SQS message: {e}")
         google_result = None
 
     try:
-        openai_result = generate_signal_result(
-            prompt=prompt,
-            req=req,
-            ai="OPENAI",  # "OPENAI" based on your preference
-            signals_repository=signals_repository,
-            ai_service=ai_service,
-            discord_service=discord_service,
-            summary=summary or "No summary available",
+        openai_result = aws_service.generate_queue_message_http(
+            body=req.model_dump_json(),
+            path="signals/generate-signal-reult",
+            method="POST",
+            query_string_parameters={
+                "prompt": prompt,
+                "summary": summary or "No summary available",
+                "ai": "OPENAI",
+            },
         )
+        aws_service.send_sqs_fifo_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+            message_body=json.dumps(openai_result),
+            message_group_id="openai",
+            message_deduplication_id=req.ticker + str(date.today()),
+        )
+
     except Exception as e:
         logger.error(f"Error generating OpenAI signal result: {e}")
         openai_result = None
-
-    # result = ai_service.completions_parse(
-    #     system_prompt="",
-    #     prompt=prompt,
-    #     image_url=None,
-    #     schema=SignalPromptResponse,
-    #     chat_model=ChatModel.O4_MINI,
-    # )
-
-    # try:
-    #     signals_repository.create_signal(
-    # ticker=req.ticker,
-    # action=result.recommendation.lower(),
-    # entry_price=result.entry_price or 0.0,
-    # stop_loss=result.stop_loss_price,
-    # take_profit=result.take_profit_price,
-    # probability=result.probability_of_rising_up,
-    # strategy=",".join(req.triggered_strategies),
-    # result_description=result.reasoning,
-    # report_summary=summary,
-    #     )
-    # except Exception as e:
-    #     logger.error(f"Error saving signal to database: {e}")
-
-    # discord_service.send_message(content=f"{format_signal_response(result)}")
 
     return [google_result, openai_result]
 
@@ -356,9 +348,11 @@ async def get_signals(
             logger.error(f"Error generating SQS message: {e}")
 
         try:
-            aws_service.send_sqs_message(
-                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto",
+            aws_service.send_sqs_fifo_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
                 message_body=json.dumps(message),
+                message_group_id="signal",
+                message_deduplication_id=report.ticker + str(date.today()),
             )
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
