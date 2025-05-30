@@ -128,14 +128,8 @@ def generate_signal_result(
 @inject
 def llm_query(
     req: SignalPromptData,
-    signals_repository: SignalsRepository = Depends(
-        Provide[Container.repositories.signals_repository]
-    ),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
-    discord_service: DiscordService = Depends(
-        Provide[Container.services.discord_service]
-    ),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     """
@@ -334,8 +328,6 @@ async def get_signals(
             ),
             additional_info=None,
         )
-
-        await sleep(3)
 
         try:
             message = aws_service.generate_queue_message_http(
