@@ -1195,38 +1195,31 @@ class SignalService:
         Generate a prompt for web search based on the stock ticker and report summary.
         """
         prompt = f"""
-        You are a sell-side research assistant with real-time web access and citation capability.
-        Act like a professional equity analyst preparing a morning brief.
-        If you use any web sources, cite them in IEEE style (e.g. [1]).
-        Think step by step, but reveal only the final answer to the user.
-
+        You are a sell-side equity-research assistant with real-time web and market-data access.
+        Act like a professional analyst who can quickly gather and analyze information about a stock.
+        
         ╭─ TASK
-        │ 1. Search the open web for
-        │    • News articles about TICKER[{ticker}] published in the last 7 days [current_date = {date}].
-        │    • Sell-side research notes / rating changes / price-target updates on Ticekr[{ticker}] in the same window.
-        │ 2. Summarise each item.
-        │ 3. Output strictly in the JSON schema below.
+        │ 1. Search the open web and wire services for:
+        │    • Company-specific news, press releases, SEC filings (8-K·6-K) published in the last 7 days.  
+        │    • Sell-side research notes, rating / price-target changes, or model updates in the last 7 days.  
+        │    • Market chatter: unusual options activity, block trades, rumors in the last 3 days.  
+        │ 2. **Classify each item as a short-term catalyst**  
+        │    “+” (Bullish), “−” (Bearish), or “0” (Neutral/mixed).  
+        │ 3. Pull the latest 3 trading-days of price & volume for TICKER[{ticker}]  
+        │    • Close, % chg 1d & 3d, intraday high-low, vs S&P 500 and vs sector ETF.  
+        │    • Label the short-term price state: **Uptrend / Downtrend / Range-bound**.  
         ╰─ END TASK
 
         ╭─ SEARCH PROTOCOL (follow exactly)
-        │ • Run two separate queries:
-        │   ① "{ticker} stock news past 7 days"  
-        │   ② "{ticker} analyst report OR price target OR upgrade OR downgrade past 7 days"
-        │ • Recency filter: --recency=7
-        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com, seekingalpha.com, marketwatch.com, barrons.com, investorplace.com
-        │ • Fetch max 8 total documents. Skip duplicates.
-        │ • If no valid hit → return "NO RECENT NEWS".
+        │ • Run four separate queries (recency filter --recency=7 unless noted):
+        │   ① "Ticker[{ticker}] press release OR corporate site OR 8-K OR 6-K past 7 days"
+        │   ② "Ticker[{ticker}] stock news catalyst past 7 days"
+        │   ③ "Ticker[{ticker}] analyst report OR price target OR upgrade OR downgrade past 7 days"
+        │   ④ "Ticker[{ticker}] unusual options activity OR block trade past 3 days"  --recency=3
+        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com,
+        │   seekingalpha.com, barrons.com, sec.gov, nasdaq.com, streetinsider.com, fintel.io
+        │ • Fetch max 10 unique docs total. Skip duplicates.
+        │ • If no valid hit → return "NO RECENT CATALYSTS".
         ╰─ END PROTOCOL
-
-        ╭─ OUTPUT SCHEMA
-        [
-            "date": "YYYY-MM-DD",
-            "type": "News | Research",
-            "summary": "string",
-            "description": "string",
-            "sentiment": "Positive | Neutral | Negative",
-            "recommendation": "Buy | Hold | Sell | None",
-        ]
-        ╰─ END SCHEMA
         """
         return prompt

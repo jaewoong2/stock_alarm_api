@@ -338,3 +338,16 @@ class TickerImpact(BaseModel):
 class DateRange(BaseModel):
     start: date
     end: date
+
+
+class WebSearchTickerResult(BaseModel):
+    date: str
+    summary: str
+    detail_description: str
+    recommendation_with_why: str
+
+
+class WebSearchTickerResponse(BaseModel):
+    search_results: List[WebSearchTickerResult]
+    total_detail_description_with_why: str
+    total_recommendation: Literal["Buy", "Hold", "Sell", "None"]

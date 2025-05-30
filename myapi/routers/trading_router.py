@@ -3,6 +3,7 @@ import logging
 from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from myapi.domain.signal.signal_schema import WebSearchTickerResponse
 from myapi.domain.trading.trading_schema import TechnicalAnalysisResponse
 from myapi.services.ai_service import AIService
 from myapi.services.discord_service import DiscordService
@@ -155,7 +156,9 @@ def gemini_search(
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
 
-    return ai_service.gemini_search_grounding(prompt=prompt)
+    return ai_service.gemini_search_grounding(
+        prompt=prompt, schema=WebSearchTickerResponse
+    )
 
 
 @router.post("/ai/completion", tags=["ai"])

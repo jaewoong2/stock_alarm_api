@@ -26,6 +26,7 @@ class AIService:
     def gemini_search_grounding(
         self,
         prompt: str,
+        schema: Type[T],
     ):
         client = genai.Client(api_key=self.gemini_api_key)
 
@@ -50,7 +51,16 @@ class AIService:
                     if each.text is not None:
                         result += each.text
 
-        return result if result != "" else "No results found."
+        result = self.gemini_completion(
+            prompt="" + result + "\n\nPlease return the result in JSON format.",
+            schema=schema,
+        )
+
+        # Return Type Only Schema
+        if not isinstance(result, schema):
+            return ""
+
+        return result
 
     def gemini_completion(
         self,

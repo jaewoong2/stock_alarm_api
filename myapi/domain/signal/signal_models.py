@@ -18,3 +18,4 @@ class Signals(Base):
     probability = Column(String, nullable=True)  # 확률
     result_description = Column(String, nullable=True)  # 결과 설명
     report_summary = Column(String, nullable=True)  # 보고서 요약
+    ai_model = Column(String, nullable=True, default="OPENAI_O4MINI")  # AI 모델 이름

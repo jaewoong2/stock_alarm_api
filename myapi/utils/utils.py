@@ -73,7 +73,7 @@ def format_trade_summary(data: dict):
     return "\n".join(lines)
 
 
-def format_signal_response(response: SignalPromptResponse) -> str:
+def format_signal_response(response: SignalPromptResponse, model: str) -> str:
     """
     SignalPromptResponse 객체를 가독성 있는 마크다운 문자열로 변환합니다.
 
@@ -100,6 +100,8 @@ def format_signal_response(response: SignalPromptResponse) -> str:
 
     try:
         # 헤더 (티커와 추천)
+        lines.append(f"#  >> {model} 모델 사용 <<")
+
         lines.append(
             f"## {emoji_map['ticker']} {response.ticker} - {emoji_map['recommendation']} {response.recommendation}"
         )

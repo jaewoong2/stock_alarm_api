@@ -21,6 +21,7 @@ from myapi.domain.signal.signal_schema import (
     SignalResponse,
     TechnicalSignal,
     TickerReport,
+    WebSearchTickerResponse,
 )
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
@@ -62,6 +63,67 @@ def get_investment_pdf(
     return None
 
 
+@router.post("/generate-signal-reult")
+@inject
+def generate_signal_result(
+    prompt: str,
+    req: SignalPromptData,
+    summary: str,
+    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI",
+    signals_repository: SignalsRepository = Depends(
+        Provide[Container.repositories.signals_repository]
+    ),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
+):
+    """
+    LLM 쿼리를 처리하는 엔드포인트입니다.
+    """
+    try:
+        if ai == "GOOGLE":
+            result = ai_service.gemini_completion(
+                prompt=prompt,
+                schema=SignalPromptResponse,
+            )
+
+        if ai == "OPENAI":
+            result = ai_service.completions_parse(
+                system_prompt="",
+                prompt=prompt,
+                image_url=None,
+                schema=SignalPromptResponse,
+                chat_model=ChatModel.O4_MINI,
+            )
+
+        if not isinstance(result, SignalPromptResponse):
+            return result
+
+        signals_repository.create_signal(
+            ticker=req.ticker,
+            action=result.recommendation.lower(),
+            entry_price=result.entry_price or 0.0,
+            stop_loss=result.stop_loss_price,
+            take_profit=result.take_profit_price,
+            probability=result.probability_of_rising_up,
+            strategy=",".join(req.triggered_strategies),
+            result_description=result.reasoning,
+            report_summary=summary,
+            ai_model=ai,  # Store the AI model used for the signal
+        )
+
+        discord_service.send_message(
+            content=f"{format_signal_response(result, model=ai)}"
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error generating signal result: {e}")
+        return {"error": str(e)}
+
+
 @router.post("/llm-query")
 @inject
 def llm_query(
@@ -88,14 +150,22 @@ def llm_query(
         web_search_gemini_result = ai_service.gemini_search_grounding(
             prompt=signal_service.generate_web_search_prompt(
                 req.ticker, today_YYYY_MM_DD
-            )
+            ),
+            schema=WebSearchTickerResponse,
         )
-        if req.additional_info:
+        if req.additional_info and web_search_gemini_result:
             req.additional_info = (
-                req.additional_info + "\n\n" + web_search_gemini_result
+                req.additional_info
+                + "\n\n Web Search Results:\n"
+                + web_search_gemini_result.model_dump_json()
             )
         else:
-            req.additional_info = web_search_gemini_result
+            if web_search_gemini_result:
+                req.additional_info = (
+                    "\n Web Search Result: "
+                    + web_search_gemini_result.model_dump_json()
+                    + "\n"
+                )
     except Exception as e:
         logger.error(f"Error fetching web search results: {e}")
         web_search_gemini_result = None
@@ -118,32 +188,62 @@ def llm_query(
 
     prompt = signal_service.generate_prompt(data=req, report_summary=summary)
 
-    result = ai_service.completions_parse(
-        system_prompt="",
-        prompt=prompt,
-        image_url=None,
-        schema=SignalPromptResponse,
-        chat_model=ChatModel.O4_MINI,
-    )
+    google_result, openai_result = None, None
 
     try:
-        signals_repository.create_signal(
-            ticker=req.ticker,
-            action=result.recommendation.lower(),
-            entry_price=result.entry_price or 0.0,
-            stop_loss=result.stop_loss_price,
-            take_profit=result.take_profit_price,
-            probability=result.probability_of_rising_up,
-            strategy=",".join(req.triggered_strategies),
-            result_description=result.reasoning,
-            report_summary=summary,
+        google_result = generate_signal_result(
+            prompt=prompt,
+            req=req,
+            ai="GOOGLE",  # "GOOGLE" based on your preference
+            signals_repository=signals_repository,
+            ai_service=ai_service,
+            discord_service=discord_service,
+            summary=summary or "No summary available",
         )
     except Exception as e:
-        logger.error(f"Error saving signal to database: {e}")
+        logger.error(f"Error generating Google signal result: {e}")
+        google_result = None
 
-    discord_service.send_message(content=f"{format_signal_response(result)}")
+    try:
+        openai_result = generate_signal_result(
+            prompt=prompt,
+            req=req,
+            ai="OPENAI",  # "OPENAI" based on your preference
+            signals_repository=signals_repository,
+            ai_service=ai_service,
+            discord_service=discord_service,
+            summary=summary or "No summary available",
+        )
+    except Exception as e:
+        logger.error(f"Error generating OpenAI signal result: {e}")
+        openai_result = None
 
-    return result
+    # result = ai_service.completions_parse(
+    #     system_prompt="",
+    #     prompt=prompt,
+    #     image_url=None,
+    #     schema=SignalPromptResponse,
+    #     chat_model=ChatModel.O4_MINI,
+    # )
+
+    # try:
+    #     signals_repository.create_signal(
+    # ticker=req.ticker,
+    # action=result.recommendation.lower(),
+    # entry_price=result.entry_price or 0.0,
+    # stop_loss=result.stop_loss_price,
+    # take_profit=result.take_profit_price,
+    # probability=result.probability_of_rising_up,
+    # strategy=",".join(req.triggered_strategies),
+    # result_description=result.reasoning,
+    # report_summary=summary,
+    #     )
+    # except Exception as e:
+    #     logger.error(f"Error saving signal to database: {e}")
+
+    # discord_service.send_message(content=f"{format_signal_response(result)}")
+
+    return [google_result, openai_result]
 
 
 @router.post("/", response_model=SignalResponse)
