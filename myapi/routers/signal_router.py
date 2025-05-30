@@ -339,6 +339,8 @@ async def get_signals(
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
 
+        await sleep(3)  # To avoid throttling issues with SQS
+
         try:
             aws_service.send_sqs_fifo_message(
                 queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
