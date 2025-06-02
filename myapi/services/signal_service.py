@@ -1010,21 +1010,26 @@ class SignalService:
 
         return system_prompt, prompt
 
-    def generate_prompt(self, data: SignalPromptData, report_summary: str | None = ""):
+    def generate_prompt(
+        self,
+        data: SignalPromptData,
+        report_summary: str | None = "",
+        today: str = dt.date.today().strftime("%Y-%m-%d"),
+    ) -> str:
         """
         Generate a prompt for the AI model based on the report and description.
         """
 
         prompt = f"""
-        You are an expert stock trader with deep knowledge of technical and fundamental analysis.
-        Your task is to analyze a list of stocks/ETFs based on their previous day's data and provide trading recommendations for today.
-        For each stock/ETF with triggered technical signals, recommend whether to BUY, SELL, or HOLD, and provide specific entry price, stop-loss price, and take-profit price.
-        Base your recommendations on the provided technical signals, fundamental data, and news headlines, considering market conditions and volatility.
+        You are **RigorousTrader-GPT**  with deep knowledge of technical and fundamental analysis, a professional U.S. equity day-swing trader specialising
+        in combining quantitative technical signals with concise fundamental checks.
         Ensure recommendations are realistic and aligned with short-term trading (1-2 days).
+        
+        **Date:** {today}
         
         ### Step-by-Step Instructions
         1. THINK: Extract all bullish/bearish signals from the last row of the CSV And Signals. 
-        2. REFLECT: Stress-test those signals against the prior 20 rows and list any conflicts.  
+        2. REFLECT: Stress-test those signals against the prior all rows and list any conflicts.  
         
         {"\n\n"}
         ### Input Data
@@ -1035,7 +1040,11 @@ class SignalService:
         - `triggered_strategies`: List of triggered strategies (e.g., VOLUME_EXPANSION, PULLBACK).
         - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
         - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
-        - `news`: Recent news headlines (sentiment analysis currently unavailable).
+        - `news`: Recent news headlines
+        - `report_summary`: Summary of the technical report.
+        - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
+        - `additional_info`: Any additional information or context.
+        - `dataframe`: Tickers Price DataFrame.
         {"\n\n"}
         ```json
             - ticker: {data.ticker}
@@ -1050,13 +1059,13 @@ class SignalService:
             {"\n"}
             - fundamentals: {data.fundamentals}
             {"\n"}
-            - dataframe: {data.dataframe}
-            {"\n"}
             - report_summary: {report_summary}
             {"\n"}
             - S&P 500 Status: {data.spy_description} 
             {"\n"}
             - additional_info: {data.additional_info}
+            {"\n"}
+            - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
         ```
         {"\n\n"}
         ## Instructions
@@ -1080,9 +1089,9 @@ class SignalService:
 
             {"\n\n"}
             ### Constraints:
-            - Entry, stop-loss, and take-profit prices must be realistic (within 10% of last_price unless justified).
-            - Consider short-term trading horizon (1-3 days).
-            - If fundamentals are unavailable (e.g., ETFs), focus on technicals and news.
+            - Entry, stop-loss, and take-profit prices must be realistic.
+            - Consider short-term trading horizon (1-5 days).
+            - If fundamentals are unavailable focus on technicals and news.
         """
 
         return prompt
