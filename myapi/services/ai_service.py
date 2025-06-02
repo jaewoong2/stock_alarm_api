@@ -22,6 +22,29 @@ class AIService:
         self.hyperbolic_api_key = settings.HYPERBOLIC_API_KEY
         self.open_api_key = settings.OPENAI_API_KEY
         self.gemini_api_key = settings.GEMINI_API_KEY
+        self.huggingface_api_key = settings.HUGGINGFACE_API_KEY
+
+    def hugging_face_completion(self, prompt: str, schema: Type[T]):
+        """
+        Hugging Face API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
+        결과는 아래 JSON 스키마 형식으로 반환됩니다:
+        """
+        client = openai.OpenAI(
+            base_url="https://router.huggingface.co/cerebras/v1",
+            api_key=self.huggingface_api_key,
+        )
+
+        completion = client.chat.completions.create(
+            model="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+        )
+
+        return completion.choices[0].message
 
     def gemini_search_grounding(
         self,

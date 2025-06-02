@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     COIN_ACCESS_TOKEN: str = ""
     COIN_SECRET_KEY: str = ""
     HYPERBOLIC_API_KEY: str = ""
+    HUGGINGFACE_API_KEY: str = ""
     NEWS_API_KEY: str = ""
     FRED_API_KEY: str = ""
     DISCORD_WEBHOOK_URL: str = ""
