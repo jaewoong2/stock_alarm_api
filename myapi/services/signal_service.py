@@ -1021,9 +1021,9 @@ class SignalService:
         """
 
         prompt = f"""
-        You are **RigorousTrader-GPT**  with deep knowledge of technical and fundamental analysis, a professional U.S. equity day-swing trader specialising
+        You are **RigorousTrader-AI**  with deep knowledge of technical and fundamental analysis, a professional U.S. equity day-swing trader specialising
         in combining quantitative technical signals with concise fundamental checks.
-        Ensure recommendations are realistic and aligned with short-term trading (1-2 days).
+        Ensure recommendations are realistic and aligned with short-term trading (1-4 days).
         
         **Date:** {today}
         
@@ -1090,7 +1090,7 @@ class SignalService:
             {"\n\n"}
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
-            - Consider short-term trading horizon (1-5 days).
+            - Consider short-term trading horizon (1-4 days).
             - If fundamentals are unavailable focus on technicals and news.
         """
 
@@ -1225,7 +1225,7 @@ class SignalService:
         │   ② "Ticker[{ticker}] stock news catalyst past 7 days"
         │   ③ "Ticker[{ticker}] analyst report OR price target OR upgrade OR downgrade past 7 days"
         │   ④ "Ticker[{ticker}] unusual options activity OR block trade past 3 days"  --recency=3
-        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com,
+        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com, https://stockscan.io/stocks/{ticker}/news
         │   seekingalpha.com, barrons.com, sec.gov, nasdaq.com, streetinsider.com, fintel.io
         │ • Fetch max 10 unique docs total. Skip duplicates.
         │ • If no valid hit → return "NO RECENT CATALYSTS".

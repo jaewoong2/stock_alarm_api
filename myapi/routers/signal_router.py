@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
 from numpy import add
+from pydantic import BaseModel
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -63,13 +64,22 @@ def get_investment_pdf(
     return None
 
 
+class GenerateSignalResultRequest(BaseModel):
+    """
+    Response schema for the generate signal result endpoint.
+    This extends SignalPromptResponse to include additional fields if necessary.
+    """
+
+    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
+    data: SignalPromptData
+    summary: str
+    prompt: str
+
+
 @router.post("/generate-signal-reult")
 @inject
 def generate_signal_result(
-    prompt: str,
-    req: SignalPromptData,
-    summary: str,
-    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI",
+    request: GenerateSignalResultRequest,
     signals_repository: SignalsRepository = Depends(
         Provide[Container.repositories.signals_repository]
     ),
@@ -82,16 +92,16 @@ def generate_signal_result(
     LLM 쿼리를 처리하는 엔드포인트입니다.
     """
     try:
-        if ai == "GOOGLE":
+        if request.ai == "GOOGLE":
             result = ai_service.gemini_completion(
-                prompt=prompt,
+                prompt=request.prompt,
                 schema=SignalPromptResponse,
             )
 
-        if ai == "OPENAI":
+        if request.ai == "OPENAI":
             result = ai_service.completions_parse(
                 system_prompt="",
-                prompt=prompt,
+                prompt=request.prompt,
                 image_url=None,
                 schema=SignalPromptResponse,
                 chat_model=ChatModel.O4_MINI,
@@ -101,20 +111,20 @@ def generate_signal_result(
             return result
 
         signals_repository.create_signal(
-            ticker=req.ticker,
+            ticker=request.data.ticker,
             action=result.recommendation.lower(),
             entry_price=result.entry_price or 0.0,
             stop_loss=result.stop_loss_price,
             take_profit=result.take_profit_price,
             probability=result.probability_of_rising_up,
-            strategy=",".join(req.triggered_strategies),
+            strategy=",".join(request.data.triggered_strategies),
             result_description=result.reasoning,
-            report_summary=summary,
-            ai_model=ai,  # Store the AI model used for the signal
+            report_summary=request.summary,
+            ai_model=request.ai,  # Store the AI model used for the signal
         )
 
         discord_service.send_message(
-            content=f"{format_signal_response(result, model=ai)}"
+            content=f"{format_signal_response(result, model=request.ai)}"
         )
 
         return result
@@ -185,15 +195,17 @@ def llm_query(
     google_result, openai_result = None, None
 
     try:
+        body = GenerateSignalResultRequest(
+            data=req,
+            summary=summary or "No summary available",
+            prompt=prompt,
+            ai="GOOGLE",  # Default to Google for the first request
+        )
         google_result = aws_service.generate_queue_message_http(
-            body=req.model_dump_json(),
+            body=body.model_dump_json(),
             path="signals/generate-signal-reult",
             method="POST",
-            query_string_parameters={
-                "prompt": prompt,
-                "summary": summary or "No summary available",
-                "ai": "GOOGLE",
-            },
+            query_string_parameters={},
         )
         aws_service.send_sqs_fifo_message(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
@@ -208,15 +220,17 @@ def llm_query(
         google_result = None
 
     try:
+        body = GenerateSignalResultRequest(
+            data=req,
+            summary=summary or "No summary available",
+            prompt=prompt,
+            ai="OPENAI",  # Default to OpenAI for the second request
+        )
         openai_result = aws_service.generate_queue_message_http(
-            body=req.model_dump_json(),
+            body=body.model_dump_json(),
             path="signals/generate-signal-reult",
             method="POST",
-            query_string_parameters={
-                "prompt": prompt,
-                "summary": summary or "No summary available",
-                "ai": "OPENAI",
-            },
+            query_string_parameters={},
         )
         aws_service.send_sqs_fifo_message(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",

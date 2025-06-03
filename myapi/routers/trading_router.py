@@ -1,8 +1,10 @@
 # routers/trading_router.py
 import logging
+from typing import Literal
 from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import WebSearchTickerResponse
 from myapi.domain.trading.trading_schema import TechnicalAnalysisResponse
 from myapi.services.ai_service import AIService
@@ -161,14 +163,34 @@ def gemini_search(
     )
 
 
+class CompletionRequest(BaseModel):
+    prompt: str
+    model: Literal["Gemini", "ChatGPT", "HuggingFace", "HyperBolic"] = "Gemini"
+
+
 @router.post("/ai/completion", tags=["ai"])
 @inject
 def gemini_complemtion(
-    prompt: str,
+    request: CompletionRequest,
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
 
     class TextBaseModel(BaseModel):
         text: str
 
-    return ai_service.gemini_completion(prompt=prompt, schema=TextBaseModel)
+    if request.model == "HyperBolic":
+        return ai_service.hyperbolic_completion(prompt=request.prompt)
+
+    if request.model == "HuggingFace":
+        return ai_service.hugging_face_completion(prompt=request.prompt)
+
+    if request.model == "ChatGPT":
+        return ai_service.completions_parse(
+            prompt=request.prompt,
+            chat_model=ChatModel.O4_MINI_2024_11_20,
+            schema=TextBaseModel,
+            image_url="",
+            system_prompt="",
+        )
+
+    return ai_service.gemini_completion(prompt=request.prompt, schema=TextBaseModel)
