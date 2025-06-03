@@ -73,124 +73,128 @@ def format_trade_summary(data: dict):
     return "\n".join(lines)
 
 
-def format_signal_response(
-    response: SignalPromptResponse,
-    model: str,
-    *,
-    show_think_steps: bool = True,
-) -> str:
-    """Convert a :class:`SignalPromptResponse` into Discord‑friendly Markdown.
+def format_signal_response(response: SignalPromptResponse, model: str) -> str:
+    """
+    SignalPromptResponse 객체를 가독성 있는 마크다운 문자열로 변환합니다.
 
-    Parameters
-    ----------
-    response : SignalPromptResponse
-        Parsed signal data.
-    model : str
-        Name of the ML / quant model that produced the signal (e.g. "GOOGLE").
-    show_think_steps : bool, default ``False``
-        Whether to append the full `think_steps` chain‑of‑thought (if present).
+    Args:
+        response: 분석 결과가 담긴 SignalPromptResponse 객체
 
-    Returns
-    -------
-    str
-        Richly formatted Markdown block ready for Discord.
+    Returns:
+        마크다운 형식의 분석 요약 문자열
     """
 
-    # ---------------------------
-    # Emoji palette (feel free to tweak!)
-    # ---------------------------
-    E = {
-        "header": "#️⃣",  # header bullet
+    probability_of_rising_up = response.probability_of_rising_up
+    # 이모지 맵
+    emoji_map = {
         "ticker": "🏷️",
-        "reco": "🚦",
-        "entry": "💰",
-        "stop": "🛡️",
-        "target": "🎯",
-        "prob": "📈",
-        "reason": "📝",
-        "scenario": "🔮",
-        "think": "🤔",
+        "recommendation": "🚦",
+        "reasoning": "📝",
+        "entry_price": "💰",
+        "stop_loss_price": "🛡️",
+        "take_profit_price": "🎯",
+        "probability_of_rising_up": "📈",
+        "probability_of_rising_up_percentage": "📊",
+        "think_steps": "💭",
     }
 
-    md: list[str] = []  # incremental build
+    lines = []
 
-    # Header ---------------------------------------------------------------
-    md.append(f"### {E['header']}  **{model} 모델 사용**  {E['header']}")
-    # Ticker + Recommendation tag -----------------------------------------
-    md.append(
-        f"### {E['ticker']} **{response.ticker.upper()}**  ─  {E['reco']} **{response.recommendation}**"
-    )
-    md.append("")
+    try:
+        # 헤더 (티커와 추천)
 
-    # Trade levels ---------------------------------------------------------
-    if response.recommendation != "HOLD":
-        price_lines: list[str] = []
+        lines.append(
+            f"## [{model} 모델 사용] {emoji_map['ticker']} {response.ticker} - {emoji_map['recommendation']} {response.recommendation}"
+        )
+        lines.append("")
 
-        if response.entry_price is not None:
-            price_lines.append(f"{E['entry']} **진입가**: `{response.entry_price}`")
+        # 가격 정보 (추천이 HOLD가 아닐 경우에만)
+        if response.recommendation != "HOLD":
+            price_lines = []
 
-        if response.stop_loss_price is not None:
-            perc = (
-                (
-                    (response.stop_loss_price - response.entry_price)
-                    / response.entry_price
-                    * 100
+            if response.entry_price is not None:
+                price_lines.append(
+                    f"{emoji_map['entry_price']} **진입가**: {response.entry_price}"
                 )
-                if response.entry_price
-                else None
-            )
-            txt = f" ({perc:+.2f}%)" if perc is not None else ""
-            price_lines.append(
-                f"{E['stop']} **손절가**: `{response.stop_loss_price}`{txt}"
-            )
 
-        if response.take_profit_price is not None:
-            perc = (
-                (
-                    (response.take_profit_price - response.entry_price)
-                    / response.entry_price
-                    * 100
+            if (
+                response.stop_loss_price is not None
+                and response.entry_price is not None
+            ):
+                try:
+                    sl_percentage = (
+                        (float(response.stop_loss_price) - float(response.entry_price))
+                        / float(response.entry_price)
+                    ) * 100
+                    price_lines.append(
+                        f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price} ({sl_percentage:.2f}%)"
+                    )
+                except (ValueError, TypeError):
+                    price_lines.append(
+                        f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
+                    )
+            elif response.stop_loss_price is not None:
+                price_lines.append(
+                    f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
                 )
-                if response.entry_price
-                else None
-            )
-            txt = f" ({perc:+.2f}%)" if perc is not None else ""
-            price_lines.append(
-                f"{E['target']} **목표가**: `{response.take_profit_price}`{txt}"
-            )
 
-        # probability block – prefer percentage if supplied, fallback to string
-        if response.probability_of_rising_up_percentage is not None:
-            prob_str = f"{response.probability_of_rising_up_percentage:.0f}%"
-        else:
-            prob_str = response.probability_of_rising_up or "N/A"
-        price_lines.append(f"{E['prob']} **상승 확률**: {prob_str}")
+            if (
+                response.take_profit_price is not None
+                and response.entry_price is not None
+            ):
+                # 목표가 퍼센테이지 계산 (진입가 대비)
+                try:
+                    tp_percentage = (
+                        (
+                            float(response.take_profit_price)
+                            - float(response.entry_price)
+                        )
+                        / float(response.entry_price)
+                    ) * 100
+                    price_lines.append(
+                        f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price} ({tp_percentage:.2f}%)"
+                    )
+                except (ValueError, TypeError):
+                    price_lines.append(
+                        f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
+                    )
+            elif response.take_profit_price is not None:
+                price_lines.append(
+                    f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
+                )
 
-        # Collapse into Markdown subsection
-        if price_lines:
-            md.append("#### 📊 가격 수준")
-            md.extend(price_lines)
-            md.append("")
+            if probability_of_rising_up:
+                price_lines.append(
+                    f"{emoji_map['probability_of_rising_up']} **상승 확률**: {probability_of_rising_up}"
+                )
 
-    # Core reasoning -------------------------------------------------------
-    md.append("#### 분석 근거")
-    md.append(f"{E['reason']} {response.reasoning}")
+            if response.probability_of_rising_up_percentage is not None:
+                price_lines.append(
+                    f"{emoji_map['probability_of_rising_up_percentage']} **상승 확률(%)**: {response.probability_of_rising_up_percentage:.2f}%"
+                )
 
-    # Optional scenario analysis
-    if response.senarios:
-        md.append("")
-        md.append("#### 시나리오 분석")
-        md.append(f"{E['scenario']} {response.senarios}")
+            if price_lines:
+                lines.append("### 가격 수준")
+                lines.extend(price_lines)
+                lines.append("")
 
-    # Optional chain‑of‑thought (hidden by default)
-    if show_think_steps and response.think_steps:
-        md.append("")
-        md.append("<details><summary>추가적인 Think Steps 보기</summary>\n\n")
-        md.append(f"{E['think']} {response.think_steps}")
-        md.append("\n\n</details>")
+        # 분석 이유
+        lines.append("### 분석 근거")
+        lines.append(f"{emoji_map['reasoning']} {response.reasoning}")
 
-    # Join everything together
-    return "\n".join(md)
+        lines.append("")
+        # 생각 과정
+        if response.think_steps:
+            lines.append("### 생각 과정")
+            lines.append(f"{emoji_map['think_steps']} {response.think_steps}")
+            lines.append("")
+
+    except Exception as e:
+        lines.append("🚨 **오류 발생:**")
+        lines.append(f"```\n{str(e)}\n```")
+
+    # 문자열로 반환
+    return "\n".join(lines)
 
 
 def export_slim_tail_csv(df: DataFrame, rows: int = 260):

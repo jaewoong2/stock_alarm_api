@@ -343,7 +343,7 @@ class DateRange(BaseModel):
 
 
 class WebSearchTickerResult(BaseModel):
-    date: str
+    date_YYYYMMDD: str
     summary: str
     detail_description: str
     recommendation_with_why: str
