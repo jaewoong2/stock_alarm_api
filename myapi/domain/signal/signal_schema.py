@@ -242,6 +242,8 @@ class SignalPromptResponse(BaseModel):
 
     ticker: str
     reasoning: str
+    think_steps: str | None = None
+    probability_of_rising_up_percentage: float | None = None
     probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
     senarios: str | None = None

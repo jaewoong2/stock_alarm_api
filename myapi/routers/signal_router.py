@@ -67,7 +67,6 @@ def get_investment_pdf(
 class GenerateSignalResultRequest(BaseModel):
     """
     Response schema for the generate signal result endpoint.
-    This extends SignalPromptResponse to include additional fields if necessary.
     """
 
     ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
