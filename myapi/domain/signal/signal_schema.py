@@ -353,3 +353,22 @@ class WebSearchTickerResponse(BaseModel):
     search_results: List[WebSearchTickerResult]
     total_detail_description_with_why: str
     total_recommendation: Literal["Buy", "Hold", "Sell", "None"]
+
+
+class GenerateSignalResultRequest(BaseModel):
+    """
+    Response schema for the generate signal result endpoint.
+    """
+
+    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
+    data: SignalPromptData
+    summary: str
+    prompt: str
+
+
+class DiscordMessageRequest(BaseModel):
+    """
+    Schema for Discord messages.
+    """
+
+    content: str

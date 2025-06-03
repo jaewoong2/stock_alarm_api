@@ -15,6 +15,8 @@ from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
     DefaultStrategies,
     DefaultTickers,
+    DiscordMessageRequest,
+    GenerateSignalResultRequest,
     SignalBaseResponse,
     SignalPromptData,
     SignalPromptResponse,
@@ -64,17 +66,6 @@ def get_investment_pdf(
     return None
 
 
-class GenerateSignalResultRequest(BaseModel):
-    """
-    Response schema for the generate signal result endpoint.
-    """
-
-    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
-    data: SignalPromptData
-    summary: str
-    prompt: str
-
-
 @router.post("/generate-signal-reult")
 @inject
 def generate_signal_result(
@@ -83,9 +74,7 @@ def generate_signal_result(
         Provide[Container.repositories.signals_repository]
     ),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
-    discord_service: DiscordService = Depends(
-        Provide[Container.services.discord_service]
-    ),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -122,9 +111,26 @@ def generate_signal_result(
             ai_model=request.ai,  # Store the AI model used for the signal
         )
 
-        discord_service.send_message(
-            content=f"{format_signal_response(result, model=request.ai)}"
-        )
+        try:
+            discord_content = DiscordMessageRequest(
+                content=format_signal_response(result, model=request.ai)
+            )
+            discord_result = aws_service.generate_queue_message_http(
+                body=discord_content.model_dump_json(),
+                path="signals/discord/message",
+                method="POST",
+                query_string_parameters={},
+            )
+            aws_service.send_sqs_fifo_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+                message_body=json.dumps(discord_result),
+                message_group_id="discord",
+                message_deduplication_id="discord_"
+                + str(request.data.ticker)
+                + str(date.today()),
+            )
+        except Exception as e:
+            logger.error(f"Error SendingDiscord: {e}")
 
         return result
 
@@ -419,3 +425,21 @@ async def get_today_signals_by_ticker(
     ]
 
     return ticker_signals
+
+
+@router.post("/discord/message", response_model=None, tags=["discord"])
+@inject
+def send_discord_message(
+    request: DiscordMessageRequest,
+    discord_service: DiscordService = Depends(
+        Provide[Container.services.discord_service]
+    ),
+):
+    """
+    디스코드 메시지를 전송하는 헬퍼 함수입니다.
+    """
+    try:
+        discord_service.send_message(content=request.content)
+        return {"status": "success", "message": "Discord message sent successfully."}
+    except Exception as e:
+        logger.error(f"Error sending Discord message: {e}")
