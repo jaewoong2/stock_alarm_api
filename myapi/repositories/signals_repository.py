@@ -33,6 +33,16 @@ class SignalsRepository:
             logging.error(f"Session error: {e}")
             self.db_session.rollback()
 
+    def _with_session(func):
+        """Decorator to ensure DB session is valid before executing."""
+
+        def wrapper(self, *args, **kwargs):
+            self._ensure_valid_session()
+            return func(self, *args, **kwargs)
+
+        return wrapper
+
+    @_with_session
     def create_signal(
         self,
         ticker: str,
@@ -46,10 +56,7 @@ class SignalsRepository:
         report_summary: Optional[str] = None,
         ai_model: str = "OPENAI_O4MINI",
     ) -> SignalBaseResponse:
-        """
-        새로운 신호를 생성합니다.
-        """
-        self._ensure_valid_session()
+        """새로운 신호를 생성합니다."""
         try:
             signal = Signals(
                 ticker=ticker,
@@ -73,19 +80,19 @@ class SignalsRepository:
             logging.error(f"DB signal creation failed: {e}")
             raise
 
+    @_with_session
     def get_ticker(self) -> List[str]:
-        """ """
-        self._ensure_valid_session()
+        """"""
         signals = self.db_session.query(Signals).filter(
             Signals.timestamp == datetime.utcnow().date()
         )
         return [str(signal.ticker) for signal in signals]
 
+    @_with_session
     def get_today_tickers(self) -> List[str]:
         """
         오늘의 티커를 가져옵니다.
         """
-        self._ensure_valid_session()
         today = datetime.utcnow().date()
         signals = (
             self.db_session.query(Signals)
@@ -95,19 +102,19 @@ class SignalsRepository:
 
         return [str(signal.ticker) for signal in signals]
 
+    @_with_session
     def get_signals(self) -> List[SignalBaseResponse]:
         """
         모든 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = self.db_session.query(Signals).order_by(desc(Signals.timestamp)).all()
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_signals_by_ticker(self, ticker: str) -> List[SignalBaseResponse]:
         """
         특정 티커에 대한 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(Signals.ticker == ticker)
@@ -116,11 +123,11 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_recent_signals(self, limit: int = 10) -> List[SignalBaseResponse]:
         """
         최근 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .order_by(desc(Signals.timestamp))
@@ -129,21 +136,19 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_signal_by_id(self, signal_id: int) -> Optional[SignalBaseResponse]:
-        """
-        ID로 신호를 가져옵니다.
-        """
-        self._ensure_valid_session()
+        """ID로 신호를 가져옵니다."""
         signal = self.db_session.query(Signals).filter(Signals.id == signal_id).first()
         if signal:
             return SignalBaseResponse.model_validate(signal)
         return None
 
+    @_with_session
     def update_signal(self, signal_id: int, **kwargs) -> Optional[SignalBaseResponse]:
         """
         기존 신호를 업데이트합니다.
         """
-        self._ensure_valid_session()
         try:
             signal = (
                 self.db_session.query(Signals).filter(Signals.id == signal_id).first()
@@ -164,11 +169,11 @@ class SignalsRepository:
             logging.error(f"DB signal update failed: {e}")
             raise
 
+    @_with_session
     def delete_signal(self, signal_id: int) -> bool:
         """
         신호를 삭제합니다.
         """
-        self._ensure_valid_session()
         try:
             signal = (
                 self.db_session.query(Signals).filter(Signals.id == signal_id).first()
@@ -184,11 +189,11 @@ class SignalsRepository:
             logging.error(f"DB signal deletion failed: {e}")
             raise
 
+    @_with_session
     def get_signals_by_action(self, action: str) -> List[SignalBaseResponse]:
         """
         특정 액션(buy/sell)에 대한 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(Signals.action == action)
@@ -199,11 +204,11 @@ class SignalsRepository:
 
     # ------ 추가된 메서드 ------
 
+    @_with_session
     def get_signals_by_strategy(self, strategy: str) -> List[SignalBaseResponse]:
         """
         특정 전략에 대한 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(Signals.strategy == strategy)
@@ -212,6 +217,7 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_signals_by_date_range(
         self,
         start_date: datetime,
@@ -221,7 +227,6 @@ class SignalsRepository:
         """
         특정 날짜 범위 내의 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         if end_date is None:
             end_date = datetime.utcnow()
 
@@ -236,13 +241,13 @@ class SignalsRepository:
 
         return [SignalBaseResponse.model_validate(s) for s in signals.all()]
 
+    @_with_session
     def get_signals_by_probability(
         self, min_probability: float, max_probability: Optional[float] = None
     ) -> List[SignalBaseResponse]:
         """
         특정 확률 범위의 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         if max_probability is None:
             max_probability = 100.0
 
@@ -258,11 +263,11 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_signals_with_result(self, result_keyword: str) -> List[SignalBaseResponse]:
         """
         특정 결과 설명을 포함하는 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(Signals.result_description.ilike(f"%{result_keyword}%"))
@@ -271,11 +276,11 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_successful_signals(self) -> List[SignalBaseResponse]:
         """
         성공한 신호를 가져옵니다. (result_description에 'success' 또는 'profitable' 포함)
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(
@@ -287,11 +292,11 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_failed_signals(self) -> List[SignalBaseResponse]:
         """
         실패한 신호를 가져옵니다. (result_description에 'fail' 또는 'loss' 포함)
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(
@@ -303,11 +308,11 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_signals_stats_by_ticker(self) -> Dict[str, Dict[str, int]]:
         """
         티커별 신호 통계를 가져옵니다.
         """
-        self._ensure_valid_session()
         results = {}
 
         # 티커별 총 신호 수
@@ -355,11 +360,11 @@ class SignalsRepository:
 
         return results
 
+    @_with_session
     def get_signals_stats_by_strategy(self) -> Dict[str, Dict[str, int]]:
         """
         전략별 신호 통계를 가져옵니다.
         """
-        self._ensure_valid_session()
         results = {}
 
         # 전략별 총 신호 수
@@ -410,11 +415,11 @@ class SignalsRepository:
 
         return results
 
+    @_with_session
     def get_recent_signals_by_days(self, days: int = 7) -> List[SignalBaseResponse]:
         """
         최근 n일 동안의 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         start_date = datetime.utcnow() - timedelta(days=days)
 
         signals = (
@@ -425,13 +430,13 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    @_with_session
     def get_high_probability_signals(
         self, threshold: float = 70.0
     ) -> List[SignalBaseResponse]:
         """
         높은 확률의 신호를 가져옵니다.
         """
-        self._ensure_valid_session()
         signals = (
             self.db_session.query(Signals)
             .filter(Signals.probability.isnot(None), Signals.probability >= threshold)

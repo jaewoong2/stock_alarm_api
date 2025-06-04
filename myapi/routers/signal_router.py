@@ -32,7 +32,7 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
-from myapi.utils.utils import export_slim_tail_csv, format_signal_response
+from myapi.utils.utils import format_signal_response
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -261,51 +261,15 @@ async def get_signals(
     START_DAYS_BACK: int = 400
     run_date = date.today()
     tickers = req.tickers or DefaultTickers
-    strategies = DefaultStrategies
-
     start = run_date - timedelta(days=START_DAYS_BACK)
 
-    spy_persentage_from_200ma = 0.0
-    mkt_ok = False
-    reports: list[TickerReport] = []
-    for t in tickers:
-        df = signal_service.fetch_ohlcv(t, start=start)
-
-        if df is None or df.empty:
-            continue
-
-        df = signal_service.add_indicators(df)
-
-        if t == "SPY":
-            spy_persentage_from_200ma = (
-                ((df["Close"].iloc[-1] - df["SMA200"].iloc[-1]) / df["SMA200"].iloc[-1])
-                * 100
-            ) or 0.0
-            mkt_ok = spy_persentage_from_200ma > 0.0
-
-        tech_sigs = [
-            TechnicalSignal(
-                strategy=signal.strategy,
-                triggered=signal.triggered,
-                details=signal.details,
-                triggered_description=signal.description if signal.triggered else None,
-            )
-            for signal in signal_service.evaluate_signals(df, strategies, ticker=t)
-        ]
-
-        funda = signal_service.fetch_fundamentals(t) if req.with_fundamental else None
-
-        reports.append(
-            TickerReport(
-                ticker=t,
-                last_price=df["Close"].iloc[-1],
-                price_change_pct=df["Close"].pct_change().iloc[-1],
-                signals=tech_sigs,
-                fundamentals=funda,
-                news=None,
-                dataframe=export_slim_tail_csv(df, 260),
-            )
-        )
+    reports, spy_persentage_from_200ma, mkt_ok = signal_service.generate_reports(
+        tickers=tickers,
+        strategies=req.strategies,
+        start=start,
+        with_fundamental=req.with_fundamental,
+        with_news=req.with_news,
+    )
 
     triggered_report = [
         report
@@ -314,38 +278,10 @@ async def get_signals(
     ]
 
     for report in triggered_report:
-        triggered_strategies = [
-            signal.strategy for signal in report.signals if signal.triggered
-        ]
-
-        technical_details = {
-            signal.strategy: signal.details
-            for signal in report.signals
-            if signal.triggered
-        }
-
-        try:
-            news = signal_service.fetch_news(report.ticker) if req.with_news else None
-            report.news = news
-        except Exception as e:
-            logger.error(f"Error fetching news for {report.ticker}: {e}")
-            report.news = None
-
-        data = SignalPromptData(
-            ticker=report.ticker,
-            dataframe=report.dataframe,
-            last_price=report.last_price or 0.0,
-            price_change_pct=report.price_change_pct or 0.0,
-            triggered_strategies=triggered_strategies,
-            technical_details=technical_details,
-            fundamentals=report.fundamentals,
-            news=report.news,
-            spy_description=(
-                f"S&P500(SPY) is Abobe SMA20 above {round(spy_persentage_from_200ma, 3)}%"
-                if mkt_ok
-                else f"S&P500(SPY) is Below SMA20 below {round(spy_persentage_from_200ma, 3)}%"
-            ),
-            additional_info=None,
+        data = signal_service.build_prompt_data(
+            report=report,
+            spy_percentage_from_200ma=spy_persentage_from_200ma,
+            market_ok=mkt_ok,
         )
 
         try:

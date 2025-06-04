@@ -19,6 +19,7 @@ from pandas_datareader import data as pdr
 
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.utils.config import Settings
+from myapi.utils.utils import export_slim_tail_csv
 from myapi.domain.signal.signal_schema import (
     Article,
     SignalPromptData,
@@ -1031,7 +1032,7 @@ class SignalService:
         1. THINK: Extract all bullish/bearish signals from the last row of the CSV And Signals. 
         2. REFLECT: Stress-test those signals against the prior all rows and list any conflicts.  
         
-        {"\n\n"}
+
         ### Input Data
         Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
         - `ticker`: Stock/ETF ticker symbol.
@@ -1045,35 +1046,35 @@ class SignalService:
         - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
         - `additional_info`: Any additional information or context.
         - `dataframe`: Tickers Price DataFrame.
-        {"\n\n"}
+
         ```json
             - ticker: {data.ticker}
-            {"\n"}
+
             - last_price: {data.last_price}
-            {"\n"}
+
             - price_change_pct: {data.price_change_pct}
-            {"\n"}
+
             - triggered_strategies: {data.triggered_strategies}
-            {"\n"}
+
             - technical_details: {data.technical_details}
-            {"\n"}
+
             - fundamentals: {data.fundamentals}
-            {"\n"}
+
             - report_summary: {report_summary}
-            {"\n"}
+
             - S&P 500 Status: {data.spy_description} 
-            {"\n"}
+
             - additional_info: {data.additional_info}
-            {"\n"}
+
             - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
         ```
-        {"\n\n"}
+
         ## Instructions
             ### Analyze Each Stock/ETF:
             - Evaluate the triggered strategies and their technical details
             - Consider fundamental data for stock quality.
             
-            {"\n\n"}
+
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
                 For BUY/SELL: [Think First "WHY"]
@@ -1083,11 +1084,11 @@ class SignalService:
                 
                 For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
 
-            {"\n\n"}
+
             ### Reasoning:
             - Explain your recommendation step-by-step, referencing specific technical/fundamental data.
 
-            {"\n\n"}
+
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-4 days).
@@ -1232,3 +1233,96 @@ class SignalService:
         ╰─ END PROTOCOL
         """
         return prompt
+
+    def build_prompt_data(
+        self,
+        report: TickerReport,
+        spy_percentage_from_200ma: float,
+        market_ok: bool,
+    ) -> SignalPromptData:
+        """Create ``SignalPromptData`` from a ticker report."""
+
+        triggered_strategies = [
+            signal.strategy for signal in report.signals if signal.triggered
+        ]
+        technical_details = {
+            signal.strategy: signal.details
+            for signal in report.signals
+            if signal.triggered
+        }
+
+        spy_description = (
+            f"S&P500(SPY) is Abobe SMA20 above {round(spy_percentage_from_200ma, 3)}%"
+            if market_ok
+            else f"S&P500(SPY) is Below SMA20 below {round(spy_percentage_from_200ma, 3)}%"
+        )
+
+        return SignalPromptData(
+            ticker=report.ticker,
+            dataframe=report.dataframe,
+            last_price=report.last_price or 0.0,
+            price_change_pct=report.price_change_pct or 0.0,
+            triggered_strategies=triggered_strategies,
+            technical_details=technical_details,
+            fundamentals=report.fundamentals,
+            news=report.news,
+            spy_description=spy_description,
+            additional_info=None,
+        )
+
+    def generate_reports(
+        self,
+        tickers: List[str],
+        strategies: List[Strategy],
+        start: datetime.date,
+        with_fundamental: bool = True,
+        with_news: bool = True,
+    ) -> tuple[list[TickerReport], float, bool]:
+        """Return a list of ticker reports with market condition information."""
+
+        spy_pct = 0.0
+        market_ok = False
+        reports: list[TickerReport] = []
+
+        for t in tickers:
+            df = self.fetch_ohlcv(t, start=start)
+            if df is None or df.empty:
+                continue
+
+            df = self.add_indicators(df)
+
+            if t == "SPY":
+                spy_pct = (
+                    (df["Close"].iloc[-1] - df["SMA200"].iloc[-1])
+                    / df["SMA200"].iloc[-1]
+                ) * 100 or 0.0
+                market_ok = spy_pct > 0.0
+
+            tech_sigs = [
+                TechnicalSignal(
+                    strategy=signal.strategy,
+                    triggered=signal.triggered,
+                    details=signal.details,
+                    triggered_description=(
+                        signal.description if signal.triggered else None
+                    ),
+                )
+                for signal in self.evaluate_signals(df, strategies, ticker=t)
+            ]
+
+            fundamentals = self.fetch_fundamentals(t) if with_fundamental else None
+            news = self.fetch_news(t) if with_news else None
+
+            reports.append(
+                TickerReport(
+                    ticker=t,
+                    last_price=df["Close"].iloc[-1],
+                    price_change_pct=df["Close"].pct_change().iloc[-1],
+                    signals=tech_sigs,
+                    fundamentals=fundamentals,
+                    news=news,
+                    dataframe=export_slim_tail_csv(df, 260),
+                )
+            )
+
+        return reports, spy_pct, market_ok
