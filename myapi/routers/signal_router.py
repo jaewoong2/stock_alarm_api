@@ -1,6 +1,7 @@
 from asyncio import sleep
 import json
 import logging
+import re
 from typing import List, Literal
 from venv import logger
 from fastapi import APIRouter, Depends
@@ -426,11 +427,10 @@ async def get_today_signals_by_ticker(
     return ticker_signals
 
 
-@router.post("/discord/message", response_model=None, tags=["discord"])
+@router.post("/discord/message", tags=["discord"])
 @inject
 def send_discord_message(
     request: DiscordMessageRequest,
-    send_count: int = 0,
     discord_service: DiscordService = Depends(
         Provide[Container.services.discord_service]
     ),
@@ -440,7 +440,10 @@ def send_discord_message(
     """
     디스코드 메시지를 전송하는 헬퍼 함수입니다.
     """
-    if send_count > 3:
+    if request.send_count is None:
+        request.send_count = 1
+
+    if request.send_count > 3:
         logger.error("Failed to send Discord message after 3 attempts.")
         return {"status": "error", "message": "Failed to send Discord message."}
 
@@ -455,13 +458,12 @@ def send_discord_message(
             schema=DiscordMessageRequest,
             chat_model=ChatModel.GPT_4_1_MINI,
         )
+        parsed_request.send_count = request.send_count + 1
         discord_result = aws_service.generate_queue_message_http(
             body=parsed_request.model_dump_json(),
             path="signals/discord/message",
             method="POST",
-            query_string_parameters={
-                "send_count": str(send_count + 1),
-            },
+            query_string_parameters={},
         )
         aws_service.send_sqs_fifo_message(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",

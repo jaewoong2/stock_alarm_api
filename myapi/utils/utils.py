@@ -84,7 +84,6 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
         마크다운 형식의 분석 요약 문자열
     """
 
-    probability_of_rising_up = response.probability_of_rising_up
     # 이모지 맵
     emoji_map = {
         "ticker": "🏷️",
@@ -152,9 +151,9 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
                 f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
             )
 
-        if probability_of_rising_up is not None:
+        if response.probability_of_rising_up is not None:
             price_lines.append(
-                f"{emoji_map['probability_of_rising_up']} **상승 확률**: {probability_of_rising_up}"
+                f"{emoji_map['probability_of_rising_up']} **상승 확률**: {response.probability_of_rising_up}"
             )
 
         if response.probability_of_rising_up_percentage is not None:
@@ -191,6 +190,7 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
     except Exception as e:
         lines.append("🚨 **오류 발생:**")
         lines.append(f"```\n{str(e)}\n```")
+        print(f"오류 발생: {str(e)}")
 
     # 문자열로 반환
     return "\n".join(lines)
