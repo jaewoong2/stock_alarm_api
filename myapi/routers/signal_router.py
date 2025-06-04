@@ -451,13 +451,17 @@ def send_discord_message(
         discord_service.send_message(content=request.content)
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
-        parsed_request = ai_service.completions_parse(
+        prompt_result = ai_service.completions_parse(
             system_prompt="",
             prompt=f"Summary This Contents: {request.content}",
             image_url=None,
-            schema=DiscordMessageRequest,
+            schema=SignalPromptResponse,
             chat_model=ChatModel.GPT_4_1_MINI,
         )
+        parsed_request = DiscordMessageRequest(
+            content=format_signal_response(prompt_result, model="ERROR_DISCORD"),
+        )
+
         parsed_request.send_count = request.send_count + 1
         discord_result = aws_service.generate_queue_message_http(
             body=parsed_request.model_dump_json(),
