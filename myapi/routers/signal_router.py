@@ -7,8 +7,6 @@ from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
-from numpy import add
-from pydantic import BaseModel
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -127,6 +125,7 @@ def generate_signal_result(
                 message_group_id="discord",
                 message_deduplication_id="discord_"
                 + str(request.data.ticker)
+                + str(request.ai)
                 + str(date.today()),
             )
         except Exception as e:
@@ -431,15 +430,44 @@ async def get_today_signals_by_ticker(
 @inject
 def send_discord_message(
     request: DiscordMessageRequest,
+    send_count: int = 0,
     discord_service: DiscordService = Depends(
         Provide[Container.services.discord_service]
     ),
+    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
     """
     디스코드 메시지를 전송하는 헬퍼 함수입니다.
     """
+    if send_count > 3:
+        logger.error("Failed to send Discord message after 3 attempts.")
+        return {"status": "error", "message": "Failed to send Discord message."}
+
     try:
         discord_service.send_message(content=request.content)
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
+        parsed_request = ai_service.completions_parse(
+            system_prompt="",
+            prompt=f"Summary This Contents: {request.content}",
+            image_url=None,
+            schema=DiscordMessageRequest,
+            chat_model=ChatModel.GPT_4_1_MINI,
+        )
+        discord_result = aws_service.generate_queue_message_http(
+            body=parsed_request.model_dump_json(),
+            path="signals/discord/message",
+            method="POST",
+            query_string_parameters={
+                "send_count": str(send_count + 1),
+            },
+        )
+        aws_service.send_sqs_fifo_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+            message_body=json.dumps(discord_result),
+            message_group_id="discord",
+            message_deduplication_id="discord_"
+            + str(date.today().strftime("%d/%m/%Y, %H:%M:%S")),
+        )
         logger.error(f"Error sending Discord message: {e}")

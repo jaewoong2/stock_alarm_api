@@ -108,75 +108,64 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
         )
         lines.append("")
 
-        # 가격 정보 (추천이 HOLD가 아닐 경우에만)
-        if response.recommendation != "HOLD":
-            price_lines = []
+        price_lines = []
 
-            if response.entry_price is not None:
+        if response.entry_price is not None:
+            price_lines.append(
+                f"{emoji_map['entry_price']} **진입가**: {response.entry_price}"
+            )
+
+        if response.stop_loss_price is not None and response.entry_price is not None:
+            try:
+                sl_percentage = (
+                    (float(response.stop_loss_price) - float(response.entry_price))
+                    / float(response.entry_price)
+                ) * 100
                 price_lines.append(
-                    f"{emoji_map['entry_price']} **진입가**: {response.entry_price}"
+                    f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price} ({sl_percentage:.2f}%)"
                 )
-
-            if (
-                response.stop_loss_price is not None
-                and response.entry_price is not None
-            ):
-                try:
-                    sl_percentage = (
-                        (float(response.stop_loss_price) - float(response.entry_price))
-                        / float(response.entry_price)
-                    ) * 100
-                    price_lines.append(
-                        f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price} ({sl_percentage:.2f}%)"
-                    )
-                except (ValueError, TypeError):
-                    price_lines.append(
-                        f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
-                    )
-            elif response.stop_loss_price is not None:
+            except (ValueError, TypeError):
                 price_lines.append(
                     f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
                 )
+        elif response.stop_loss_price is not None:
+            price_lines.append(
+                f"{emoji_map['stop_loss_price']} **손절가**: {response.stop_loss_price}"
+            )
 
-            if (
-                response.take_profit_price is not None
-                and response.entry_price is not None
-            ):
-                # 목표가 퍼센테이지 계산 (진입가 대비)
-                try:
-                    tp_percentage = (
-                        (
-                            float(response.take_profit_price)
-                            - float(response.entry_price)
-                        )
-                        / float(response.entry_price)
-                    ) * 100
-                    price_lines.append(
-                        f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price} ({tp_percentage:.2f}%)"
-                    )
-                except (ValueError, TypeError):
-                    price_lines.append(
-                        f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
-                    )
-            elif response.take_profit_price is not None:
+        if response.take_profit_price is not None and response.entry_price is not None:
+            # 목표가 퍼센테이지 계산 (진입가 대비)
+            try:
+                tp_percentage = (
+                    (float(response.take_profit_price) - float(response.entry_price))
+                    / float(response.entry_price)
+                ) * 100
+                price_lines.append(
+                    f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price} ({tp_percentage:.2f}%)"
+                )
+            except (ValueError, TypeError):
                 price_lines.append(
                     f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
                 )
+        elif response.take_profit_price is not None:
+            price_lines.append(
+                f"{emoji_map['take_profit_price']} **목표가**: {response.take_profit_price}"
+            )
 
-            if probability_of_rising_up:
-                price_lines.append(
-                    f"{emoji_map['probability_of_rising_up']} **상승 확률**: {probability_of_rising_up}"
-                )
+        if probability_of_rising_up is not None:
+            price_lines.append(
+                f"{emoji_map['probability_of_rising_up']} **상승 확률**: {probability_of_rising_up}"
+            )
 
-            if response.probability_of_rising_up_percentage is not None:
-                price_lines.append(
-                    f"{emoji_map['probability_of_rising_up_percentage']} **상승 확률(%)**: {response.probability_of_rising_up_percentage:.2f}%"
-                )
+        if response.probability_of_rising_up_percentage is not None:
+            price_lines.append(
+                f"{emoji_map['probability_of_rising_up_percentage']} **상승 확률(%)**: {response.probability_of_rising_up_percentage:.2f}%"
+            )
 
-            if price_lines:
-                lines.append("### 가격 수준")
-                lines.extend(price_lines)
-                lines.append("")
+        if price_lines or len(price_lines) > 0:
+            lines.append("### 가격 수준")
+            lines.extend(price_lines)
+            lines.append("")
 
         # 분석 이유
         lines.append("### 분석 근거")
@@ -187,6 +176,16 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
         if response.think_steps:
             lines.append("### 생각 과정")
             lines.append(f"{emoji_map['think_steps']} {response.think_steps}")
+            lines.append("")
+
+        if response.good_things:
+            lines.append("### 긍정적인 요소")
+            lines.append(response.good_things)
+            lines.append("")
+
+        if response.bad_things:
+            lines.append("### 부정적인 요소")
+            lines.append(response.bad_things)
             lines.append("")
 
     except Exception as e:

@@ -241,6 +241,8 @@ class SignalPromptResponse(BaseModel):
     # take_profit_price: Suggested take-profit price (null for HOLD).
 
     ticker: str
+    good_things: str | None = None
+    bad_things: str | None = None
     reasoning: str
     think_steps: str | None = None
     probability_of_rising_up_percentage: float | None = None
