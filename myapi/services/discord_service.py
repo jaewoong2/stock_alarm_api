@@ -18,3 +18,4 @@ class DiscordService:
         payload = {"content": content}
         response = requests.post(self.webhook_url, json=payload)
         response.raise_for_status()  # 실패 시 예외 발생
+        return response.json()  # 성공 시 JSON 응답 반환

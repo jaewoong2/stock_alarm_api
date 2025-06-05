@@ -81,7 +81,8 @@ def generate_signal_result(
     try:
         if request.ai == "GOOGLE":
             result = ai_service.gemini_completion(
-                prompt=request.prompt,
+                prompt=request.prompt
+                + "\n\n If you are finished, please summarized the result.",
                 schema=SignalPromptResponse,
             )
 
@@ -216,7 +217,7 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(google_result),
             message_group_id="google",
-            message_deduplication_id=req.ticker + str(date.today()),
+            message_deduplication_id=req.ticker + "google" + str(date.today()),
         )
 
     except Exception as e:
@@ -241,7 +242,7 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(openai_result),
             message_group_id="openai",
-            message_deduplication_id=req.ticker + str(date.today()),
+            message_deduplication_id=req.ticker + "openai" + str(date.today()),
         )
 
     except Exception as e:
@@ -365,7 +366,7 @@ async def get_signals(
                 queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
                 message_body=json.dumps(message),
                 message_group_id="signal",
-                message_deduplication_id=report.ticker + str(date.today()),
+                message_deduplication_id=report.ticker + "signal" + str(date.today()),
             )
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
@@ -448,12 +449,13 @@ def send_discord_message(
         return {"status": "error", "message": "Failed to send Discord message."}
 
     try:
-        discord_service.send_message(content=request.content)
+        result = discord_service.send_message(content=request.content)
+        logger.info(f"Discord message sent successfully: {result}")
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
         prompt_result = ai_service.completions_parse(
             system_prompt="",
-            prompt=f"Summary This Contents: {request.content}",
+            prompt=f"Summary This Contents [Total < 4000 words] : {request.content}",
             image_url=None,
             schema=SignalPromptResponse,
             chat_model=ChatModel.GPT_4_1_MINI,
@@ -474,6 +476,6 @@ def send_discord_message(
             message_body=json.dumps(discord_result),
             message_group_id="discord",
             message_deduplication_id="discord_"
-            + str(date.today().strftime("%d/%m/%Y, %H:%M:%S")),
+            + str(date.today().strftime("%Y%m%d%H%M%S")),
         )
         logger.error(f"Error sending Discord message: {e}")

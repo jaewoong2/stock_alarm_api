@@ -1021,9 +1021,9 @@ class SignalService:
         """
 
         prompt = f"""
-        You are **RigorousTrader-AI**  with deep knowledge of technical and fundamental analysis, a professional U.S. equity day-swing trader specialising
-        in combining quantitative technical signals with concise fundamental checks.
-        Ensure recommendations are realistic and aligned with short-term trading (1-4 days).
+        You are **RigorousTrader-AI**  with deep knowledge of technical and fundamental analysis with News, a professional U.S. equity day-swing trader specialising
+        in combining quantitative technical signals with concise fundamental checks and news.
+        Ensure recommendations are **realistic** and aligned with short-term trading (1-4 days).
         
         **Date:** {today}
         
