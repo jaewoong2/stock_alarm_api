@@ -1,3 +1,4 @@
+import datetime
 from pandas import DataFrame
 from myapi.domain.signal.signal_schema import SignalPromptResponse
 
@@ -242,3 +243,111 @@ def export_slim_tail_csv(df: DataFrame, rows: int = 260):
     cols_to_use = [c for c in keep_cols if c in df.columns]
 
     return df.loc[:, cols_to_use].round(3).tail(rows).to_csv()
+
+
+def format_signal_embed(response: SignalPromptResponse, model: str):
+    """
+    SignalPromptResponse → Discord embed JSON.
+    반환값은 embeds 배열 한 개(길어질 경우 여러 개)이다.
+    """
+    emoji = {
+        "ticker": "🏷️",
+        "recommendation": "🚦",
+        "reasoning": "📝",
+        "entry_price": "💰",
+        "stop_loss_price": "🛡️",
+        "take_profit_price": "🎯",
+        "prob_up": "📈",
+        "prob_up_pct": "📊",
+        "think": "💭",
+    }
+
+    # ── 1. 헤더(타이틀) ───────────────────────────────
+    title = f"[{model} 모델] {emoji['ticker']} {response.ticker}"
+    if response.recommendation:
+        title += f"  |  {emoji['recommendation']} {response.recommendation}"
+
+    # ── 2. 설명(Description) ─────────────────────────
+    desc_lines = []
+    if response.reasoning:
+        desc_lines.append(f"{emoji['reasoning']} **분석 근거**\n{response.reasoning}")
+
+    if response.think_steps:
+        desc_lines.append(f"{emoji['think']} **생각 과정**\n{response.think_steps}")
+
+    description = "\n\n".join(desc_lines)[:2048]  # 안전 차단
+
+    # ── 3. 필드(가격 정보 등) ────────────────────────
+    fields = []
+
+    def add_field(name, value, inline=False):
+        if value is None or value == "":
+            return
+        fields.append(
+            {
+                "name": name[:256],
+                "value": str(value)[:1024],
+                "inline": inline,
+            }
+        )
+
+    # 가격 필드
+    add_field(f"{emoji['entry_price']} 진입가", response.entry_price, inline=True)
+    if response.stop_loss_price:
+        if response.entry_price:
+            try:
+                sl_pct = (
+                    (float(response.stop_loss_price) - float(response.entry_price))
+                    / float(response.entry_price)
+                    * 100
+                )
+                value = f"{response.stop_loss_price} ({sl_pct:.2f}%)"
+            except Exception:
+                value = response.stop_loss_price
+        else:
+            value = response.stop_loss_price
+        add_field(f"{emoji['stop_loss_price']} 손절가", value, inline=True)
+
+    if response.take_profit_price:
+        if response.entry_price:
+            try:
+                tp_pct = (
+                    (float(response.take_profit_price) - float(response.entry_price))
+                    / float(response.entry_price)
+                    * 100
+                )
+                value = f"{response.take_profit_price} ({tp_pct:.2f}%)"
+            except Exception:
+                value = response.take_profit_price
+        else:
+            value = response.take_profit_price
+        add_field(f"{emoji['take_profit_price']} 목표가", value, inline=True)
+
+    add_field(
+        f"{emoji['prob_up']} 상승 확률", response.probability_of_rising_up, inline=True
+    )
+    if response.probability_of_rising_up_percentage is not None:
+        add_field(
+            f"{emoji['prob_up_pct']} 상승 확률(%)",
+            f"{response.probability_of_rising_up_percentage:.2f}%",
+            inline=True,
+        )
+
+    # 긍/부정 요소(길 수 있어서 개별 필드로)
+    if response.good_things:
+        add_field("👍 긍정 요소", response.good_things, inline=False)
+    if response.bad_things:
+        add_field("👎 부정 요소", response.bad_things, inline=False)
+
+    # ── 4. embed 객체 완성 ───────────────────────────
+    embed = {
+        "title": title[:256],
+        "description": description,
+        "fields": fields,
+        # 선택 사항: 색상·타임스탬프·author·footer 등
+        "color": (
+            0x2ECC71 if "LONG" in (response.recommendation or "").upper() else 0xE74C3C
+        ),
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+    }
+    return [embed]

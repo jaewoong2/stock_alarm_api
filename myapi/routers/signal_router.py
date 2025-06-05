@@ -31,7 +31,11 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
-from myapi.utils.utils import export_slim_tail_csv, format_signal_response
+from myapi.utils.utils import (
+    export_slim_tail_csv,
+    format_signal_embed,
+    format_signal_response,
+)
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -112,9 +116,8 @@ def generate_signal_result(
         )
 
         try:
-            discord_content = DiscordMessageRequest(
-                content=format_signal_response(result, model=request.ai)
-            )
+            embed = format_signal_embed(result, model=request.ai)
+            discord_content = DiscordMessageRequest(embed=embed)
             discord_result = aws_service.generate_queue_message_http(
                 body=discord_content.model_dump_json(),
                 path="signals/discord/message",
@@ -441,6 +444,16 @@ def send_discord_message(
     """
     디스코드 메시지를 전송하는 헬퍼 함수입니다.
     """
+    if isinstance(request.send_count, str):
+        try:
+            request.send_count = int(request.send_count)
+        except ValueError:
+            logger.error("Invalid send_count value, defaulting to 1.")
+            request.send_count = 1
+    elif not isinstance(request.send_count, int):
+        logger.error("send_count is not an integer, defaulting to 1.")
+        request.send_count = 1
+
     if request.send_count is None:
         request.send_count = 1
 
@@ -449,24 +462,25 @@ def send_discord_message(
         return {"status": "error", "message": "Failed to send Discord message."}
 
     try:
-        result = discord_service.send_message(content=request.content)
+        result = discord_service.send_message(
+            content=request.content, embeds=request.embed
+        )
         logger.info(f"Discord message sent successfully: {result}")
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
         prompt_result = ai_service.completions_parse(
             system_prompt="",
-            prompt=f"Summary This Contents [Total < 4000 words] : {request.content}",
+            prompt=f"Summary This Contents [Total <= 2500 words] : {request.content}",
             image_url=None,
             schema=SignalPromptResponse,
             chat_model=ChatModel.GPT_4_1_MINI,
         )
-        parsed_request = DiscordMessageRequest(
-            content=format_signal_response(prompt_result, model="ERROR_DISCORD"),
-        )
+        embed = format_signal_embed(prompt_result, model="ERROR_DISCORD")
+        discord_content = DiscordMessageRequest(embed=embed)
 
-        parsed_request.send_count = request.send_count + 1
+        discord_content.send_count = request.send_count + 1
         discord_result = aws_service.generate_queue_message_http(
-            body=parsed_request.model_dump_json(),
+            body=discord_content.model_dump_json(),
             path="signals/discord/message",
             method="POST",
             query_string_parameters={},
