@@ -11,6 +11,9 @@ import cloudscraper
 import pandas as pd
 import pdfplumber
 import yfinance as yf
+import numpy as np
+if not hasattr(np, "NaN"):
+    np.NaN = np.nan
 import pandas_ta as ta
 import requests
 import datetime as dt
@@ -391,6 +394,11 @@ class SignalService:
         df["VolumeSpikeStrength"] = df["Volume"] / df["VOL20"]  # 급등 강도
 
         df["RSI14"] = ta.rsi(df["Close"], length=14)
+        df["EMA12"] = ta.ema(df["Close"], length=12)
+        df["EMA26"] = ta.ema(df["Close"], length=26)
+        stoch_rsi = ta.stochrsi(df["Close"], length=14)
+        if stoch_rsi is not None:
+            df = pd.concat([df, stoch_rsi], axis=1)
         df["ATR14"] = ta.atr(
             df["High"], df["Low"], df["Close"], length=14
         )  # 추가: 변동성
@@ -497,9 +505,16 @@ class SignalService:
         bbl_last = df["BBL_20_2.0"].iloc[-1] if "BBL_20_2.0" in cols else None
         macd_prev = df["MACDh_12_26_9"].iloc[-2] if "MACDh_12_26_9" in cols else None
         macd_last = df["MACDh_12_26_9"].iloc[-1] if "MACDh_12_26_9" in cols else None
+        ema12_last = df["EMA12"].iloc[-1] if "EMA12" in cols else None
+        ema26_last = df["EMA26"].iloc[-1] if "EMA26" in cols else None
         stoch_k = (
             df["STOCHk_14_3_3"].iloc[-1] if "STOCHk_14_3_3" in cols else None
         )  # 추가
+        stochrsi_k = (
+            df["STOCHRSIk_14_14_3_3"].iloc[-1]
+            if "STOCHRSIk_14_14_3_3" in cols
+            else None
+        )
         high_52w = (
             df["High"].rolling(252).max().iloc[-1] if len(df) >= 252 else None
         )  # 추가
@@ -607,15 +622,22 @@ class SignalService:
                 rsi_last is not None
                 and bbl_last is not None
                 and stoch_k is not None
+                and stochrsi_k is not None
                 and rsi_last < 40
                 and close_last <= bbl_last * 1.02
                 and stoch_k < 30
+                and stochrsi_k < 20
             )
             out.append(
                 TechnicalSignal(
                     strategy="OVERSOLD",
                     triggered=triggered,
-                    details={"rsi": rsi_last, "bbl": bbl_last, "stoch_k": stoch_k},
+                    details={
+                        "rsi": rsi_last,
+                        "bbl": bbl_last,
+                        "stoch_k": stoch_k,
+                        "stochrsi_k": stochrsi_k,
+                    },
                 )
             )
 
@@ -630,15 +652,23 @@ class SignalService:
                 and macd_last is not None
                 and macd_line is not None
                 and signal_line is not None
+                and ema12_last is not None
+                and ema26_last is not None
                 and macd_prev < 0.2
                 and macd_last > -0.05
                 and macd_line > signal_line
+                and ema12_last > ema26_last
             )
             out.append(
                 TechnicalSignal(
                     strategy="MACD_LONG",
                     triggered=triggered,
-                    details={"prev_macd_h": macd_prev, "macd_h": macd_last},
+                    details={
+                        "prev_macd_h": macd_prev,
+                        "macd_h": macd_last,
+                        "ema12": ema12_last,
+                        "ema26": ema26_last,
+                    },
                 )
             )
 
