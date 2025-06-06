@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 import logging
 from fastapi import HTTPException
 
-from sqlalchemy.orm import Session
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.domain.signal.signal_schema import (
     SignalBaseResponse,
