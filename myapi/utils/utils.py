@@ -260,6 +260,7 @@ def format_signal_embed(response: SignalPromptResponse, model: str):
         "prob_up": "📈",
         "prob_up_pct": "📊",
         "think": "💭",
+        "senarios": "📜",
     }
 
     # ── 1. 헤더(타이틀) ───────────────────────────────
@@ -339,6 +340,9 @@ def format_signal_embed(response: SignalPromptResponse, model: str):
     if response.bad_things:
         add_field("👎 부정 요소", response.bad_things, inline=False)
 
+    if response.senarios:
+        add_field(f"{emoji['senarios']} 시나리오", response.senarios, inline=False)
+
     # ── 4. embed 객체 완성 ───────────────────────────
     embed = {
         "title": title[:256],
@@ -346,7 +350,7 @@ def format_signal_embed(response: SignalPromptResponse, model: str):
         "fields": fields,
         # 선택 사항: 색상·타임스탬프·author·footer 등
         "color": (
-            0x2ECC71 if "LONG" in (response.recommendation or "").upper() else 0xE74C3C
+            0x2ECC71 if "BUY" in (response.recommendation or "").upper() else 0xE74C3C
         ),
         "timestamp": datetime.datetime.utcnow().isoformat(),
     }

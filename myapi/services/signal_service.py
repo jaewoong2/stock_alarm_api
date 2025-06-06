@@ -345,6 +345,13 @@ class SignalService:
             logger.warning(f"Error calculating FCF Yield: {str(e)}")
         return None
 
+    def add_computed_rs_data(self, df: pd.DataFrame, ticker: str):
+        """
+        종목의 상대강도(RS) 데이터 계산
+        :param ticker: 종목 티커 (예: 'AAPL')
+        :return: 상대강도 데이터 (DataFrame)
+        """
+
     def fetch_ohlcv(
         self,
         ticker: str,
@@ -1200,6 +1207,7 @@ class SignalService:
         ticker: str,
         date: datetime.date | str,
     ) -> str:
+        ticker = ticker.upper()
         """
         Generate a prompt for web search based on the stock ticker and report summary.
         """
@@ -1225,7 +1233,7 @@ class SignalService:
         │   ② "Ticker[{ticker}] stock news catalyst past 7 days"
         │   ③ "Ticker[{ticker}] analyst report OR price target OR upgrade OR downgrade past 7 days"
         │   ④ "Ticker[{ticker}] unusual options activity OR block trade past 3 days"  --recency=3
-        │ • Domains hint (optional): bloomberg.com, reuters.com, wsj.com, cnbc.com, https://stockscan.io/stocks/{ticker}/news
+        │ • Domains hint (optional): bloomberg.com, reuters.com, https://www.tradingview.com/symbols/NASDAQ-{ticker}/news/, https://stockscan.io/stocks/{ticker}/news
         │   seekingalpha.com, barrons.com, sec.gov, nasdaq.com, streetinsider.com, fintel.io
         │ • Fetch max 10 unique docs total. Skip duplicates.
         │ • If no valid hit → return "NO RECENT CATALYSTS".

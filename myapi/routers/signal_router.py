@@ -113,6 +113,9 @@ def generate_signal_result(
             result_description=result.reasoning,
             report_summary=request.summary,
             ai_model=request.ai,  # Store the AI model used for the signal
+            senario=result.senarios,
+            good_things=result.good_things,
+            bad_things=result.bad_things,
         )
 
         try:
