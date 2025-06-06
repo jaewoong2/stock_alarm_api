@@ -451,5 +451,7 @@ def send_discord_message(
         logger.info(f"Discord message sent successfully: {result}")
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
-
+        result = discord_service.send_message(
+            content="Error sending Discord message: " + str(e), embeds=None
+        )
         logger.error(f"Error sending Discord message: {e}")
