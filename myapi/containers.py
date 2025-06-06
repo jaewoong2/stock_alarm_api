@@ -4,6 +4,7 @@ from myapi.database import get_db
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.trading_repository import TradingRepository
+from myapi.repositories.ticker_repository import TickerRepository
 from myapi.services import futures_service
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
@@ -12,6 +13,7 @@ from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.kakao_service import KakaoService
 from myapi.services.backdata_service import BackDataService
+from myapi.services.ticker_service import TickerService
 from myapi.services.signal_service import SignalService
 from myapi.services.tqqq_service import TqqqService
 from myapi.services.trading.trade_service import TradingService
@@ -31,6 +33,7 @@ class RepositoryModule(containers.DeclarativeContainer):
     signals_repository = providers.Factory(SignalsRepository, db_session=get_db)
     trading_repository = providers.Factory(TradingRepository, db_session=get_db)
     futures_repository = providers.Factory(FuturesRepository, db_session=get_db)
+    ticker_repository = providers.Factory(TickerRepository, db_session=get_db)
 
 
 class ServiceModule(containers.DeclarativeContainer):
@@ -72,6 +75,11 @@ class ServiceModule(containers.DeclarativeContainer):
         backdata_service=backdata_service,
     )
 
+    ticker_service = providers.Factory(
+        TickerService,
+        ticker_repository=repositories.ticker_repository,
+    )
+
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,
@@ -94,6 +102,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.coinone_router",
             "myapi.routers.futures_router",
             "myapi.routers.signal_router",
+            "myapi.routers.ticker_router",
         ],
     )
 
