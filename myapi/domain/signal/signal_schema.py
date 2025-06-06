@@ -375,4 +375,3 @@ class DiscordMessageRequest(BaseModel):
 
     content: str = ""
     embed: Optional[List] = None  # Optional embed data for rich content
-    send_count: Optional[int] = 1  # Number of times to send the

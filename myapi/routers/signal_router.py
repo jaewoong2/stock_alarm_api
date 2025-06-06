@@ -440,29 +440,10 @@ def send_discord_message(
     discord_service: DiscordService = Depends(
         Provide[Container.services.discord_service]
     ),
-    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
-    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
     """
     디스코드 메시지를 전송하는 헬퍼 함수입니다.
     """
-    if isinstance(request.send_count, str):
-        try:
-            request.send_count = int(request.send_count)
-        except ValueError:
-            logger.error("Invalid send_count value, defaulting to 1.")
-            request.send_count = 1
-    elif not isinstance(request.send_count, int):
-        logger.error("send_count is not an integer, defaulting to 1.")
-        request.send_count = 1
-
-    if request.send_count is None:
-        request.send_count = 1
-
-    if request.send_count > 3:
-        logger.error("Failed to send Discord message after 3 attempts.")
-        return {"status": "error", "message": "Failed to send Discord message."}
-
     try:
         result = discord_service.send_message(
             content=request.content, embeds=request.embed
@@ -470,28 +451,5 @@ def send_discord_message(
         logger.info(f"Discord message sent successfully: {result}")
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
-        prompt_result = ai_service.completions_parse(
-            system_prompt="",
-            prompt=f"Summary This Contents [Total <= 2500 words] : {request.content}",
-            image_url=None,
-            schema=SignalPromptResponse,
-            chat_model=ChatModel.GPT_4_1_MINI,
-        )
-        embed = format_signal_embed(prompt_result, model="ERROR_DISCORD")
-        discord_content = DiscordMessageRequest(embed=embed)
 
-        discord_content.send_count = request.send_count + 1
-        discord_result = aws_service.generate_queue_message_http(
-            body=discord_content.model_dump_json(),
-            path="signals/discord/message",
-            method="POST",
-            query_string_parameters={},
-        )
-        aws_service.send_sqs_fifo_message(
-            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
-            message_body=json.dumps(discord_result),
-            message_group_id="discord",
-            message_deduplication_id="discord_"
-            + str(date.today().strftime("%Y%m%d%H%M%S")),
-        )
         logger.error(f"Error sending Discord message: {e}")
