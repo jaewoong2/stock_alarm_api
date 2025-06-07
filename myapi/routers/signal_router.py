@@ -396,15 +396,15 @@ async def get_signals(
 
         # await sleep(3)  # To avoid throttling issues with SQS
 
-        # try:
-        #     aws_service.send_sqs_fifo_message(
-        #         queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
-        #         message_body=json.dumps(message),
-        #         message_group_id="signal",
-        #         message_deduplication_id=report.ticker + "signal" + str(date.today()),
-        #     )
-        # except Exception as e:
-        #     logger.error(f"Error Sending SQS message: {e}")
+        try:
+            aws_service.send_sqs_fifo_message(
+                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+                message_body=json.dumps(message),
+                message_group_id="signal",
+                message_deduplication_id=report.ticker + "signal" + str(date.today()),
+            )
+        except Exception as e:
+            logger.error(f"Error Sending SQS message: {e}")
 
     return SignalResponse(
         run_date=run_date,
