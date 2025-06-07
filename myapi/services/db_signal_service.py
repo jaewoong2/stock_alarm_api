@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from fastapi import HTTPException
 
@@ -303,3 +303,15 @@ class DBSignalService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to fetch today's signals: {str(e)}"
             )
+
+    async def get_signals_by_date_and_ticker(self, ticker: str, date_value: date):
+        """특정 날짜와 티커의 시그널을 조회합니다."""
+        try:
+            # 해당 날짜에 생성된 특정 티커의 시그널 조회
+            signals = self.repository.get_by_ticker_and_date(ticker, date_value)
+            return signals
+        except Exception as e:
+            self.logger.error(
+                f"Error getting signals for {ticker} on {date_value}: {e}"
+            )
+            return []

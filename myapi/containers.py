@@ -78,6 +78,7 @@ class ServiceModule(containers.DeclarativeContainer):
     ticker_service = providers.Factory(
         TickerService,
         ticker_repository=repositories.ticker_repository,
+        signals_repository=repositories.signals_repository,
     )
 
     signal_service = providers.Factory(

@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import date, timedelta
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from myapi.domain.ticker.ticker_model import Ticker
@@ -50,7 +51,9 @@ class TickerRepository:
         return tickers
 
     # 특정 날짜의 전일 데이터 조회
-    def get_previous_day_ticker(self, symbol: str, date_value: date):
+    def get_previous_day_ticker(self, symbol: str, date_value: Optional[date]):
+        if not date_value:
+            return None
         prev_date = date_value - timedelta(days=1)
         return self.get_by_symbol_and_date(symbol, prev_date)
 
@@ -74,3 +77,43 @@ class TickerRepository:
         self.db_session.delete(db_ticker)
         self.db_session.commit()
         return True
+
+    def get_latest_for_all_symbols(self):
+        """각 심볼별 가장 최신 데이터 조회"""
+        subquery = (
+            self.db_session.query(
+                Ticker.symbol, func.max(Ticker.date).label("max_date")
+            )
+            .group_by(Ticker.symbol)
+            .subquery()
+        )
+
+        results = (
+            self.db_session.query(Ticker)
+            .join(
+                subquery,
+                (Ticker.symbol == subquery.c.symbol)
+                & (Ticker.date == subquery.c.max_date),
+            )
+            .all()
+        )
+
+        return [TickerVO.model_validate(ticker) for ticker in results]
+
+    def get_latest_by_symbol(self, symbol: str):
+        """특정 심볼의 가장 최신 데이터 조회"""
+        return (
+            self.db_session.query(Ticker)
+            .filter(Ticker.symbol == symbol)
+            .order_by(desc(Ticker.date))
+            .first()
+        )
+
+    def get_next_day_ticker(self, symbol: str, reference_date: date):
+        """특정 날짜 이후의 가장 가까운 거래일 데이터 조회"""
+        return (
+            self.db_session.query(Ticker)
+            .filter(Ticker.symbol == symbol, Ticker.date > reference_date)
+            .order_by(Ticker.date)
+            .first()
+        )

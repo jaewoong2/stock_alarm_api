@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple
 import logging
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy import text, desc, func, between, and_
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from myapi.domain.signal.signal_models import Signals
 from myapi.domain.signal.signal_schema import SignalBaseResponse
@@ -445,3 +445,44 @@ class SignalsRepository:
             .all()
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
+
+    def get_by_ticker_and_date(self, ticker: str, date_value: date):
+        """특정 날짜와 티커의 시그널을 조회"""
+        # 해당 날짜의 시작과 끝 시간 계산
+        start_of_day = datetime.combine(date_value, datetime.min.time())
+        end_of_day = datetime.combine(date_value, datetime.max.time())
+
+        results = (
+            self.db_session.query(Signals)
+            .filter(
+                Signals.ticker == ticker,
+                Signals.created_at >= start_of_day,
+                Signals.created_at <= end_of_day,
+            )
+            .order_by(Signals.created_at.desc())
+            .all()
+        )
+
+        return (
+            [SignalBaseResponse.model_validate(s) for s in results] if results else []
+        )
+
+    # get_by_ticker 메서드 수정
+    def get_by_ticker(self, ticker: str) -> List:
+        """특정 티커의 모든 시그널을 최신순으로 조회"""
+        try:
+            # timestamp 필드를 기준으로 정렬 시도
+            return (
+                self.db_session.query(Signals)
+                .filter(Signals.ticker == ticker)
+                .order_by(Signals.timestamp.desc())
+                .all()
+            )
+        except Exception:
+            # timestamp가 없다면 created_at 필드로 정렬 시도
+            return (
+                self.db_session.query(Signals)
+                .filter(Signals.ticker == ticker)
+                .order_by(Signals.created_at.desc())
+                .all()
+            )

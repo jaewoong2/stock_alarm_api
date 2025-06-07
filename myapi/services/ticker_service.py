@@ -1,18 +1,26 @@
 from typing import Dict, List, Optional
-from datetime import date
+from datetime import date, timedelta
 
 from myapi.domain.ticker.ticker_schema import (
+    SignalAccuracyResponse,
     TickerCreate,
+    TickerLatestWithChangeResponse,
     TickerResponse,
     TickerUpdate,
     TickerChangeResponse,
 )
+from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.ticker_repository import TickerRepository
 
 
 class TickerService:
-    def __init__(self, ticker_repository: TickerRepository):
+    def __init__(
+        self,
+        ticker_repository: TickerRepository,
+        signals_repository: SignalsRepository,
+    ):
         self.ticker_repository = ticker_repository
+        self.signals_repository = signals_repository  # 시그널 레포지토리 추가
 
     def create_ticker(self, data: TickerCreate) -> TickerResponse:
         ticker = self.ticker_repository.create(data)
@@ -22,9 +30,9 @@ class TickerService:
         ticker = self.ticker_repository.get(ticker_id)
         return TickerResponse.model_validate(ticker) if ticker else None
 
-    def get_ticker_by_symbol(self, symbol: str) -> Optional[TickerResponse]:
-        ticker = self.ticker_repository.get_by_symbol(symbol)
-        return TickerResponse.model_validate(ticker) if ticker else None
+    def get_ticker_by_symbol(self, symbol: str) -> Optional[List[TickerResponse]]:
+        ticker = self.ticker_repository.get_by_symbol(symbol).all()
+        return [TickerResponse.model_validate(t) for t in ticker] if ticker else None
 
     def get_all_tickers(self) -> List[TickerResponse]:
         tickers = self.ticker_repository.list()
@@ -44,7 +52,22 @@ class TickerService:
         self, symbol: str, date_value: date
     ) -> Optional[TickerResponse]:
         ticker = self.ticker_repository.get_by_symbol_and_date(symbol, date_value)
-        return TickerResponse.model_validate(ticker) if ticker else None
+        return (
+            TickerResponse(
+                id=ticker.id,
+                symbol=ticker.symbol,
+                name=ticker.name,
+                price=ticker.price,
+                open_price=ticker.open_price,
+                high_price=ticker.high_price,
+                low_price=ticker.low_price,
+                close_price=ticker.close_price,
+                volume=ticker.volume,
+                date=ticker.date,
+            )
+            if ticker
+            else None
+        )
 
     # 새로 추가: 날짜별 변화율 계산
     def get_ticker_changes(
@@ -185,3 +208,128 @@ class TickerService:
             results.append(change_response)
 
         return results
+        # 시그널 예측 정확성 평가 메서드
+
+    def get_latest_tickers_with_changes(self) -> List[TickerLatestWithChangeResponse]:
+        """
+        모든 티커의 가장 최신 데이터와 전날 대비 변화율을 계산하여 반환합니다.
+        """
+        try:
+            # 모든 심볼의 최신 데이터 가져오기
+            latest_tickers = self.ticker_repository.get_latest_for_all_symbols()
+            results = []
+
+            for ticker in latest_tickers:
+                try:
+                    if not ticker:
+                        continue
+
+                    # 응답 객체 생성 - 변화율 필드는 기본값 None으로 초기화
+                    # 각 필드에 명시적 타입 변환 적용
+                    response = TickerLatestWithChangeResponse(
+                        symbol=ticker.symbol,
+                        date=ticker.date,
+                        open_price=(
+                            float(ticker.open_price)
+                            if ticker.open_price is not None
+                            else None
+                        ),
+                        high_price=(
+                            float(ticker.high_price)
+                            if ticker.high_price is not None
+                            else None
+                        ),
+                        low_price=(
+                            float(ticker.low_price)
+                            if ticker.low_price is not None
+                            else None
+                        ),
+                        close_price=(
+                            float(ticker.close_price)
+                            if ticker.close_price is not None
+                            else None
+                        ),
+                        volume=(
+                            int(ticker.volume) if ticker.volume is not None else None
+                        ),
+                        name=(
+                            str(ticker.name)
+                            if hasattr(ticker, "name") and ticker.name is not None
+                            else None
+                        ),
+                        close_change=None,
+                        volume_change=None,
+                        signal=None,  # 시그널 정보 초기화
+                    )
+
+                    # 이전 날짜 데이터 가져오기
+                    prev_ticker = self.ticker_repository.get_previous_day_ticker(
+                        ticker.symbol, ticker.date
+                    )
+
+                    # 전일 데이터가 있으면 변화율 계산
+                    if prev_ticker:
+                        # 종가 변화율 - 0으로 나누는 오류 방지
+                        if (
+                            ticker.close_price is not None
+                            and prev_ticker.close_price is not None
+                            and prev_ticker.close_price != 0  # 0으로 나누기 방지
+                        ):
+                            current_close = float(ticker.close_price)
+                            prev_close = float(prev_ticker.close_price)
+                            response.close_change = (
+                                (current_close - prev_close) / prev_close * 100
+                            )
+
+                        # 거래량 변화율 - 0으로 나누는 오류 방지
+                        if (
+                            ticker.volume is not None
+                            and prev_ticker.volume is not None
+                            and prev_ticker.volume != 0  # 0으로 나누기 방지
+                        ):
+                            current_volume = int(ticker.volume)
+                            prev_volume = int(prev_ticker.volume)
+                            response.volume_change = (
+                                (current_volume - prev_volume) / prev_volume * 100
+                            )
+
+                    results.append(response)
+                except Exception as e:
+                    # 개별 티커 처리 중 오류가 발생해도 다른 티커는 계속 처리
+                    print(f"티커 {ticker.symbol} 처리 중 오류 발생: {str(e)}")
+                    continue
+
+            return results
+        except Exception as e:
+            print(f"티커 데이터 조회 중 오류 발생: {str(e)}")
+            return []
+
+    # evaluate_signal_accuracy 메서드 수정 (created_at을 timestamp로 변경)
+    def evaluate_signal_accuracy(
+        self, ticker_symbol: str, signal_id: int, days_to_check: int = 5
+    ):
+        # 시그널 정보 가져오기 (특정 ID 또는 가장 최근 시그널)
+        # 특정 티커의 가장 최근 시그널 가져오기
+        signals = self.signals_repository.get_by_ticker(ticker_symbol)
+        if signals:
+            signal = signals[0]  # 가장 최근 시그널
+
+        if not signal:
+            return SignalAccuracyResponse(
+                ticker=ticker_symbol,
+                signal_id=signal_id,
+                action=None,
+                entry_price=0,
+                actual_result=None,
+                is_accurate=False,
+                accuracy_details="시그널 정보를 찾을 수 없습니다.",
+            )
+
+        # 시그널 생성일 이후의 해당 티커 데이터 가져오기
+        # created_at 대신 timestamp 사용
+        signal_date = (
+            signal.timestamp.date()
+            if hasattr(signal, "timestamp")
+            else signal.created_at.date()
+        )
+        check_date = signal_date + timedelta(days=days_to_check)
