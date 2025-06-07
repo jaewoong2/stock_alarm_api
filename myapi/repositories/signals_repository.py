@@ -45,6 +45,9 @@ class SignalsRepository:
         strategy: Optional[str] = None,  # 신호가 발생한 전략 추가
         report_summary: Optional[str] = None,
         ai_model: str = "OPENAI_O4MINI",
+        senario: Optional[str] = None,  # 시나리오 설명
+        good_things: Optional[str] = None,  # 좋은 점
+        bad_things: Optional[str] = None,  # 나쁜 점
     ) -> SignalBaseResponse:
         """
         새로운 신호를 생성합니다.
@@ -63,6 +66,9 @@ class SignalsRepository:
                 strategy=strategy,  # 전략 정보 추가
                 report_summary=report_summary,
                 ai_model=ai_model,  # AI 모델 정보 추가
+                senario=senario,  # 시나리오 설명 추가
+                good_things=good_things,  # 좋은 점 추가
+                bad_things=bad_things,  # 나쁜 점 추가
             )
             self.db_session.add(signal)
             self.db_session.commit()

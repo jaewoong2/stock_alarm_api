@@ -11,6 +11,7 @@ from myapi.exceptions.futures_exceptions import register_exception_handlers
 from myapi.exceptions.index import ServiceException
 from myapi.routers import (
     coinone_router,
+    ticker_router,
     futures_router,
     kakao_router,
     signal_router,
@@ -96,4 +97,5 @@ app.include_router(trading_router.router)
 app.include_router(coinone_router.router)
 app.include_router(futures_router.router)
 app.include_router(signal_router.router)
+app.include_router(ticker_router.router)
 handler = Mangum(app)

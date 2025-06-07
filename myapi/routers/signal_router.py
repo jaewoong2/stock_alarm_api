@@ -1,7 +1,6 @@
 from asyncio import sleep
 import json
 import logging
-import re
 from typing import List, Literal
 from venv import logger
 from fastapi import APIRouter, Depends
@@ -25,17 +24,22 @@ from myapi.domain.signal.signal_schema import (
     TickerReport,
     WebSearchTickerResponse,
 )
+from myapi.domain.ticker.ticker_schema import TickerUpdate
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
+from myapi.services.ticker_service import TickerService
 from myapi.utils.utils import (
     export_slim_tail_csv,
     format_signal_embed,
     format_signal_response,
 )
+
+# 티커 생성을 위한 데이터 준비
+from myapi.domain.ticker.ticker_schema import TickerCreate
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -113,6 +117,9 @@ def generate_signal_result(
             result_description=result.reasoning,
             report_summary=request.summary,
             ai_model=request.ai,  # Store the AI model used for the signal
+            senario=result.senarios,
+            good_things=result.good_things,
+            bad_things=result.bad_things,
         )
 
         try:
@@ -262,6 +269,7 @@ def llm_query(
 async def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     START_DAYS_BACK: int = 400
@@ -288,6 +296,30 @@ async def get_signals(
                 * 100
             ) or 0.0
             mkt_ok = spy_persentage_from_200ma > 0.0
+
+        try:
+            # 최근 거래일의 데이터 추출
+            latest_row = df.iloc[-1]
+
+            ticker_data = TickerCreate(
+                symbol=t,
+                name=t,  # 실제 회사명이 필요하면 별도 API로 가져와야 함
+                price=float(latest_row["Close"]),
+                open_price=float(latest_row["Open"]) if "Open" in latest_row else None,
+                high_price=float(latest_row["High"]) if "High" in latest_row else None,
+                low_price=float(latest_row["Low"]) if "Low" in latest_row else None,
+                close_price=(
+                    float(latest_row["Close"]) if "Close" in latest_row else None
+                ),
+                volume=int(latest_row["Volume"]) if "Volume" in latest_row else None,
+                date=df.index[-1].date() if hasattr(df.index[-1], "date") else run_date,
+            )
+
+            ticker_service.create_ticker(ticker_data)
+            logger.info(f"Created new ticker data for {t}")
+
+        except Exception as e:
+            logger.error(f"Error saving ticker data for {t}: {e}")
 
         tech_sigs = [
             TechnicalSignal(
@@ -364,7 +396,7 @@ async def get_signals(
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
 
-        await sleep(3)  # To avoid throttling issues with SQS
+        # await sleep(3)  # To avoid throttling issues with SQS
 
         try:
             aws_service.send_sqs_fifo_message(
@@ -440,29 +472,10 @@ def send_discord_message(
     discord_service: DiscordService = Depends(
         Provide[Container.services.discord_service]
     ),
-    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
-    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
     """
     디스코드 메시지를 전송하는 헬퍼 함수입니다.
     """
-    if isinstance(request.send_count, str):
-        try:
-            request.send_count = int(request.send_count)
-        except ValueError:
-            logger.error("Invalid send_count value, defaulting to 1.")
-            request.send_count = 1
-    elif not isinstance(request.send_count, int):
-        logger.error("send_count is not an integer, defaulting to 1.")
-        request.send_count = 1
-
-    if request.send_count is None:
-        request.send_count = 1
-
-    if request.send_count > 3:
-        logger.error("Failed to send Discord message after 3 attempts.")
-        return {"status": "error", "message": "Failed to send Discord message."}
-
     try:
         result = discord_service.send_message(
             content=request.content, embeds=request.embed
@@ -470,28 +483,7 @@ def send_discord_message(
         logger.info(f"Discord message sent successfully: {result}")
         return {"status": "success", "message": "Discord message sent successfully."}
     except Exception as e:
-        prompt_result = ai_service.completions_parse(
-            system_prompt="",
-            prompt=f"Summary This Contents [Total <= 2500 words] : {request.content}",
-            image_url=None,
-            schema=SignalPromptResponse,
-            chat_model=ChatModel.GPT_4_1_MINI,
-        )
-        embed = format_signal_embed(prompt_result, model="ERROR_DISCORD")
-        discord_content = DiscordMessageRequest(embed=embed)
-
-        discord_content.send_count = request.send_count + 1
-        discord_result = aws_service.generate_queue_message_http(
-            body=discord_content.model_dump_json(),
-            path="signals/discord/message",
-            method="POST",
-            query_string_parameters={},
-        )
-        aws_service.send_sqs_fifo_message(
-            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
-            message_body=json.dumps(discord_result),
-            message_group_id="discord",
-            message_deduplication_id="discord_"
-            + str(date.today().strftime("%Y%m%d%H%M%S")),
+        result = discord_service.send_message(
+            content="Error sending Discord message: " + str(e), embeds=None
         )
         logger.error(f"Error sending Discord message: {e}")

@@ -19,3 +19,6 @@ class Signals(Base):
     result_description = Column(String, nullable=True)  # 결과 설명
     report_summary = Column(String, nullable=True)  # 보고서 요약
     ai_model = Column(String, nullable=True, default="OPENAI_O4MINI")  # AI 모델 이름
+    senario = Column(String, nullable=True)  # 시나리오 설명 250606 추가
+    good_things = Column(String, nullable=True)  # 좋은 점 250606 추가
+    bad_things = Column(String, nullable=True)  # 나쁜 점 250606 추가
