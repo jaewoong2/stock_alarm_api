@@ -133,6 +133,8 @@ def generate_signal_result(
                 + str(request.ai)
                 + str(date.today()),
             )
+
+            return discord_content
         except Exception as e:
             logger.error(f"Error SendingDiscord: {e}")
 
