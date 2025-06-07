@@ -24,17 +24,22 @@ from myapi.domain.signal.signal_schema import (
     TickerReport,
     WebSearchTickerResponse,
 )
+from myapi.domain.ticker.ticker_schema import TickerUpdate
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
+from myapi.services.ticker_service import TickerService
 from myapi.utils.utils import (
     export_slim_tail_csv,
     format_signal_embed,
     format_signal_response,
 )
+
+# 티커 생성을 위한 데이터 준비
+from myapi.domain.ticker.ticker_schema import TickerCreate
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -262,6 +267,7 @@ def llm_query(
 async def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     START_DAYS_BACK: int = 400
@@ -288,6 +294,30 @@ async def get_signals(
                 * 100
             ) or 0.0
             mkt_ok = spy_persentage_from_200ma > 0.0
+
+        try:
+            # 최근 거래일의 데이터 추출
+            latest_row = df.iloc[-1]
+
+            ticker_data = TickerCreate(
+                symbol=t,
+                name=t,  # 실제 회사명이 필요하면 별도 API로 가져와야 함
+                price=float(latest_row["Close"]),
+                open_price=float(latest_row["Open"]) if "Open" in latest_row else None,
+                high_price=float(latest_row["High"]) if "High" in latest_row else None,
+                low_price=float(latest_row["Low"]) if "Low" in latest_row else None,
+                close_price=(
+                    float(latest_row["Close"]) if "Close" in latest_row else None
+                ),
+                volume=int(latest_row["Volume"]) if "Volume" in latest_row else None,
+                date=df.index[-1].date() if hasattr(df.index[-1], "date") else run_date,
+            )
+
+            ticker_service.create_ticker(ticker_data)
+            logger.info(f"Created new ticker data for {t}")
+
+        except Exception as e:
+            logger.error(f"Error saving ticker data for {t}: {e}")
 
         tech_sigs = [
             TechnicalSignal(
@@ -364,17 +394,17 @@ async def get_signals(
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
 
-        await sleep(3)  # To avoid throttling issues with SQS
+        # await sleep(3)  # To avoid throttling issues with SQS
 
-        try:
-            aws_service.send_sqs_fifo_message(
-                queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
-                message_body=json.dumps(message),
-                message_group_id="signal",
-                message_deduplication_id=report.ticker + "signal" + str(date.today()),
-            )
-        except Exception as e:
-            logger.error(f"Error Sending SQS message: {e}")
+        # try:
+        #     aws_service.send_sqs_fifo_message(
+        #         queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+        #         message_body=json.dumps(message),
+        #         message_group_id="signal",
+        #         message_deduplication_id=report.ticker + "signal" + str(date.today()),
+        #     )
+        # except Exception as e:
+        #     logger.error(f"Error Sending SQS message: {e}")
 
     return SignalResponse(
         run_date=run_date,
