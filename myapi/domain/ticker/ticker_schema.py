@@ -102,7 +102,6 @@ class SignalAccuracyResponse(BaseModel):
     """시그널 예측 정확도 평가 응답 스키마"""
 
     ticker: str
-    signal_id: Optional[int] = None
     action: Optional[str] = None  # buy, sell, hold
     entry_price: float = 0
     prediction_date: Optional[datetime.date] = None

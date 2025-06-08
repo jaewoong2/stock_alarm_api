@@ -1,3 +1,4 @@
+import time
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
 import logging
@@ -468,15 +469,21 @@ class SignalsRepository:
         )
 
     # get_by_ticker 메서드 수정
-    def get_by_ticker(self, ticker: str) -> List:
+    def get_by_ticker(self, ticker: str):
         """특정 티커의 모든 시그널을 최신순으로 조회"""
         try:
             # timestamp 필드를 기준으로 정렬 시도
-            return (
+            results = (
                 self.db_session.query(Signals)
                 .filter(Signals.ticker == ticker)
                 .order_by(Signals.timestamp.desc())
                 .all()
+            )
+
+            return (
+                [SignalBaseResponse.model_validate(s) for s in results]
+                if results
+                else []
             )
         except Exception:
             # timestamp가 없다면 created_at 필드로 정렬 시도
@@ -486,3 +493,37 @@ class SignalsRepository:
                 .order_by(Signals.created_at.desc())
                 .all()
             )
+
+    def get_signal_by_symbol(self, symbol: str, timestamp: Optional[datetime] = None):
+        """
+        특정 심볼(티커)에 대한 신호를 가져옵니다.
+        ticker_service의 evaluate_signal_accuracy 메서드에서 사용됩니다.
+
+        Args:
+            symbol (str): 조회할 심볼(티커)
+
+        Returns:
+            List[Signals]: 해당 심볼의 시그널 객체 목록
+        """
+        self._ensure_valid_session()
+        try:
+            signal = (
+                self.db_session.query(Signals)
+                .filter(Signals.ticker == symbol)
+                .where(
+                    and_(
+                        Signals.timestamp == timestamp
+                        if timestamp is not None
+                        else True
+                    )
+                )
+                .order_by(Signals.timestamp.desc())
+                .one_or_none()
+            )
+
+            return signal
+
+        except Exception as e:
+            logging.error(f"Error fetching signals by symbol: {e}")
+            # timestamp가 없다면 created_at 필드로 정렬 시도
+            return None

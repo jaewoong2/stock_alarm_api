@@ -1,3 +1,4 @@
+import datetime
 from typing import Dict, List, Optional
 from datetime import date, timedelta
 
@@ -304,32 +305,79 @@ class TickerService:
             print(f"티커 데이터 조회 중 오류 발생: {str(e)}")
             return []
 
-    # evaluate_signal_accuracy 메서드 수정 (created_at을 timestamp로 변경)
-    def evaluate_signal_accuracy(
-        self, ticker_symbol: str, signal_id: int, days_to_check: int = 5
-    ):
-        # 시그널 정보 가져오기 (특정 ID 또는 가장 최근 시그널)
-        # 특정 티커의 가장 최근 시그널 가져오기
-        signals = self.signals_repository.get_by_ticker(ticker_symbol)
-        if signals:
-            signal = signals[0]  # 가장 최근 시그널
+    def evaluate_signal(
+        self, ticker_symbol: str, timstamp: datetime.datetime
+    ) -> Optional[SignalAccuracyResponse]:
+        """
+        특정 종목에 대한 시그널의 정확도를 평가합니다.
+        시그널 발생일의 다음 거래일 가격을 기준으로 시그널의 정확도를 계산합니다.
+
+        Args:
+            ticker_symbol (str): 평가할 종목 심볼
+
+        Returns:
+            SignalAccuracyResponse: 시그널 정확도 정보
+        """
+        # 해당 종목의 모든 시그널 조회
+        signal = self.signals_repository.get_signal_by_symbol(ticker_symbol, timstamp)
 
         if not signal:
-            return SignalAccuracyResponse(
-                ticker=ticker_symbol,
-                signal_id=signal_id,
-                action=None,
-                entry_price=0,
-                actual_result=None,
-                is_accurate=False,
-                accuracy_details="시그널 정보를 찾을 수 없습니다.",
+            return None
+
+        signal_date = signal.created_at.date()
+
+        # 다음 거래일 데이터 찾기
+        next_day = signal_date + timedelta(days=1)
+        next_day_ticker = None
+
+        # 최대 7일까지 다음 거래일 찾기 (주말, 공휴일 등으로 바로 다음날 데이터가 없을 수 있음)
+        for i in range(1, 8):
+            check_date = signal_date + timedelta(days=i)
+            ticker_data = self.ticker_repository.get_by_symbol_and_date(
+                ticker_symbol, check_date
+            )
+            if ticker_data:
+                next_day_ticker = ticker_data
+                next_day = check_date
+                break
+
+        if not next_day_ticker:
+            return None
+
+        # 시그널 당일 데이터 조회
+        signal_day_ticker = self.ticker_repository.get_by_symbol_and_date(
+            ticker_symbol, signal_date
+        )
+
+        if not signal_day_ticker:
+            return None
+
+        # 가격 변동 계산
+        price_change = 0
+        if signal_day_ticker.close_price and next_day_ticker.close_price:
+            price_change = (
+                (next_day_ticker.close_price - signal_day_ticker.close_price)
+                / signal_day_ticker.close_price
+                * 100
             )
 
-        # 시그널 생성일 이후의 해당 티커 데이터 가져오기
-        # created_at 대신 timestamp 사용
-        signal_date = (
-            signal.timestamp.date()
-            if hasattr(signal, "timestamp")
-            else signal.created_at.date()
+        # 시그널 정확도 평가
+        is_correct = False
+
+        # 매수 신호(BUY)면 가격이 상승했는지, 매도 신호(SELL)면 가격이 하락했는지 확인
+        if signal.signal_type == "BUY" and price_change > 0:
+            is_correct = True
+        elif signal.signal_type == "SELL" and price_change < 0:
+            is_correct = True
+
+        action = str(signal.action)
+        ai_model = str(signal.ai_model)
+        entry_price = float(signal.entry_price)
+        predit_price = (
+            signal.take_profit if action.upper() == "BUY" else signal.stop_loss
         )
-        check_date = signal_date + timedelta(days=days_to_check)
+        toay_price = next_day_ticker.open_price
+
+        result = {}
+
+        return
