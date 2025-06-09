@@ -245,7 +245,7 @@ class SignalPromptResponse(BaseModel):
     bad_things: str | None = None
     reasoning: str
     think_steps: str | None = None
-    probability_of_rising_up_percentage: float | None = None
+    probability_of_rising_up_percentage: float
     probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
     senarios: str | None = None
@@ -375,3 +375,16 @@ class DiscordMessageRequest(BaseModel):
 
     content: str = ""
     embed: Optional[List] = None  # Optional embed data for rich content
+
+
+class GetSignalRequest(BaseModel):
+    """
+    Request schema for getting signals.
+    """
+
+    tickers: List[str] | None = None  # Optional ticker filter
+    start_date: str | None = None  # Optional start date for filtering
+    end_date: str | None = None  # Optional end date for filtering
+    actions: List[Literal["Buy", "Sell", "Hold"]] | None = (
+        None  # Optional action filter
+    )

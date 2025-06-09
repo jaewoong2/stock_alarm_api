@@ -1,4 +1,5 @@
 import datetime
+from tracemalloc import start
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import date, timedelta
@@ -6,6 +7,7 @@ from datetime import date, timedelta
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
+from myapi.domain.signal.signal_schema import DefaultTickers, GetSignalRequest
 from myapi.domain.ticker.ticker_schema import (
     SignalAccuracyResponse,
     TickerCreate,
@@ -14,8 +16,10 @@ from myapi.domain.ticker.ticker_schema import (
     TickerUpdate,
     TickerMultiDateQuery,
     TickerChangeResponse,
+    UpdateTickerRequest,
 )
 from myapi.services.db_signal_service import DBSignalService
+from myapi.services.signal_service import SignalService
 from myapi.services.ticker_service import TickerService
 
 router = APIRouter(
@@ -171,40 +175,82 @@ async def get_latest_tickers_with_changes(
         )
 
 
-# 시그널 예측 정확도 평가
-@router.get("/signal-accuracy/{ticker}", response_model=SignalAccuracyResponse)
+@router.post("/update")
 @inject
-def evaluate_signal_accuracy(
-    ticker: str,
-    signal_id: Optional[int] = None,
-    days: Optional[int] = 5,
+def update_ticker_informations(
+    request: UpdateTickerRequest,
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
     """
-    특정 티커의 시그널 예측 정확도를 평가합니다.
-    - ticker: 티커 심볼
-    - signal_id: 평가할 시그널 ID (없으면 가장 최근 시그널 사용)
-    - days: 몇 일 후의 결과를 확인할지 (기본 5일)
+    티커 정보를 업데이트합니다. 이 엔드포인트는 티커의 심볼, 이름, 가격 등을 갱신합니다.
     """
     try:
-        if not ticker:
-            raise HTTPException(status_code=400, detail="티커 심볼이 필요합니다")
-        if not days or days <= 0:
-            raise HTTPException(status_code=400, detail="일 수는 1 이상이어야 합니다")
-        if signal_id is not None and days <= 0:
+        results = []
+
+        if request.start_date and request.end_date:
+            start_date, end_date = (
+                datetime.datetime.strptime(request.start_date, "%Y-%m-%d"),
+                datetime.datetime.strptime(request.end_date, "%Y-%m-%d"),
+            )
+        else:
+            end_date = datetime.datetime.now()
+            start_date = end_date - timedelta(days=7)
+
+        tickers = ticker_service.get_all_ticker_name()
+
+        backday = (end_date - start_date).days
+
+        if backday <= 0:
             raise HTTPException(
-                status_code=400,
-                detail="시그널 ID가 있을 때는 days를 1 이상으로 설정해야 합니다",
+                status_code=400, detail="종료 날짜는 시작 날짜보다 이후여야 합니다"
+            )
+        if not tickers:
+            raise HTTPException(
+                status_code=400, detail="업데이트할 티커 목록이 비어 있습니다"
             )
 
-        if signal_id is None:
-            raise HTTPException(
-                status_code=404, detail="해당 티커에 대한 시그널이 없습니다"
+        for ticker in tickers:
+            result = ticker_service.update_ticker_informations(
+                ticker=ticker,
+                start=start_date,
+                end=end_date,
             )
-        # 시그널 정확도 평가 메서드 호출
-        result = ticker_service.evaluate_signal_accuracy(ticker, signal_id, days)
-        return result
+
+            results.append(result)
+
+        return {
+            "message": "Ticker information updated successfully",
+            "results": results,
+        }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"시그널 정확도 평가 중 오류 발생: {str(e)}"
+            status_code=500, detail=f"티커 정보 업데이트 중 오류 발생: {str(e)}"
+        )
+
+
+@router.get("/signals", response_model=List[SignalAccuracyResponse])
+@inject
+def get_signal_accuracy(
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """
+    주어진 티커들의 시그널 예측 정확도를 평가합니다.
+    """
+    try:
+        # 기본 티커 목록 가져오기
+        tickers = DefaultTickers
+
+        if not tickers:
+            raise HTTPException(status_code=404, detail="등록된 티커가 없습니다")
+
+        # 시그널 정확도 조회
+        signals = db_signal_service.get_all_signals(GetSignalRequest())
+        tickers = ticker_service.get_all_tickers()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"시그널 정확도 조회 중 오류 발생: {str(e)}"
         )

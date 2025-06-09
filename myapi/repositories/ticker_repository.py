@@ -18,6 +18,12 @@ class TickerRepository:
         self.db_session.refresh(db_ticker)
         return db_ticker
 
+    def bulk_create(self, tickers: List[TickerCreate]) -> List[Ticker]:
+        db_tickers = [Ticker(**ticker.model_dump()) for ticker in tickers]
+        self.db_session.bulk_save_objects(db_tickers)
+        self.db_session.commit()
+        return db_tickers
+
     def get(self, ticker_id: int) -> Optional[Ticker]:
         return (
             self.db_session.query(Ticker).filter(Ticker.id == ticker_id).one_or_none()
@@ -56,6 +62,15 @@ class TickerRepository:
             return None
         prev_date = date_value - timedelta(days=1)
         return self.get_by_symbol_and_date(symbol, prev_date)
+
+    def get_all_ticker_name(self):
+        """
+        모든 티커의 심볼과 이름 조회
+        중복 네임 제외
+        """
+        results = self.db_session.query(Ticker).distinct(Ticker.name).all()
+
+        return [str(result.name) for result in results]
 
     def list(self) -> List[Ticker]:
         return self.db_session.query(Ticker).all()

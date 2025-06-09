@@ -223,6 +223,28 @@ class SignalService:
             pass
         return None
 
+    def _download_yfinance(
+        self, ticker: str, start: datetime.datetime, end: datetime.datetime
+    ) -> pd.DataFrame:
+        """
+        yfinance를 사용하여 주식 데이터를 다운로드합니다.
+        :param ticker: 종목 티커 (예: 'AAPL')
+        :param start: 시작 날짜 (datetime.date)
+        :param end: 종료 날짜 (datetime.date)
+        :return: OHLCV 데이터프레임
+        """
+        df = (
+            yf.Ticker(ticker)
+            .history(
+                start=datetime.datetime.strftime(start, "%Y-%m-%d"),
+                end=datetime.datetime.strftime(end, "%Y-%m-%d"),
+                auto_adjust=True,
+            )  # ← 여기서는 group_by 파라미터 없음
+            .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
+        )
+        df.index.name = "Date"
+        return df
+
     def _download_yf(self, ticker: str, start: date) -> pd.DataFrame:
         if start is None:
             start = date.today() - timedelta(days=days_back)
@@ -356,12 +378,23 @@ class SignalService:
         self,
         ticker: str,
         start: Optional[date] = None,
+        end: Optional[date] = None,
         days_back: int = 365,
     ) -> pd.DataFrame:
         """
         1) Yahoo Finance → 2) Stooq 순서로 시도
         return: 일봉 OHLCV (Close 컬럼이 반드시 존재), 실패 시 빈 DataFrame
         """
+        if start is not None and end is not None:
+            # Convert date objects to datetime objects
+            start_dt = datetime.datetime.combine(start, datetime.datetime.min.time())
+            end_dt = datetime.datetime.combine(end, datetime.datetime.min.time())
+            df = self._download_yfinance(ticker=ticker, start=start_dt, end=end_dt)
+
+            if not df.empty:
+                df = flatten_price_columns(df, ticker)
+                return df
+
         if start is None:
             start = date.today() - timedelta(days=days_back)
 
@@ -1222,8 +1255,8 @@ class SignalService:
         │    • Market chatter: unusual options activity, block trades, rumors in the last 3 days.  
         │ 2. **Classify each item as a short-term catalyst**  
         │    “+” (Bullish), “−” (Bearish), or “0” (Neutral/mixed).  
-        │ 3. Pull the latest 3 trading-days of price & volume for TICKER[{ticker}]  
-        │    • Close, % chg 1d & 3d, intraday high-low, vs S&P 500 and vs sector ETF.  
+        │ 3. Pull the latest 30 trading-days of price & volume for TICKER[{ticker}]  
+        │    • Close, % chg 3d & 14d & 30d, intraday high-low, vs S&P 500 (RS) and vs sector ETF.  
         │    • Label the short-term price state: **Uptrend / Downtrend / Range-bound**.  
         ╰─ END TASK
 

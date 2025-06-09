@@ -1,6 +1,7 @@
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
+from myapi.repositories import signals_repository
 from myapi.repositories.futures_repository import FuturesRepository
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.trading_repository import TradingRepository
@@ -75,16 +76,16 @@ class ServiceModule(containers.DeclarativeContainer):
         backdata_service=backdata_service,
     )
 
-    ticker_service = providers.Factory(
-        TickerService,
-        ticker_repository=repositories.ticker_repository,
-        signals_repository=repositories.signals_repository,
-    )
-
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,
         settings=config.config,
+    )
+    ticker_service = providers.Factory(
+        TickerService,
+        ticker_repository=repositories.ticker_repository,
+        signals_repository=repositories.signals_repository,
+        signals_service=signal_service,
     )
 
     db_signal_service = providers.Factory(

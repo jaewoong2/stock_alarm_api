@@ -15,6 +15,7 @@ from myapi.domain.signal.signal_schema import (
     DefaultTickers,
     DiscordMessageRequest,
     GenerateSignalResultRequest,
+    GetSignalRequest,
     SignalBaseResponse,
     SignalPromptData,
     SignalPromptResponse,
@@ -24,7 +25,6 @@ from myapi.domain.signal.signal_schema import (
     TickerReport,
     WebSearchTickerResponse,
 )
-from myapi.domain.ticker.ticker_schema import TickerUpdate
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
@@ -35,7 +35,6 @@ from myapi.services.ticker_service import TickerService
 from myapi.utils.utils import (
     export_slim_tail_csv,
     format_signal_embed,
-    format_signal_response,
 )
 
 # 티커 생성을 위한 데이터 준비
@@ -112,7 +111,7 @@ def generate_signal_result(
             entry_price=result.entry_price or 0.0,
             stop_loss=result.stop_loss_price,
             take_profit=result.take_profit_price,
-            probability=result.probability_of_rising_up,
+            probability=str(result.probability_of_rising_up_percentage),
             strategy=",".join(request.data.triggered_strategies),
             result_description=result.reasoning,
             report_summary=request.summary,
@@ -345,11 +344,21 @@ async def get_signals(
             )
         )
 
-    triggered_report = [
-        report
-        for report in reports
-        if any(signal.triggered for signal in report.signals)
-    ]
+    triggered_report = []
+
+    # Filter triggered reports more efficiently
+    triggered_tickers = set()
+    triggered_report = []
+
+    for report in reports:
+        # Skip if already processed
+        if report.ticker in triggered_tickers:
+            continue
+
+        # Check if any signal is triggered
+        if any(signal.triggered for signal in report.signals):
+            triggered_report.append(report)
+            triggered_tickers.add(report.ticker)
 
     for report in triggered_report:
         triggered_strategies = [
@@ -362,13 +371,6 @@ async def get_signals(
             if signal.triggered
         }
 
-        try:
-            news = signal_service.fetch_news(report.ticker) if req.with_news else None
-            report.news = news
-        except Exception as e:
-            logger.error(f"Error fetching news for {report.ticker}: {e}")
-            report.news = None
-
         data = SignalPromptData(
             ticker=report.ticker,
             dataframe=report.dataframe,
@@ -377,7 +379,7 @@ async def get_signals(
             triggered_strategies=triggered_strategies,
             technical_details=technical_details,
             fundamentals=report.fundamentals,
-            news=report.news,
+            news=None,
             spy_description=(
                 f"S&P500(SPY) is Abobe SMA20 above {round(spy_persentage_from_200ma, 3)}%"
                 if mkt_ok
@@ -396,7 +398,7 @@ async def get_signals(
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
 
-        # await sleep(3)  # To avoid throttling issues with SQS
+        await sleep(1)  # To avoid throttling issues with SQS
 
         try:
             aws_service.send_sqs_fifo_message(
@@ -425,6 +427,20 @@ async def naver_today_news(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
     return await signal_service.get_today_items()
+
+
+@router.post("/get-signals", response_model=List[SignalBaseResponse])
+@inject
+async def get_all_signals(
+    request: GetSignalRequest,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    모든 시그널을 조회합니다.
+    """
+    return await db_signal_service.get_all_signals(request=request)
 
 
 @router.get("/today", response_model=List[SignalBaseResponse])

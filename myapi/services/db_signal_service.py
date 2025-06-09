@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.domain.signal.signal_schema import (
+    GetSignalRequest,
     SignalBaseResponse,
     SignalCreate,
     SignalUpdate,
@@ -39,12 +40,14 @@ class DBSignalService:
                 status_code=500, detail=f"Failed to create signal: {str(e)}"
             )
 
-    async def get_all_signals(self) -> List[SignalBaseResponse]:
+    async def get_all_signals(
+        self, request: GetSignalRequest
+    ) -> List[SignalBaseResponse]:
         """
         모든 신호를 조회합니다.
         """
         try:
-            return self.repository.get_signals()
+            return self.repository.get_signals(request=request)
         except Exception as e:
             self.logger.error(f"Error fetching all signals: {str(e)}")
             raise HTTPException(

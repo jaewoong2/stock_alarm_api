@@ -125,3 +125,10 @@ class TickerLatestWithChangeResponse(BaseModel):
     close_change: Optional[float] = None
     volume_change: Optional[float] = None
     signal: Optional[Dict] = None
+
+
+class UpdateTickerRequest(BaseModel):
+    """티커 업데이트 요청 스키마"""
+
+    start_date: Optional[str]  # 시작 날짜 (YYYY-MM-DD 형식)
+    end_date: Optional[str]  # 종료 날짜 (YYYY-MM-DD 형식)

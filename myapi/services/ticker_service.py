@@ -2,6 +2,9 @@ import datetime
 from typing import Dict, List, Optional
 from datetime import date, timedelta
 
+from numpy import rec, record
+from pandas import Timestamp
+
 from myapi.domain.ticker.ticker_schema import (
     SignalAccuracyResponse,
     TickerCreate,
@@ -12,6 +15,7 @@ from myapi.domain.ticker.ticker_schema import (
 )
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.ticker_repository import TickerRepository
+from myapi.services.signal_service import SignalService
 
 
 class TickerService:
@@ -19,9 +23,11 @@ class TickerService:
         self,
         ticker_repository: TickerRepository,
         signals_repository: SignalsRepository,
+        signals_service: SignalService,
     ):
         self.ticker_repository = ticker_repository
-        self.signals_repository = signals_repository  # 시그널 레포지토리 추가
+        self.signals_repository = signals_repository
+        self.signals_service = signals_service
 
     def create_ticker(self, data: TickerCreate) -> TickerResponse:
         ticker = self.ticker_repository.create(data)
@@ -305,79 +311,116 @@ class TickerService:
             print(f"티커 데이터 조회 중 오류 발생: {str(e)}")
             return []
 
-    def evaluate_signal(
-        self, ticker_symbol: str, timstamp: datetime.datetime
-    ) -> Optional[SignalAccuracyResponse]:
+    # 가장 최신의 모든 티커를 가져와.
+    # 해당 티커에 대한 정보를 가져와
+    # 티커에 대한 시그널 정보를 Join 해서 가져와
+    # 없으면 없는대로 있으면 있는대로 보여줘
+    # Response [Ticker, Signal`s Prediction Action, Reality Action, Prediction Price, Prediction Change %, Reality Price, Reality Change USD, Reality Change %]
+
+    def update_ticker_informations(
+        self, ticker: str, start: Optional[date], end: Optional[date]
+    ) -> Dict[str, int]:
         """
-        특정 종목에 대한 시그널의 정확도를 평가합니다.
-        시그널 발생일의 다음 거래일 가격을 기준으로 시그널의 정확도를 계산합니다.
+        특정 티커의 OHLCV 데이터를 가져와서 데이터베이스에 저장합니다.
 
         Args:
-            ticker_symbol (str): 평가할 종목 심볼
+            ticker: 티커 심볼 (예: "TQQQ")
+            start: 데이터 시작 날짜 (None인 경우 기본값 사용)
+            end: 데이터 종료 날짜 (None인 경우 오늘 날짜 사용)
 
         Returns:
-            SignalAccuracyResponse: 시그널 정확도 정보
+            Dictionary containing statistics about the operation:
+            - 'total': 처리된 총 레코드 수
+            - 'created': 새로 생성된 레코드 수
+            - 'updated': 업데이트된 레코드 수
+            - 'skipped': 변경 없이 건너뛴 레코드 수
         """
-        # 해당 종목의 모든 시그널 조회
-        signal = self.signals_repository.get_signal_by_symbol(ticker_symbol, timstamp)
-
-        if not signal:
-            return None
-
-        signal_date = signal.created_at.date()
-
-        # 다음 거래일 데이터 찾기
-        next_day = signal_date + timedelta(days=1)
-        next_day_ticker = None
-
-        # 최대 7일까지 다음 거래일 찾기 (주말, 공휴일 등으로 바로 다음날 데이터가 없을 수 있음)
-        for i in range(1, 8):
-            check_date = signal_date + timedelta(days=i)
-            ticker_data = self.ticker_repository.get_by_symbol_and_date(
-                ticker_symbol, check_date
-            )
-            if ticker_data:
-                next_day_ticker = ticker_data
-                next_day = check_date
-                break
-
-        if not next_day_ticker:
-            return None
-
-        # 시그널 당일 데이터 조회
-        signal_day_ticker = self.ticker_repository.get_by_symbol_and_date(
-            ticker_symbol, signal_date
-        )
-
-        if not signal_day_ticker:
-            return None
-
-        # 가격 변동 계산
-        price_change = 0
-        if signal_day_ticker.close_price and next_day_ticker.close_price:
-            price_change = (
-                (next_day_ticker.close_price - signal_day_ticker.close_price)
-                / signal_day_ticker.close_price
-                * 100
+        try:
+            # 데이터 가져오기
+            dataframe = self.signals_service.fetch_ohlcv(
+                ticker=ticker, start=start, end=end
             )
 
-        # 시그널 정확도 평가
-        is_correct = False
+            if dataframe.empty:
+                raise ValueError(
+                    f"No data found for ticker {ticker} in the specified date range."
+                )
 
-        # 매수 신호(BUY)면 가격이 상승했는지, 매도 신호(SELL)면 가격이 하락했는지 확인
-        if signal.signal_type == "BUY" and price_change > 0:
-            is_correct = True
-        elif signal.signal_type == "SELL" and price_change < 0:
-            is_correct = True
+            # 통계 추적을 위한 카운터 초기화
+            stats = {"total": len(dataframe), "created": 0, "updated": 0, "skipped": 0}
 
-        action = str(signal.action)
-        ai_model = str(signal.ai_model)
-        entry_price = float(signal.entry_price)
-        predit_price = (
-            signal.take_profit if action.upper() == "BUY" else signal.stop_loss
-        )
-        toay_price = next_day_ticker.open_price
+            # 데이터 벌크 처리를 위한 배치 크기 설정
+            BATCH_SIZE = 100
+            batch = []
 
-        result = {}
+            df_reset = dataframe.reset_index()
+            # 데이터프레임의 Date 별로 Ticker 정보 생성
+            for _, row in df_reset.iterrows():
+                date = row["Date"]
 
-        return
+                if isinstance(date, Timestamp):
+                    record_date = date.to_pydatetime().date()
+
+                if record_date is None:
+                    print(f"Skipping row with missing date for ticker {ticker}")
+                    stats["skipped"] += 1
+                    continue
+
+                try:
+                    existing_ticker = self.ticker_repository.get_by_symbol_and_date(
+                        ticker, record_date
+                    )
+                    try:
+                        ticker_data = TickerCreate(
+                            symbol=ticker,
+                            name=ticker,  # 향후 회사명 추가 필요 시 수정
+                            price=float(row["Close"]),
+                            open_price=float(row["Open"]),
+                            high_price=float(row["High"]),
+                            low_price=float(row["Low"]),
+                            close_price=float(row["Close"]),
+                            volume=int(row["Volume"]),
+                            date=record_date,
+                        )
+                    except (ValueError, KeyError) as e:
+                        print(
+                            f"Error processing data for {ticker} on {record_date}: {e}"
+                        )
+                        stats["skipped"] += 1
+                        continue
+
+                    # 이미 존재하는 레코드는 업데이트, 아니면 생성
+                    if existing_ticker:
+                        stats["skipped"] += 1
+                        continue
+                    else:
+                        # 생성 작업을 배치에 추가
+                        batch.append(ticker_data)
+                        stats["created"] += 1
+
+                        # 배치 크기에 도달하면 벌크 생성 수행
+                        if len(batch) >= BATCH_SIZE:
+                            self.ticker_repository.bulk_create(batch)
+                            batch = []
+
+                except Exception as e:
+                    print(f"Error processing ticker {ticker} for date {date}: {e}")
+                    stats["skipped"] += 1
+                    continue
+
+            # 남은 배치 처리
+            if batch:
+                self.ticker_repository.bulk_create(batch)
+
+            return stats
+
+        except Exception as e:
+            print(f"Failed to update ticker information for {ticker}: {e}")
+            raise
+
+    def get_all_ticker_name(self):
+        """
+        모든 티커의 이름을 가져옵니다.
+        """
+        tickers = self.ticker_repository.get_all_ticker_name()
+        return tickers

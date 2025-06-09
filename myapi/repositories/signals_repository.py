@@ -1,4 +1,5 @@
 import time
+from httpx import request
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
 import logging
@@ -7,7 +8,7 @@ from sqlalchemy import text, desc, func, between, and_
 from datetime import date, datetime, timedelta
 
 from myapi.domain.signal.signal_models import Signals
-from myapi.domain.signal.signal_schema import SignalBaseResponse
+from myapi.domain.signal.signal_schema import GetSignalRequest, SignalBaseResponse
 from myapi.utils.config import row_to_dict
 
 
@@ -102,12 +103,36 @@ class SignalsRepository:
 
         return [str(signal.ticker) for signal in signals]
 
-    def get_signals(self) -> List[SignalBaseResponse]:
+    def get_signals(self, request: GetSignalRequest) -> List[SignalBaseResponse]:
         """
         모든 신호를 가져옵니다.
         """
         self._ensure_valid_session()
-        signals = self.db_session.query(Signals).order_by(desc(Signals.timestamp)).all()
+        signals_query = self.db_session.query(Signals)
+
+        if request.tickers:
+            # 티커 목록이 제공된 경우 해당 티커들로 필터링
+            signals_query = signals_query.filter(Signals.ticker.in_(request.tickers))
+
+        if request.actions:
+            signals_query = signals_query.filter(Signals.action.in_(request.actions))
+
+        if request.start_date and request.end_date:
+            start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(request.end_date, "%Y-%m-%d")
+            signals_query = signals_query.filter(
+                Signals.timestamp.between(start_date, end_date)
+            )
+
+        if not request.start_date and request.end_date:
+            end_date = datetime.strptime(request.end_date, "%Y-%m-%d")
+            signals_query = signals_query.filter(Signals.timestamp <= end_date)
+
+        if request.start_date and not request.end_date:
+            start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
+            signals_query = signals_query.filter(Signals.timestamp >= start_date)
+
+        signals = signals_query.order_by(desc(Signals.timestamp)).all()
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
     def get_signals_by_ticker(self, ticker: str) -> List[SignalBaseResponse]:
