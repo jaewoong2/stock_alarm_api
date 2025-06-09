@@ -1,4 +1,5 @@
 from asyncio import sleep
+import datetime
 import json
 import logging
 from typing import List, Literal
@@ -479,6 +480,26 @@ async def get_today_signals_by_ticker(
     ]
 
     return ticker_signals
+
+
+@router.get("/by-date")
+@inject
+async def get_signal_by_date(
+    date: str,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    특정 날짜에 생성된 시그널을 조회합니다.
+    """
+    date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+    response = await db_signal_service.get_signals_result(date=date_value)
+
+    return {
+        "date": date_value,
+        "signals": response,
+    }
 
 
 @router.post("/discord/message", tags=["discord"])

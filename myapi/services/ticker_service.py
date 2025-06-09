@@ -319,7 +319,7 @@ class TickerService:
 
     def update_ticker_informations(
         self, ticker: str, start: Optional[date], end: Optional[date]
-    ) -> Dict[str, int]:
+    ):
         """
         특정 티커의 OHLCV 데이터를 가져와서 데이터베이스에 저장합니다.
 

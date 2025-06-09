@@ -1,15 +1,18 @@
-import time
-from httpx import request
+import sqlalchemy
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import logging
 from sqlalchemy.exc import PendingRollbackError
-from sqlalchemy import text, desc, func, between, and_
+from sqlalchemy import text, desc, func, and_
 from datetime import date, datetime, timedelta
 
 from myapi.domain.signal.signal_models import Signals
-from myapi.domain.signal.signal_schema import GetSignalRequest, SignalBaseResponse
-from myapi.utils.config import row_to_dict
+from myapi.domain.signal.signal_schema import (
+    GetSignalRequest,
+    SignalBaseResponse,
+    SignalJoinTickerResponse,
+)
+from myapi.domain.ticker.ticker_model import Ticker
 
 
 class SignalsRepository:
@@ -552,3 +555,78 @@ class SignalsRepository:
             logging.error(f"Error fetching signals by symbol: {e}")
             # timestamp가 없다면 created_at 필드로 정렬 시도
             return None
+
+    def get_signal_join_ticker(self, date: date) -> List[SignalJoinTickerResponse]:
+        """
+        특정 날짜에 대한 시그널과 티커 정보를 조인하여 가져옵니다.
+
+        Args:
+            date: 조회할 날짜(시그널 날짜 기준)
+
+        Returns:
+            List[SignalJoinTickerResponse]: 시그널과 티커 정보가 결합된 응답 모델의 리스트
+        """
+        self._ensure_valid_session()
+        try:
+            # 특정 날짜에 대한 시그널과 티커 정보를 조인하여 조회
+            results = (
+                self.db_session.query(Signals, Ticker)
+                .join(Ticker, Signals.ticker == Ticker.symbol)
+                .filter(
+                    func.date(Signals.timestamp)
+                    == date,  # 시그널 날짜가 입력 날짜와 일치
+                    Ticker.date
+                    > func.cast(
+                        Signals.timestamp, sqlalchemy.Date
+                    ),  # 티커 날짜가 시그널 날짜 이후
+                    Ticker.date
+                    <= func.cast(
+                        Signals.timestamp + timedelta(days=5), sqlalchemy.Date
+                    ),  # 최대 5일 이내의 다음 거래일(주말/공휴일 고려)
+                )
+                .order_by(
+                    Signals.timestamp.desc(), Ticker.date.asc()
+                )  # 시그널은 최신순, 티커는 가장 가까운 다음 거래일 우선
+                .all()
+            )
+
+            # 결과를 응답 모델로 변환
+            response_list = []
+            for signal, ticker in results:
+                response = {
+                    # Signal 필드
+                    "signal_id": signal.id,
+                    "ticker": signal.ticker,
+                    "strategy": signal.strategy,
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "take_profit": signal.take_profit,
+                    "action": signal.action,
+                    "timestamp": signal.timestamp,
+                    "probability": signal.probability,
+                    "result_description": signal.result_description,
+                    "report_summary": signal.report_summary,
+                    "ai_model": signal.ai_model,
+                    "senario": signal.senario,
+                    "good_things": signal.good_things,
+                    "bad_things": signal.bad_things,
+                    # Ticker 필드
+                    "ticker_id": ticker.id,
+                    "symbol": ticker.symbol,
+                    "name": ticker.name,
+                    "price": ticker.price,
+                    "open_price": ticker.open_price,
+                    "high_price": ticker.high_price,
+                    "low_price": ticker.low_price,
+                    "close_price": ticker.close_price,
+                    "volume": ticker.volume,
+                    "ticker_date": ticker.date,
+                    "created_at": ticker.created_at,
+                    "updated_at": ticker.updated_at,
+                }
+                response_list.append(SignalJoinTickerResponse.model_validate(response))
+
+            return response_list
+        except Exception as e:
+            logging.error(f"Error fetching signals with ticker join: {e}")
+            return []

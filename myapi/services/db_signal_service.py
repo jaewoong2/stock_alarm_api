@@ -54,6 +54,23 @@ class DBSignalService:
                 status_code=500, detail=f"Failed to fetch signals: {str(e)}"
             )
 
+    async def get_signals_result(self, date: date):
+        """
+        특정 날짜의모든 신호 결과를 조회합니다. (Join With Ticker)
+        """
+        try:
+            signals = self.repository.get_signal_join_ticker(date)
+            if not signals:
+                raise HTTPException(
+                    status_code=404, detail=f"No signals found for date {date}"
+                )
+            return signals
+        except Exception as e:
+            self.logger.error(f"Error fetching signals for date {date}: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch signals: {str(e)}"
+            )
+
     async def get_signal_by_id(self, signal_id: int) -> SignalBaseResponse:
         """
         ID로 신호를 조회합니다.
