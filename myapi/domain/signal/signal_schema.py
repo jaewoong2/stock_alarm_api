@@ -409,35 +409,36 @@ class SignalWithTicker(BaseModel):
 
 
 class SignalJoinTickerResponse(BaseModel):
-    # Signal 정보
-    signal_id: int
-    ticker: str
-    strategy: Optional[str] = None
-    entry_price: float
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
-    action: str
-    timestamp: datetime
-    probability: Optional[str] = None
-    result_description: Optional[str] = None
-    report_summary: Optional[str] = None
-    ai_model: Optional[str] = "OPENAI_O4MINI"
-    senario: Optional[str] = None
-    good_things: Optional[str] = None
-    bad_things: Optional[str] = None
+    class Signal(BaseModel):
+        ticker: str
+        strategy: Optional[str] = None
+        entry_price: Optional[float]
+        stop_loss: Optional[float] = None
+        take_profit: Optional[float] = None
+        action: Optional[str]
+        timestamp: Optional[datetime]
+        probability: Optional[str] = None
+        result_description: Optional[str] = None
+        report_summary: Optional[str] = None
+        ai_model: Optional[str] = "OPENAI_O4MINI"
+        senario: Optional[str] = None
+        good_things: Optional[str] = None
+        bad_things: Optional[str] = None
 
-    # Ticker 정보
-    ticker_id: int
-    symbol: str
-    name: Optional[str] = None
-    price: Optional[float] = None
-    open_price: Optional[float] = None
-    high_price: Optional[float] = None
-    low_price: Optional[float] = None
-    close_price: Optional[float] = None
-    volume: Optional[int] = None
-    ticker_date: Optional[date] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    class Ticker(BaseModel):
+        # Ticker 정보
+        symbol: str
+        name: Optional[str] = None
+        price: Optional[float] = None
+        open_price: Optional[float] = None
+        high_price: Optional[float] = None
+        low_price: Optional[float] = None
+        close_price: Optional[float] = None
+        volume: Optional[int] = None
+        ticker_date: Optional[date] = None
+        created_at: Optional[datetime] = None
+        updated_at: Optional[datetime] = None
 
+    signal: Signal
+    ticker: Ticker
     model_config = {"from_attributes": True}

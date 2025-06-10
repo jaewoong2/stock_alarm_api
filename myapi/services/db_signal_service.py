@@ -61,20 +61,21 @@ class DBSignalService:
         try:
             signals = self.repository.get_signal_join_ticker(date)
 
-            for signal in signals:
+            for row in signals:
+                signal, ticker = row.signal, row.ticker
                 # Signal의 예측 TP와 실제 High 를 비교
-                if signal.take_profit and signal.high_price:
-                    price_change = signal.take_profit - signal.entry_price
+                if signal.take_profit and ticker.high_price:
+                    price_change = signal.take_profit - ticker.high_price
 
                 # Signal의 예측 SL과 실제 Low 를 비교
-                if signal.stop_loss and signal.low_price:
-                    loss_change = signal.stop_loss - signal.entry_price
+                if signal.stop_loss and ticker.low_price:
+                    loss_change = signal.stop_loss - ticker.low_price
 
                 # Signal의 예측 결과 (Action) 와 실제 결과 (올랐는지 안올랐는지)를 비교
-                if signal.close_price and signal.entry_price:
-                    if signal.close_price > signal.entry_price:
+                if ticker.close_price and signal.entry_price:
+                    if ticker.close_price > signal.entry_price:
                         result = "up"
-                    elif signal.close_price < signal.entry_price:
+                    elif ticker.close_price < signal.entry_price:
                         result = "down"
                     else:
                         result = "unchanged"
