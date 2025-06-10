@@ -264,7 +264,7 @@ def llm_query(
     return [google_result, openai_result]
 
 
-@router.post("/", response_model=SignalResponse)
+@router.post("/")
 @inject
 async def get_signals(
     req: SignalRequest,

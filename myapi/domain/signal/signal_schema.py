@@ -439,6 +439,18 @@ class SignalJoinTickerResponse(BaseModel):
         created_at: Optional[datetime] = None
         updated_at: Optional[datetime] = None
 
+    class Result(BaseModel):
+        """
+        Result schema for the signal with ticker.
+        Contains the signal and ticker information.
+        """
+
+        action: Literal["up", "down", "unchanged", "unknown"]
+        is_correct: bool = False
+        price_diff: float
+
     signal: Signal
-    ticker: Ticker
+    ticker: Optional[Ticker]
+    result: Optional[Result]
+
     model_config = {"from_attributes": True}

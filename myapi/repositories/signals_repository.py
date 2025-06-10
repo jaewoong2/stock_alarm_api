@@ -571,18 +571,21 @@ class SignalsRepository:
             # 특정 날짜에 대한 시그널과 티커 정보를 조인하여 조회
             results = (
                 self.db_session.query(Signals, Ticker)
-                .join(Ticker, Signals.ticker == Ticker.symbol)
+                .outerjoin(
+                    Ticker,
+                    and_(
+                        Signals.ticker == Ticker.symbol,
+                        Signals.action != "hold",
+                        Ticker.date > func.cast(Signals.timestamp, sqlalchemy.Date),
+                        Ticker.date
+                        <= func.cast(
+                            Signals.timestamp + timedelta(days=5), sqlalchemy.Date
+                        ),
+                    ),
+                )
                 .filter(
                     func.date(Signals.timestamp)
-                    == date,  # 시그널 날짜가 입력 날짜와 일치
-                    Ticker.date
-                    > func.cast(
-                        Signals.timestamp, sqlalchemy.Date
-                    ),  # 티커 날짜가 시그널 날짜 이후
-                    Ticker.date
-                    <= func.cast(
-                        Signals.timestamp + timedelta(days=5), sqlalchemy.Date
-                    ),  # 최대 5일 이내의 다음 거래일(주말/공휴일 고려)
+                    == date  # 시그널 날짜가 입력 날짜와 일치
                 )
                 .order_by(
                     Signals.timestamp.desc(), Ticker.date.asc()
@@ -593,8 +596,10 @@ class SignalsRepository:
             # 결과를 응답 모델로 변환
             response_list = []
             for signal, ticker in results:
-                response = {
-                    "signal": {
+                response = {"signal": {}, "ticker": None}
+
+                if signal is not None:
+                    response["signal"] = {
                         # Signal 필드
                         "ticker": signal.ticker,
                         "strategy": signal.strategy,
@@ -610,9 +615,10 @@ class SignalsRepository:
                         "senario": signal.senario,
                         "good_things": signal.good_things,
                         "bad_things": signal.bad_things,
-                    },
-                    # Ticker 필드
-                    "ticker": {
+                    }
+
+                if ticker is not None:
+                    response["ticker"] = {
                         "symbol": ticker.symbol,
                         "name": ticker.name,
                         "price": ticker.price,
@@ -624,8 +630,10 @@ class SignalsRepository:
                         "ticker_date": ticker.date,
                         "created_at": ticker.created_at,
                         "updated_at": ticker.updated_at,
-                    },
-                }
+                    }
+
+                response["result"] = None
+
                 response_list.append(SignalJoinTickerResponse.model_validate(response))
 
             return response_list

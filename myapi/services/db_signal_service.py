@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 from datetime import date, datetime, timedelta
 import logging
+from unittest import result
 from fastapi import HTTPException
 
 from myapi.repositories.signals_repository import SignalsRepository
@@ -8,6 +9,7 @@ from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     SignalBaseResponse,
     SignalCreate,
+    SignalJoinTickerResponse,
     SignalUpdate,
 )
 
@@ -61,29 +63,57 @@ class DBSignalService:
         try:
             signals = self.repository.get_signal_join_ticker(date)
 
-            for row in signals:
-                signal, ticker = row.signal, row.ticker
-                # Signal의 예측 TP와 실제 High 를 비교
-                if signal.take_profit and ticker.high_price:
-                    price_change = signal.take_profit - ticker.high_price
-
-                # Signal의 예측 SL과 실제 Low 를 비교
-                if signal.stop_loss and ticker.low_price:
-                    loss_change = signal.stop_loss - ticker.low_price
-
-                # Signal의 예측 결과 (Action) 와 실제 결과 (올랐는지 안올랐는지)를 비교
-                if ticker.close_price and signal.entry_price:
-                    if ticker.close_price > signal.entry_price:
-                        result = "up"
-                    elif ticker.close_price < signal.entry_price:
-                        result = "down"
-                    else:
-                        result = "unchanged"
-
             if not signals:
                 raise HTTPException(
                     status_code=404, detail=f"No signals found for date {date}"
                 )
+
+            for row in signals:
+                signal, ticker = row.signal, row.ticker
+
+                if not signal or not ticker:
+                    continue
+
+                price_change, result_action, is_correct = (
+                    0.0,
+                    "unknown",
+                    False,
+                )
+                # Signal의 예측 TP와 실제 High 를 비교
+                if signal.take_profit and ticker.close_price:
+                    price_change = signal.take_profit - ticker.close_price
+
+                # Signal의 예측 SL과 실제 Low 를 비교 (예측 괴리율)
+                if signal.stop_loss and ticker.close_price:
+                    price_change = signal.stop_loss - ticker.close_price
+
+                # Signal의 예측 결과 (Action) 와 실제 결과 (올랐는지 안올랐는지)를 비교
+                if ticker.close_price and ticker.open_price:
+                    if ticker.close_price > ticker.open_price:
+                        result_action = "up"
+                    elif ticker.close_price < ticker.open_price:
+                        result_action = "down"
+                    else:
+                        result_action = "unchanged"
+
+                if signal.action:
+                    if result_action == "up" and signal.action.lower() == "buy":
+                        is_correct = True
+
+                    if result_action == "down" and signal.action.lower() == "sell":
+                        is_correct = True
+
+                    if result_action == "unchanged" and signal.action.lower() == "hold":
+                        is_correct = True
+
+                result = SignalJoinTickerResponse.Result(
+                    action=result_action,
+                    price_diff=price_change,
+                    is_correct=is_correct,
+                )
+
+                row.result = result
+
             return signals
         except Exception as e:
             self.logger.error(f"Error fetching signals for date {date}: {str(e)}")
