@@ -269,7 +269,6 @@ def llm_query(
 async def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
-    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     START_DAYS_BACK: int = 400
@@ -296,30 +295,6 @@ async def get_signals(
                 * 100
             ) or 0.0
             mkt_ok = spy_persentage_from_200ma > 0.0
-
-        try:
-            # 최근 거래일의 데이터 추출
-            latest_row = df.iloc[-1]
-
-            ticker_data = TickerCreate(
-                symbol=t,
-                name=t,  # 실제 회사명이 필요하면 별도 API로 가져와야 함
-                price=float(latest_row["Close"]),
-                open_price=float(latest_row["Open"]) if "Open" in latest_row else None,
-                high_price=float(latest_row["High"]) if "High" in latest_row else None,
-                low_price=float(latest_row["Low"]) if "Low" in latest_row else None,
-                close_price=(
-                    float(latest_row["Close"]) if "Close" in latest_row else None
-                ),
-                volume=int(latest_row["Volume"]) if "Volume" in latest_row else None,
-                date=df.index[-1].date() if hasattr(df.index[-1], "date") else run_date,
-            )
-
-            ticker_service.create_ticker(ticker_data)
-            logger.info(f"Created new ticker data for {t}")
-
-        except Exception as e:
-            logger.error(f"Error saving ticker data for {t}: {e}")
 
         tech_sigs = [
             TechnicalSignal(
@@ -411,15 +386,10 @@ async def get_signals(
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
 
-    return SignalResponse(
-        run_date=run_date,
-        reports=reports,
-        market_condition=(
-            "시장 컨디션이 좋습니다. (예: 지수가 50 SMA 위)"
-            if mkt_ok
-            else "시장 컨디션이 좋지 않습니다. (예: 지수가 50 SMA 아래)"
-        ),
-    )
+    return {
+        "status": "success",
+        "message": "Signal generation requests have been queued successfully.",
+    }
 
 
 @router.get("/naver/news/today")
@@ -482,7 +452,7 @@ async def get_today_signals_by_ticker(
     return ticker_signals
 
 
-@router.get("/by-date")
+@router.get("/date")
 @inject
 async def get_signal_by_date(
     date: str,

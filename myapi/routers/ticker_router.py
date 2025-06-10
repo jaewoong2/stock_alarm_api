@@ -1,7 +1,6 @@
 import datetime
-from tracemalloc import start
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
+from typing import List
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
