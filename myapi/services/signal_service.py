@@ -1072,42 +1072,6 @@ class SignalService:
         2. REFLECT: Stress-test those signals against the prior all rows and list any conflicts.  
         
         {"\n\n"}
-        ### Input Data
-        Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
-        - `ticker`: Stock/ETF ticker symbol.
-        - `last_price`: Closing price from the previous day.
-        - `price_change_pct`: Percentage price change from the day before.
-        - `triggered_strategies`: List of triggered strategies (e.g., VOLUME_EXPANSION, PULLBACK).
-        - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
-        - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
-        - `news`: Recent news headlines
-        - `report_summary`: Summary of the technical report.
-        - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
-        - `additional_info`: Any additional information or context.
-        - `dataframe`: Tickers Price DataFrame.
-        {"\n\n"}
-        ```json
-            - ticker: {data.ticker}
-            {"\n"}
-            - last_price: {data.last_price}
-            {"\n"}
-            - price_change_pct: {data.price_change_pct}
-            {"\n"}
-            - triggered_strategies: {data.triggered_strategies}
-            {"\n"}
-            - technical_details: {data.technical_details}
-            {"\n"}
-            - fundamentals: {data.fundamentals}
-            {"\n"}
-            - report_summary: {report_summary}
-            {"\n"}
-            - S&P 500 Status: {data.spy_description} 
-            {"\n"}
-            - additional_info: {data.additional_info}
-            {"\n"}
-            - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
-        ```
-        {"\n\n"}
         ## Instructions
             ### Analyze Each Stock/ETF:
             - Evaluate the triggered strategies and their technical details
@@ -1132,6 +1096,44 @@ class SignalService:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-4 days).
             - If fundamentals are unavailable focus on technicals and news.
+
+        {"\n\n"}
+        ### Input Data
+        Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
+        - `ticker`: Stock/ETF ticker symbol.
+        - `last_price`: Closing price from the previous day.
+        - `price_change_pct`: Percentage price change from the day before.
+        - `triggered_strategies`: List of triggered strategies (e.g., VOLUME_EXPANSION, PULLBACK).
+        - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
+        - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
+        - `news`: Recent news headlines
+        - `report_summary`: Summary of the technical report.
+        - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
+        - `additional_info`: Any additional information or context.
+        - `dataframe`: Tickers Price DataFrame.
+
+        {"\n\n"}
+        ```json
+        - ticker: {data.ticker}
+        {"\n"}
+        - last_price: {data.last_price}
+        {"\n"}
+        - price_change_pct: {data.price_change_pct}
+        {"\n"}
+        - triggered_strategies: {data.triggered_strategies}
+        {"\n"}
+        - technical_details: {data.technical_details}
+        {"\n"}
+        - fundamentals: {data.fundamentals}
+        {"\n"}
+        - report_summary: {report_summary}
+        {"\n"}
+        - S&P 500 Status: {data.spy_description} 
+        {"\n"}
+        - additional_info: {data.additional_info}
+        {"\n"}
+        - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
+        ```
         """
 
         return prompt
