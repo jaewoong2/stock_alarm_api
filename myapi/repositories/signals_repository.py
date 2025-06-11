@@ -576,7 +576,7 @@ class SignalsRepository:
                     and_(
                         Signals.ticker == Ticker.symbol,
                         Signals.action != "hold",
-                        Ticker.date > func.cast(Signals.timestamp, sqlalchemy.Date),
+                        Ticker.date >= func.cast(Signals.timestamp, sqlalchemy.Date),
                         Ticker.date
                         <= func.cast(
                             Signals.timestamp + timedelta(days=5), sqlalchemy.Date
