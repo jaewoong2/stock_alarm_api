@@ -348,6 +348,7 @@ class WebSearchTickerResult(BaseModel):
     date_YYYYMMDD: str
     summary: str
     detail_description: str
+    recommendation: Literal["Buy", "Hold", "Sell", "None"]
     recommendation_with_why: str
 
 

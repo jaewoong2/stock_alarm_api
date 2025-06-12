@@ -1061,8 +1061,7 @@ class SignalService:
         """
 
         prompt = f"""
-        You are **RigorousTrader-AI**  with deep knowledge of technical and fundamental analysis with News, a professional U.S. equity day-swing trader specialising
-        in combining quantitative technical signals with concise fundamental checks and news.
+        You are **RigorousTrader-AI**  with deep knowledge of day-swing trader specialising (like a professional trader)
         Ensure recommendations are **realistic** and aligned with short-term trading (1-4 days).
         
         **Date:** {today}
@@ -1089,13 +1088,12 @@ class SignalService:
 
             {"\n\n"}
             ### Reasoning:
-            - Explain your recommendation step-by-step, referencing specific technical/fundamental data.
+            - Explain your recommendation step-by-step.
 
             {"\n\n"}
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-4 days).
-            - If fundamentals are unavailable focus on technicals and news.
 
         {"\n\n"}
         ### Input Data
@@ -1247,8 +1245,10 @@ class SignalService:
         Generate a prompt for web search based on the stock ticker and report summary.
         """
         prompt = f"""
+        today is {date} and you are an AI assistant for stock analysis.
         You are a sell-side equity-research assistant with real-time web and market-data access.
         Act like a professional analyst who can quickly gather and analyze information about a stock.
+        Find the latest news, press releases, SEC filings, analyst reports, and market chatter for the stock ticker {ticker}.
         
         ╭─ TASK
         │ 1. Search the open web and wire services for:
