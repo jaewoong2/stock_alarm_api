@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal, Optional
 from fastapi import APIRouter, Depends
 from dependency_injector.wiring import inject, Provide
 
@@ -8,6 +9,22 @@ from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
 
 router = APIRouter(prefix="/market", tags=["market"])
+
+
+@router.get("/news")
+@inject
+def market_news(
+    ticker: Optional[str] = "",
+    news_type: Literal["ticker", "market"] = "market",
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+):
+    today_str = date.today()
+    result = signal_service.get_web_search_summary(
+        type=news_type,
+        ticker=ticker,
+        date=today_str,
+    )
+    return {"result": result}
 
 
 @router.get("/news-summary", response_model=WebSearchMarketResponse)

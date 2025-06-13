@@ -5,7 +5,8 @@ import html
 from io import BytesIO
 import logging
 import re
-from typing import List, Optional, Sequence, Union
+from tracemalloc import start
+from typing import List, Literal, Optional, Sequence, Union
 import aiohttp
 import cloudscraper
 import pandas as pd
@@ -108,7 +109,7 @@ class SignalService:
             WebSearchResult(
                 result_type=result_type,
                 ticker=ticker,
-                date_YYYYMMDD=item.date_YYYYMMDD,
+                date_yyyymmdd=item.date_YYYYMMDD,
                 headline=getattr(item, "headline", None),
                 summary=getattr(item, "summary", None),
                 detail_description=getattr(item, "detail_description", None),
@@ -1330,3 +1331,25 @@ class SignalService:
         ╰─ END PROTOCOL
         """
         return prompt
+
+    def get_web_search_summary(
+        self,
+        date: datetime.date,
+        type: Literal["ticker", "market"],
+        ticker: Optional[str] = "",
+    ):
+        """
+        Generate a summary of web search results for the given stock ticker and date.
+        """
+        # start_date = date - 1day, end_date = date
+        start_date = (date - dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        end_date = (date + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
+        results = self.web_search_repository.get_search_results(
+            result_type=type,
+            ticker=ticker,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return results

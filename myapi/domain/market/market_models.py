@@ -12,7 +12,7 @@ class WebSearchResult(Base):
     id = Column(Integer, primary_key=True, index=True)
     result_type = Column(String, nullable=False)  # e.g., 'market' or 'ticker'
     ticker = Column(String, nullable=True)
-    date_YYYYMMDD = Column(String, nullable=False)
+    date_yyyymmdd = Column(String, nullable=False)
     headline = Column(String, nullable=True)
     summary = Column(String, nullable=True)
     detail_description = Column(String, nullable=True)
