@@ -16,6 +16,7 @@ from myapi.routers import (
     kakao_router,
     signal_router,
     trading_router,
+    market_router,
 )
 from myapi.utils.config import init_logging
 
@@ -107,4 +108,5 @@ app.include_router(coinone_router.router)
 app.include_router(futures_router.router)
 app.include_router(signal_router.router)
 app.include_router(ticker_router.router)
+app.include_router(market_router.router)
 handler = Mangum(app)

@@ -27,6 +27,7 @@ from myapi.domain.signal.signal_schema import (
     FundamentalData,
     NewsHeadline,
 )
+from myapi.domain.market.market_schema import WebSearchMarketResponse
 
 logger = logging.getLogger(__name__)
 
@@ -1275,3 +1276,36 @@ class SignalService:
         ╰─ END PROTOCOL
         """
         return prompt
+
+    def generate_us_market_prompt(self, date: str) -> str:
+        """Generate a prompt to summarize U.S. market catalysts."""
+        prompt = f"""
+        today is {date} and you are an AI assistant for U.S. market analysis.
+        Summarize key news, economic data releases, index movements and any other events
+        driving the U.S. stock market.
+
+        ╭─ TASK
+        │ 1. Search the open web for the most important U.S. market catalysts.
+        │    • Economic releases (CPI, jobs, FOMC, etc.) around the given date.
+        │    • Headlines impacting overall market sentiment.
+        │    • Movements in major indexes (S&P 500, NASDAQ, Dow) and notable sectors.
+        │ 2. Provide up to 5 concise bullet points summarizing the findings.
+        ╰─ END TASK
+
+        ╭─ SEARCH PROTOCOL
+        │ • Use Google Search with recency around {date} to gather information.
+        │ • Return "NO DATA" if nothing relevant is found.
+        ╰─ END PROTOCOL
+        """
+        return prompt
+
+    def get_us_market_info(
+        self,
+        date: str,
+        ai_service: "AIService",
+    ) -> WebSearchMarketResponse | str:
+        prompt = self.generate_us_market_prompt(date)
+        return ai_service.gemini_search_grounding(
+            prompt=prompt,
+            schema=WebSearchMarketResponse,
+        )
