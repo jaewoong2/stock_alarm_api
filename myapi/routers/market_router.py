@@ -17,4 +17,10 @@ def market_news_summary(
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ) -> WebSearchMarketResponse | str:
     today_str = date.today().strftime("%Y-%m-%d")
-    return signal_service.get_us_market_info(today_str, ai_service=ai_service)
+    result = signal_service.get_us_market_info(today_str, ai_service=ai_service)
+    if isinstance(result, WebSearchMarketResponse):
+        signal_service.save_web_search_results(
+            result_type="market",
+            results=result.search_results,
+        )
+    return result
