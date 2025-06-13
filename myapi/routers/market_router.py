@@ -18,7 +18,13 @@ def market_news_summary(
 ) -> WebSearchMarketResponse | str:
     today_str = date.today().strftime("%Y-%m-%d")
     prompt = signal_service.generate_us_market_prompt(today_str)
-    return ai_service.gemini_search_grounding(
+    result = ai_service.gemini_search_grounding(
         prompt=prompt,
         schema=WebSearchMarketResponse,
     )
+    if isinstance(result, WebSearchMarketResponse):
+        signal_service.save_web_search_results(
+            result_type="market",
+            results=result.search_results,
+        )
+    return result

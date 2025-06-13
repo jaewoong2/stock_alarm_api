@@ -5,7 +5,7 @@ import html
 from io import BytesIO
 import logging
 import re
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 import aiohttp
 import cloudscraper
 import pandas as pd
@@ -18,6 +18,7 @@ import datetime as dt
 from pandas_datareader import data as pdr
 
 from myapi.repositories.signals_repository import SignalsRepository
+from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     Article,
@@ -26,8 +27,12 @@ from myapi.domain.signal.signal_schema import (
     Strategy,
     FundamentalData,
     NewsHeadline,
+    WebSearchTickerResult,
 )
-from myapi.domain.market.market_schema import WebSearchMarketResponse
+from myapi.domain.market.market_schema import (
+    WebSearchMarketItem,
+)
+from myapi.domain.market.market_models import WebSearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +85,38 @@ def flatten_price_columns(df: pd.DataFrame, ticker: str | None = None) -> pd.Dat
 
 
 class SignalService:
-    def __init__(self, settings: Settings, signals_repository: SignalsRepository):
+    def __init__(
+        self,
+        settings: Settings,
+        signals_repository: SignalsRepository,
+        web_search_repository: WebSearchResultRepository,
+    ):
         self.settings = settings
         self.DEFAULT_UNIVERSE: str = "SPY,QQQ,AAPL,MSFT,TSLA"
         self.START_DAYS_BACK: int = 365
         self.signals_repository = signals_repository
+        self.web_search_repository = web_search_repository
         # self.sia = SentimentIntensityAnalyzer()
+
+    def save_web_search_results(
+        self,
+        result_type: str,
+        results: Sequence[WebSearchMarketItem | WebSearchTickerResult],
+        ticker: str | None = None,
+    ) -> None:
+        db_items = [
+            WebSearchResult(
+                result_type=result_type,
+                ticker=ticker,
+                date_YYYYMMDD=item.date_YYYYMMDD,
+                headline=getattr(item, "headline", None),
+                summary=getattr(item, "summary", None),
+                detail_description=getattr(item, "detail_description", None),
+            )
+            for item in results
+        ]
+        if db_items:
+            self.web_search_repository.bulk_create(db_items)
 
     def market_ok(self, index_ticker="SPY") -> bool:
         """시장 필터: 지수 종가가 20일 SMA 위면 True"""
@@ -1282,14 +1313,15 @@ class SignalService:
         prompt = f"""
         today is {date} and you are an AI assistant for U.S. market analysis.
         Summarize key news, economic data releases, index movements and any other events
-        driving the U.S. stock market.
+        driving the U.S. stock market. Focus on actionable catalysts investors care about.
 
         ╭─ TASK
         │ 1. Search the open web for the most important U.S. market catalysts.
         │    • Economic releases (CPI, jobs, FOMC, etc.) around the given date.
         │    • Headlines impacting overall market sentiment.
         │    • Movements in major indexes (S&P 500, NASDAQ, Dow) and notable sectors.
-        │ 2. Provide up to 5 concise bullet points summarizing the findings.
+        │ 2. Provide 3-5 concise bullet points summarizing the findings.
+        │    • Include closing levels or percentage moves for the major indices if available.
         ╰─ END TASK
 
         ╭─ SEARCH PROTOCOL

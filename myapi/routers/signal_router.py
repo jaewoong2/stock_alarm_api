@@ -175,6 +175,12 @@ def llm_query(
             ),
             schema=WebSearchTickerResponse,
         )
+        if web_search_gemini_result:
+            signal_service.save_web_search_results(
+                result_type="ticker",
+                results=web_search_gemini_result.search_results,
+                ticker=req.ticker,
+            )
         if req.additional_info and web_search_gemini_result:
             req.additional_info = (
                 req.additional_info

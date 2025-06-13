@@ -6,6 +6,7 @@ from myapi.repositories.futures_repository import FuturesRepository
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.trading_repository import TradingRepository
 from myapi.repositories.ticker_repository import TickerRepository
+from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services import futures_service
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
@@ -35,6 +36,9 @@ class RepositoryModule(containers.DeclarativeContainer):
     trading_repository = providers.Factory(TradingRepository, db_session=get_db)
     futures_repository = providers.Factory(FuturesRepository, db_session=get_db)
     ticker_repository = providers.Factory(TickerRepository, db_session=get_db)
+    web_search_repository = providers.Factory(
+        WebSearchResultRepository, db_session=get_db
+    )
 
 
 class ServiceModule(containers.DeclarativeContainer):
@@ -79,6 +83,7 @@ class ServiceModule(containers.DeclarativeContainer):
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,
+        web_search_repository=repositories.web_search_repository,
         settings=config.config,
     )
     ticker_service = providers.Factory(
