@@ -17,4 +17,8 @@ def market_news_summary(
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ) -> WebSearchMarketResponse | str:
     today_str = date.today().strftime("%Y-%m-%d")
-    return signal_service.get_us_market_info(today_str, ai_service=ai_service)
+    prompt = signal_service.generate_us_market_prompt(today_str)
+    return ai_service.gemini_search_grounding(
+        prompt=prompt,
+        schema=WebSearchMarketResponse,
+    )

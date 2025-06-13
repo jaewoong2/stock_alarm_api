@@ -1298,14 +1298,3 @@ class SignalService:
         ╰─ END PROTOCOL
         """
         return prompt
-
-    def get_us_market_info(
-        self,
-        date: str,
-        ai_service: "AIService",
-    ) -> WebSearchMarketResponse | str:
-        prompt = self.generate_us_market_prompt(date)
-        return ai_service.gemini_search_grounding(
-            prompt=prompt,
-            schema=WebSearchMarketResponse,
-        )
