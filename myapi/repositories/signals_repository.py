@@ -45,6 +45,7 @@ class SignalsRepository:
         action: str,
         stop_loss: Optional[float] = None,
         take_profit: Optional[float] = None,
+        close_price: Optional[float] = None,
         probability: Optional[str] = None,
         result_description: Optional[str] = None,
         strategy: Optional[str] = None,  # 신호가 발생한 전략 추가
@@ -64,6 +65,7 @@ class SignalsRepository:
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                close_price=close_price,
                 action=action,
                 timestamp=datetime.utcnow(),
                 probability=probability,

@@ -1,4 +1,3 @@
-from asyncio import sleep
 import datetime
 import json
 import logging
@@ -36,8 +35,6 @@ from myapi.utils.utils import (
     format_signal_embed,
 )
 
-# 티커 생성을 위한 데이터 준비
-from myapi.domain.ticker.ticker_schema import TickerCreate
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -110,6 +107,7 @@ def generate_signal_result(
             entry_price=result.entry_price or 0.0,
             stop_loss=result.stop_loss_price,
             take_profit=result.take_profit_price,
+            close_price=result.close_price,
             probability=str(result.probability_of_rising_up_percentage),
             strategy=",".join(request.data.triggered_strategies),
             result_description=result.reasoning,
@@ -377,8 +375,6 @@ async def get_signals(
             )
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
-
-        await sleep(1)  # To avoid throttling issues with SQS
 
         try:
             aws_service.send_sqs_fifo_message(

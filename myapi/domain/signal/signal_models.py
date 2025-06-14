@@ -13,6 +13,7 @@ class Signals(Base):
     entry_price = Column(Float)
     stop_loss = Column(Float, nullable=True)
     take_profit = Column(Float, nullable=True)
+    close_price = Column(Float, nullable=True)  # 거래 종료 가격
     action = Column(String)  # "buy" or "sell"
     timestamp = Column(DateTime, default=datetime.utcnow)
     probability = Column(String, nullable=True)  # 확률

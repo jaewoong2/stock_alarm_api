@@ -16,9 +16,10 @@ router = APIRouter(prefix="/market", tags=["market"])
 def market_news(
     ticker: Optional[str] = "",
     news_type: Literal["ticker", "market"] = "market",
+    news_date: Optional[date] = date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
-    today_str = date.today()
+    today_str = date.today() if news_date is None else news_date
     result = signal_service.get_web_search_summary(
         type=news_type,
         ticker=ticker,

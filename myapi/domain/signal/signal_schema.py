@@ -252,6 +252,7 @@ class SignalPromptResponse(BaseModel):
     entry_price: float | None = None
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
+    close_price: float | None = None
     # additional_info: Additional information or context for the recommendation.
 
 

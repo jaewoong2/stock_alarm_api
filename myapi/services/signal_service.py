@@ -1343,7 +1343,7 @@ class SignalService:
         """
         # start_date = date - 1day, end_date = date
         start_date = (date - dt.timedelta(days=1)).strftime("%Y-%m-%d")
-        end_date = (date + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        end_date = (date + dt.timedelta(days=2)).strftime("%Y-%m-%d")
 
         results = self.web_search_repository.get_search_results(
             result_type=type,

@@ -91,6 +91,7 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
         "recommendation": "🚦",
         "reasoning": "📝",
         "entry_price": "💰",
+        "close_price": " 😎",
         "stop_loss_price": "🛡️",
         "take_profit_price": "🎯",
         "probability_of_rising_up": "📈",
@@ -113,6 +114,11 @@ def format_signal_response(response: SignalPromptResponse, model: str) -> str:
         if response.entry_price is not None:
             price_lines.append(
                 f"{emoji_map['entry_price']} **진입가**: {response.entry_price}"
+            )
+
+        if response.close_price is not None:
+            price_lines.append(
+                f"{emoji_map['close_price']} **종가**: {response.close_price}"
             )
 
         if response.stop_loss_price is not None and response.entry_price is not None:

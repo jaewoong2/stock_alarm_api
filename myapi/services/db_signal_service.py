@@ -79,12 +79,23 @@ class DBSignalService:
                     "unknown",
                     False,
                 )
+
                 # Signal의 예측 TP와 실제 High 를 비교
-                if signal.take_profit and ticker.close_price:
+                if (
+                    signal.action
+                    and signal.action.lower() == "buy"
+                    and signal.take_profit
+                    and ticker.close_price
+                ):
                     price_change = signal.take_profit - ticker.close_price
 
                 # Signal의 예측 SL과 실제 Low 를 비교 (예측 괴리율)
-                if signal.stop_loss and ticker.close_price:
+                if (
+                    signal.action
+                    and signal.action.lower() == "sell"
+                    and signal.stop_loss
+                    and ticker.close_price
+                ):
                     price_change = signal.stop_loss - ticker.close_price
 
                 # Signal의 예측 결과 (Action) 와 실제 결과 (올랐는지 안올랐는지)를 비교
