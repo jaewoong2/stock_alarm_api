@@ -1,12 +1,13 @@
-from typing import List
+from typing import List, Literal
 from pydantic import BaseModel
 
 
 class WebSearchMarketItem(BaseModel):
-    date_YYYYMMDD: str
+    issued_YYYYMMDD: str
     headline: str
     summary: str
-    detail_description: str
+    full_description: str
+    recommendation: Literal["Buy", "Hold", "Sell"]
 
 
 class WebSearchMarketResponse(BaseModel):

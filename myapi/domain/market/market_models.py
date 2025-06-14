@@ -16,4 +16,5 @@ class WebSearchResult(Base):
     headline = Column(String, nullable=True)
     summary = Column(String, nullable=True)
     detail_description = Column(String, nullable=True)
+    recommendation = Column(String, nullable=True)  # e.g., 'buy', 'sell', 'hold'
     created_at = Column(DateTime(timezone=True), server_default=func.now())

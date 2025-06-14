@@ -21,7 +21,6 @@ from myapi.domain.signal.signal_schema import (
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
-    SignalResponse,
     TechnicalSignal,
     TickerReport,
     WebSearchTickerResponse,
@@ -32,7 +31,6 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
-from myapi.services.ticker_service import TickerService
 from myapi.utils.utils import (
     export_slim_tail_csv,
     format_signal_embed,

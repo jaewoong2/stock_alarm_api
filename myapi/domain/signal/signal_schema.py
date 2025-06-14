@@ -345,10 +345,10 @@ class DateRange(BaseModel):
 
 
 class WebSearchTickerResult(BaseModel):
-    date_YYYYMMDD: str
+    issued_YYYYMMDD: str
     summary: str
-    detail_description: str
-    recommendation: Literal["Buy", "Hold", "Sell", "None"]
+    full_description: str
+    recommendation: Literal["Buy", "Hold", "Sell"]
     recommendation_with_why: str
 
 

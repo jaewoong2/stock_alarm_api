@@ -109,10 +109,11 @@ class SignalService:
             WebSearchResult(
                 result_type=result_type,
                 ticker=ticker,
-                date_yyyymmdd=item.date_YYYYMMDD,
+                date_yyyymmdd=item.issued_YYYYMMDD,
                 headline=getattr(item, "headline", None),
                 summary=getattr(item, "summary", None),
-                detail_description=getattr(item, "detail_description", None),
+                detail_description=getattr(item, "full_description", None),
+                recommendation=getattr(item, "recommendation", None),
             )
             for item in results
         ]
@@ -1313,7 +1314,6 @@ class SignalService:
         """Generate a prompt to summarize U.S. market catalysts."""
         prompt = f"""
         today is {date} and you are an AI assistant for U.S. market analysis.
-        Summarize key news, economic data releases, index movements and any other events
         driving the U.S. stock market. Focus on actionable catalysts investors care about.
 
         ╭─ TASK
