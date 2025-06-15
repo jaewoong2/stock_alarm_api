@@ -456,6 +456,7 @@ async def get_today_signals_by_ticker(
 @inject
 async def get_signal_by_date(
     date: str,
+    symbols: str = "",
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
@@ -463,8 +464,12 @@ async def get_signal_by_date(
     """
     특정 날짜에 생성된 시그널을 조회합니다.
     """
+    symbol_list = symbols.split(",") if symbols else []
+
     date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
-    response = await db_signal_service.get_signals_result(date=date_value)
+    response = await db_signal_service.get_signals_result(
+        date=date_value, symbols=symbol_list
+    )
 
     return {
         "date": date_value,
