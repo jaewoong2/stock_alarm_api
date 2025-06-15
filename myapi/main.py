@@ -1,5 +1,6 @@
 import logging
 from math import log
+import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -45,9 +46,18 @@ app.add_middleware(
 register_exception_handlers(app)
 
 # CORS Middleware
+is_dev = os.getenv("ENVIRONMENT", "dev").lower() == "dev"
+if is_dev:
+    origins = ["https://stock.bamtoly.com", "http://localhost:5173"]
+else:
+    origins = ["https://stock.bamtoly.com"]
+
+logger = logging.getLogger(__name__)
+
+# 중복 미들웨어 제거하고 하나만 등록
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to your needs
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
