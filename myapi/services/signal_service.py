@@ -464,7 +464,8 @@ class SignalService:
         df["VolumeSpike"] = df["Volume"] > df["VOL20"] * 2
         df["VolumeSpikeStrength"] = df["Volume"] / df["VOL20"]  # 급등 강도
 
-        df["RSI14"] = ta.rsi(df["Close"], length=14)
+        # Standardize RSI column name to match other utilities
+        df["RSI_14"] = ta.rsi(df["Close"], length=14)
         df["ATR14"] = ta.atr(
             df["High"], df["Low"], df["Close"], length=14
         )  # 추가: 변동성
@@ -567,7 +568,7 @@ class SignalService:
         sma20_last = df["SMA20"].iloc[-1] if "SMA20" in cols else None
         sma50_last = df["SMA50"].iloc[-1] if "SMA50" in cols else None
         sma200_last = df["SMA200"].iloc[-1] if "SMA200" in cols else None
-        rsi_last = df["RSI14"].iloc[-1] if "RSI14" in cols else None
+        rsi_last = df["RSI_14"].iloc[-1] if "RSI_14" in cols else None
         bbl_last = df["BBL_20_2.0"].iloc[-1] if "BBL_20_2.0" in cols else None
         macd_prev = df["MACDh_12_26_9"].iloc[-2] if "MACDh_12_26_9" in cols else None
         macd_last = df["MACDh_12_26_9"].iloc[-1] if "MACDh_12_26_9" in cols else None
@@ -579,7 +580,6 @@ class SignalService:
         )  # 추가
 
         close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
-        rsi_last = df["RSI_14"].iloc[-1] if "RSI_14" in df.columns else None
 
         # 최신 값 준비
         gap_pct = df["GAP_PCT"].iloc[-1]
