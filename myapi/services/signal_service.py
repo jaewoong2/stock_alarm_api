@@ -1103,7 +1103,7 @@ class SignalService:
 
         prompt = f"""
         You are **RigorousTrader-AI**  with deep knowledge of day-swing trader specialising (like a professional trader)
-        Ensure recommendations are **realistic** and aligned with short-term trading (1-4 days).
+        Ensure recommendations are **realistic** and aligned with short-term trading (1-2 days).
         
         **Date:** {today}
         
@@ -1116,6 +1116,7 @@ class SignalService:
             ### Analyze Each Stock/ETF:
             - Evaluate the triggered strategies and their technical details
             - Consider fundamental data for stock quality.
+            - Think Relative Strength (RS) against S&P 500
             
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
@@ -1132,7 +1133,7 @@ class SignalService:
 
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
-            - Consider short-term trading horizon (1-4 days).
+            - Consider short-term trading horizon (1-2 days).
 
         
         ### Input Data
