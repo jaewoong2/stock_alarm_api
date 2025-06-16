@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
+from pandas import DataFrame
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -283,13 +284,16 @@ async def get_signals(
     spy_persentage_from_200ma = 0.0
     mkt_ok = False
     reports: list[TickerReport] = []
+
+    spy_df = signal_service.fetch_ohlcv("SPY", start=start)
+
     for t in tickers:
         df = signal_service.fetch_ohlcv(t, start=start)
 
         if df is None or df.empty:
             continue
 
-        df = signal_service.add_indicators(df, ticker=t)
+        df = signal_service.add_indicators(df, spy_df)
 
         if t == "SPY":
             spy_persentage_from_200ma = (
@@ -305,7 +309,7 @@ async def get_signals(
                 details=signal.details,
                 triggered_description=signal.description if signal.triggered else None,
             )
-            for signal in signal_service.evaluate_signals(df, strategies, ticker=t)
+            for signal in signal_service.evaluate_signals(df, strategies)
         ]
 
         funda = signal_service.fetch_fundamentals(t) if req.with_fundamental else None
@@ -318,7 +322,7 @@ async def get_signals(
                 signals=tech_sigs,
                 fundamentals=funda,
                 news=None,
-                dataframe=export_slim_tail_csv(df, 260),
+                dataframe=export_slim_tail_csv(df, 100),
             )
         )
 

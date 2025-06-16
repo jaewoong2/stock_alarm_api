@@ -213,7 +213,6 @@ class SignalPromptData(BaseModel):
     fundamentals: FundamentalData | None = None
     news: List[NewsHeadline] | None = None
     additional_info: str | None = None
-
     spy_description: str | None = None
 
 

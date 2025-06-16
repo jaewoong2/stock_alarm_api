@@ -401,34 +401,40 @@ class SignalService:
             logger.warning(f"Error calculating FCF Yield: {str(e)}")
         return None
 
-    def add_computed_rs_data(self, df: pd.DataFrame, ticker: str):
+    def add_computed_rs_data(
+        self, df: pd.DataFrame, spy_df: pd.DataFrame | None = None
+    ):
         """
         종목의 상대강도(RS) 데이터 계산
-        :param ticker: 종목 티커 (예: 'AAPL')
-        :return: 상대강도 데이터 (DataFrame)
+        :param df: 종목 OHLCV 데이터프레임
+        :param spy_df: SPY ETF 데이터프레임 (없으면 자동으로 다운로드)
+        :return: RS 데이터가 추가된 데이터프레임
         """
         try:
-            start_date = df.index.min()
-            end_date = df.index.max() + timedelta(days=1)
-            spy = yf.download(
-                "SPY",
-                start=start_date.strftime("%Y-%m-%d"),
-                end=end_date.strftime("%Y-%m-%d"),
-                auto_adjust=True,
-                progress=False,
-            )
+            # If spy_df is not provided, download it
+            if spy_df is None:
+                start_date = df.index.min()
+                end_date = df.index.max() + timedelta(days=1)
+                spy_df = yf.download(
+                    "SPY",
+                    start=start_date.strftime("%Y-%m-%d"),
+                    end=end_date.strftime("%Y-%m-%d"),
+                    auto_adjust=True,
+                    progress=False,
+                )
 
-            if spy is None or spy.empty:
+            if spy_df is None or spy_df.empty:
                 return df
 
-            spy_close = spy["Close"].reindex(df.index).fillna(method="ffill")
+            # Reindex SPY close prices to match df's index
+            spy_close = spy_df["Close"].reindex(df.index).ffill()
 
             for period, col in [(20, "RS_SHORT"), (60, "RS_MID")]:
                 ticker_ret = df["Close"].pct_change(period)
                 spy_ret = spy_close.pct_change(period)
                 df[col] = (ticker_ret - spy_ret) * 100
         except Exception as e:
-            logger.warning(f"Failed to compute RS data for {ticker}: {e}")
+            logger.warning(f"Failed to compute RS data for: {e}")
 
         return df
 
@@ -473,7 +479,7 @@ class SignalService:
         df = flatten_price_columns(df, ticker)
         return df
 
-    def add_indicators(self, df: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
+    def add_indicators(self, df: pd.DataFrame, spy_df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         # 기존 지표
         df["SMA5"] = ta.sma(df.Close, 5)
@@ -577,14 +583,12 @@ class SignalService:
         df["VCP_VOL_REL"] = df["Volume"] / df["Volume"].rolling(long_win).mean()
 
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
-
-        if ticker:
-            df = self.add_computed_rs_data(df, ticker)
+        df = self.add_computed_rs_data(df, spy_df)
 
         return df
 
     def evaluate_signals(
-        self, df: pd.DataFrame, strategies: List[Strategy], ticker: str
+        self, df: pd.DataFrame, strategies: List[Strategy]
     ) -> List[TechnicalSignal]:
         out: List[TechnicalSignal] = []
         cols = set(df.columns)
@@ -1063,52 +1067,6 @@ class SignalService:
         except ImportError:
             logger.warning("News API not available.")
             return []
-
-    def analyze_stock(self, ticker: str, strategies: List[Strategy]) -> dict:
-        """Perform a complete analysis of the stock including price, technicals, fundamentals and news."""
-        # 주가 데이터 및 기술적 지표 가져오기
-        df = self.fetch_ohlcv(ticker)
-
-        if df is None:
-            raise ValueError(f"Failed to fetch data for ticker: {ticker}")
-
-        # Handle case when df is empty
-        if df.empty:
-            return {
-                "ticker": ticker,
-                "last_price": None,
-                "price_change_pct": None,
-                "technical_signals": [],
-                "fundamentals": self.fetch_fundamentals(ticker),
-                "news": self.fetch_news(ticker),
-                "last_updated": dt.datetime.now().isoformat(),
-            }
-
-        df_with_indicators = self.add_indicators(df, ticker=ticker)
-
-        # 기술적 시그널 평가
-        signals = self.evaluate_signals(df_with_indicators, strategies, ticker)
-
-        # 기본적 지표 가져오기
-        fundamentals = self.fetch_fundamentals(ticker)
-
-        # 뉴스 가져오기
-        news = self.fetch_news(ticker)
-
-        # 최종 분석 결과 반환
-        return {
-            "ticker": ticker,
-            "last_price": df.iloc[-1].Close,
-            "price_change_pct": (
-                ((df.iloc[-1].Close / df.iloc[-2].Close) - 1) * 100
-                if len(df) > 1
-                else None
-            ),
-            "technical_signals": signals,
-            "fundamentals": fundamentals,
-            "news": news,
-            "last_updated": dt.datetime.now().isoformat(),
-        }
 
     def report_summary_prompt(self, ticker: str, report_text: str):
         system_prompt = f"""

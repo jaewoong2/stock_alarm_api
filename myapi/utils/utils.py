@@ -243,6 +243,8 @@ def export_slim_tail_csv(df: DataFrame, rows: int = 260):
         "ROC5",
         "VWAP",
         "GAP_PCT",
+        "RS_SHORT",
+        "RS_MID",
     ]
 
     # 교집합만 선택해 예상치 못한 결측 컬럼 오류 방지
