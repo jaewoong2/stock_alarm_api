@@ -407,6 +407,30 @@ class SignalService:
         :param ticker: 종목 티커 (예: 'AAPL')
         :return: 상대강도 데이터 (DataFrame)
         """
+        try:
+            start_date = df.index.min()
+            end_date = df.index.max() + timedelta(days=1)
+            spy = yf.download(
+                "SPY",
+                start=start_date.strftime("%Y-%m-%d"),
+                end=end_date.strftime("%Y-%m-%d"),
+                auto_adjust=True,
+                progress=False,
+            )
+
+            if spy is None or spy.empty:
+                return df
+
+            spy_close = spy["Close"].reindex(df.index).fillna(method="ffill")
+
+            for period, col in [(20, "RS_SHORT"), (60, "RS_MID")]:
+                ticker_ret = df["Close"].pct_change(period)
+                spy_ret = spy_close.pct_change(period)
+                df[col] = (ticker_ret - spy_ret) * 100
+        except Exception as e:
+            logger.warning(f"Failed to compute RS data for {ticker}: {e}")
+
+        return df
 
     def fetch_ohlcv(
         self,
@@ -449,7 +473,7 @@ class SignalService:
         df = flatten_price_columns(df, ticker)
         return df
 
-    def add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_indicators(self, df: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
         df = df.copy()
         # 기존 지표
         df["SMA5"] = ta.sma(df.Close, 5)
@@ -554,6 +578,9 @@ class SignalService:
 
         df = df.dropna(how="all").reset_index(drop=False).set_index("Date")
 
+        if ticker:
+            df = self.add_computed_rs_data(df, ticker)
+
         return df
 
     def evaluate_signals(
@@ -580,6 +607,8 @@ class SignalService:
 
         close_prev = df["Close"].iloc[-2] if len(df) > 1 else None
         rsi_last = df["RSI_14"].iloc[-1] if "RSI_14" in df.columns else None
+        rs_short_last = df["RS_SHORT"].iloc[-1] if "RS_SHORT" in cols else None
+        rs_mid_last = df["RS_MID"].iloc[-1] if "RS_MID" in cols else None
 
         # 최신 값 준비
         gap_pct = df["GAP_PCT"].iloc[-1]
@@ -634,6 +663,26 @@ class SignalService:
                         "bb_width": round(bb_width, 4),
                         "min_bw_6m": round(min_bw_6m, 4),
                     },
+                )
+            )
+
+        if "RS_SHORT" in strategies:
+            triggered = rs_short_last is not None and rs_short_last > 0
+            out.append(
+                TechnicalSignal(
+                    strategy="RS_SHORT",
+                    triggered=triggered,
+                    details={"rs_short": rs_short_last},
+                )
+            )
+
+        if "RS_MID" in strategies:
+            triggered = rs_mid_last is not None and rs_mid_last > 0
+            out.append(
+                TechnicalSignal(
+                    strategy="RS_MID",
+                    triggered=triggered,
+                    details={"rs_mid": rs_mid_last},
                 )
             )
 
@@ -1035,7 +1084,7 @@ class SignalService:
                 "last_updated": dt.datetime.now().isoformat(),
             }
 
-        df_with_indicators = self.add_indicators(df)
+        df_with_indicators = self.add_indicators(df, ticker=ticker)
 
         # 기술적 시그널 평가
         signals = self.evaluate_signals(df_with_indicators, strategies, ticker)
@@ -1104,13 +1153,12 @@ class SignalService:
         1. THINK: Extract all bullish/bearish signals from the last row of the CSV And Signals. 
         2. REFLECT: Stress-test those signals against the prior all rows and list any conflicts.  
         
-        {"\n\n"}
+        
         ## Instructions
             ### Analyze Each Stock/ETF:
             - Evaluate the triggered strategies and their technical details
             - Consider fundamental data for stock quality.
             
-            {"\n\n"}
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
                 For BUY/SELL: [Think First "WHY"]
@@ -1121,16 +1169,14 @@ class SignalService:
                 
                 For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
 
-            {"\n\n"}
             ### Reasoning:
             - Explain your recommendation step-by-step.
 
-            {"\n\n"}
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-4 days).
 
-        {"\n\n"}
+        
         ### Input Data
         Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
         - `ticker`: Stock/ETF ticker symbol.
@@ -1145,26 +1191,17 @@ class SignalService:
         - `additional_info`: Any additional information or context.
         - `dataframe`: Tickers Price DataFrame.
 
-        {"\n\n"}
+        
         ```json
         - ticker: {data.ticker}
-        {"\n"}
         - last_price: {data.last_price}
-        {"\n"}
         - price_change_pct: {data.price_change_pct}
-        {"\n"}
         - triggered_strategies: {data.triggered_strategies}
-        {"\n"}
         - technical_details: {data.technical_details}
-        {"\n"}
         - fundamentals: {data.fundamentals}
-        {"\n"}
         - report_summary: {report_summary}
-        {"\n"}
-        - S&P 500 Status: {data.spy_description} 
-        {"\n"}
+        - S&P 500 Status: {data.spy_description}
         - additional_info: {data.additional_info}
-        {"\n"}
         - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
         ```
         """

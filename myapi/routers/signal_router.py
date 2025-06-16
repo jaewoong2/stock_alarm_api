@@ -289,7 +289,7 @@ async def get_signals(
         if df is None or df.empty:
             continue
 
-        df = signal_service.add_indicators(df)
+        df = signal_service.add_indicators(df, ticker=t)
 
         if t == "SPY":
             spy_persentage_from_200ma = (

@@ -81,7 +81,7 @@ def generate_prompt(
     - orderbook_data: {orderbook_data}
     - arbitrage_signal: {arbitrage_signal}
     - trade_history: {trade_history}
-    - current_active_orders: {"\n".join([order.description for order in current_active_orders]) if current_active_orders else "None"}
+    - current_active_orders: {chr(10).join([order.description for order in current_active_orders]) if current_active_orders else "None"}
 
     ### 3. Additional Context
     - additional_context: {additional_context}
