@@ -30,10 +30,10 @@ from myapi.domain.signal.signal_schema import (
     NewsHeadline,
     WebSearchTickerResult,
 )
-from myapi.domain.market.market_schema import (
+from myapi.domain.news.news_schema import (
     WebSearchMarketItem,
 )
-from myapi.domain.market.market_models import WebSearchResult
+from myapi.domain.news.news_models import WebSearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -1350,3 +1350,33 @@ class SignalService:
         )
 
         return results
+
+    def get_ticker_news_by_recommendation(
+        self, recommendation: str, limit: int
+    ) -> list[dict]:
+        ticker_counts = self.web_search_repository.get_ticker_counts_by_recommendation(
+            recommendation=recommendation,
+            limit=limit,
+        )
+        result = []
+        for ticker, _ in ticker_counts:
+            items = self.web_search_repository.get_search_results(
+                result_type="ticker",
+                ticker=ticker,
+            )
+            result.append(
+                {
+                    "ticker": ticker,
+                    "news": [
+                        {
+                            "date": it.date_yyyymmdd,
+                            "headline": it.headline,
+                            "summary": it.summary,
+                            "detail_description": it.detail_description,
+                            "recommendation": it.recommendation,
+                        }
+                        for it in items
+                    ],
+                }
+            )
+        return result

@@ -4,16 +4,16 @@ from fastapi import APIRouter, Depends
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.domain.market.market_schema import WebSearchMarketResponse
+from myapi.domain.news.news_schema import WebSearchMarketResponse
 from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
 
-router = APIRouter(prefix="/market", tags=["market"])
+router = APIRouter(prefix="/news", tags=["news"])
 
 
-@router.get("/news")
+@router.get("/")
 @inject
-def market_news(
+def get_news(
     ticker: Optional[str] = "",
     news_type: Literal["ticker", "market"] = "market",
     news_date: Optional[date] = date.today(),
@@ -28,9 +28,24 @@ def market_news(
     return {"result": result}
 
 
-@router.get("/news-summary", response_model=WebSearchMarketResponse)
+@router.get("/recommendations")
 @inject
-def market_news_summary(
+def news_recommendations(
+    recommendation: Literal["buy", "hold", "sell"] = "buy",
+    limit: int = 5,
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+):
+    return {
+        "results": signal_service.get_ticker_news_by_recommendation(
+            recommendation=recommendation,
+            limit=limit,
+        )
+    }
+
+
+@router.get("/summary", response_model=WebSearchMarketResponse)
+@inject
+def news_summary(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ) -> WebSearchMarketResponse | str:
@@ -46,3 +61,4 @@ def market_news_summary(
             results=result.search_results,
         )
     return result
+

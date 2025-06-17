@@ -110,7 +110,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.futures_router",
             "myapi.routers.signal_router",
             "myapi.routers.ticker_router",
-            "myapi.routers.market_router",
+            "myapi.routers.news_router",
         ],
     )
 

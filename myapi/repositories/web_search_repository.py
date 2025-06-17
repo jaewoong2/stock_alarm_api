@@ -1,7 +1,8 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-from myapi.domain.market.market_models import WebSearchResult
+from myapi.domain.news.news_models import WebSearchResult
 
 
 class WebSearchResultRepository:
@@ -34,4 +35,20 @@ class WebSearchResultRepository:
 
         query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
 
+        return query.all()
+
+    def get_ticker_counts_by_recommendation(
+        self, recommendation: str, limit: int
+    ) -> List[tuple[str, int]]:
+        query = (
+            self.db_session.query(
+                WebSearchResult.ticker,
+                func.count(WebSearchResult.id).label("cnt"),
+            )
+            .filter(WebSearchResult.result_type == "ticker")
+            .filter(WebSearchResult.recommendation.ilike(recommendation))
+            .group_by(WebSearchResult.ticker)
+            .order_by(func.count(WebSearchResult.id).desc())
+            .limit(limit)
+        )
         return query.all()
