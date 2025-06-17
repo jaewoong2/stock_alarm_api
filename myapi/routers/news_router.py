@@ -31,14 +31,16 @@ def get_news(
 @router.get("/recommendations")
 @inject
 def news_recommendations(
-    recommendation: Literal["buy", "hold", "sell"] = "buy",
+    recommendation: Literal["Buy", "Hold", "Sell"] = "Buy",
     limit: int = 5,
+    date: Optional[date] = date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
     return {
         "results": signal_service.get_ticker_news_by_recommendation(
             recommendation=recommendation,
             limit=limit,
+            date=date,
         )
     }
 
@@ -61,4 +63,3 @@ def news_summary(
             results=result.search_results,
         )
     return result
-

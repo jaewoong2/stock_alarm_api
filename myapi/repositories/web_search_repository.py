@@ -1,3 +1,4 @@
+import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -38,17 +39,22 @@ class WebSearchResultRepository:
         return query.all()
 
     def get_ticker_counts_by_recommendation(
-        self, recommendation: str, limit: int
-    ) -> List[tuple[str, int]]:
+        self, recommendation: str, limit: int, date: Optional[datetime.date]
+    ):
+
+        current_date = datetime.date.today() if date is None else date
+
         query = (
             self.db_session.query(
                 WebSearchResult.ticker,
                 func.count(WebSearchResult.id).label("cnt"),
             )
             .filter(WebSearchResult.result_type == "ticker")
-            .filter(WebSearchResult.recommendation.ilike(recommendation))
+            .filter(WebSearchResult.recommendation == recommendation)
+            .filter(WebSearchResult.created_at >= current_date.strftime("%Y-%m-%d"))
             .group_by(WebSearchResult.ticker)
             .order_by(func.count(WebSearchResult.id).desc())
             .limit(limit)
         )
+
         return query.all()

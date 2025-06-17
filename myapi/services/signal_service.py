@@ -1352,11 +1352,12 @@ class SignalService:
         return results
 
     def get_ticker_news_by_recommendation(
-        self, recommendation: str, limit: int
+        self, recommendation: str, limit: int, date: Optional[datetime.date] = None
     ) -> list[dict]:
         ticker_counts = self.web_search_repository.get_ticker_counts_by_recommendation(
             recommendation=recommendation,
             limit=limit,
+            date=date,
         )
         result = []
         for ticker, _ in ticker_counts:
