@@ -621,6 +621,7 @@ class SignalsRepository:
                         "senario": signal.senario,
                         "good_things": signal.good_things,
                         "bad_things": signal.bad_things,
+                        "close_price": signal.close_price,
                     }
 
                 if ticker is not None:
@@ -703,6 +704,7 @@ class SignalsRepository:
                         "senario": signal.senario,
                         "good_things": signal.good_things,
                         "bad_things": signal.bad_things,
+                        "close_price": signal.close_price,
                     }
 
                 if ticker is not None:

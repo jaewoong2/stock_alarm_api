@@ -1121,10 +1121,10 @@ class SignalService:
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
                 For BUY/SELL: [Think First "WHY"]
-                - Entry Price: Suggested price to enter today
-                - Close Price: Suggested price to close the position today
-                - Stop-Loss Price: Suggested Price to exit to limit losses
-                - Take-Profit Price: Suggested Price to exit for profit
+                - Entry Price: Suggested price to enter today (required)
+                - Close Price: Suggested price to close the position today (required)
+                - Stop-Loss Price: Suggested Price to exit to limit losses (required)
+                - Take-Profit Price: Suggested Price to exit for profit (required)
                 
                 For HOLD: Explain why no action is recommended (e.g., unclear trend, high risk).
 

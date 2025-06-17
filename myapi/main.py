@@ -48,7 +48,11 @@ register_exception_handlers(app)
 # CORS Middleware
 is_dev = os.getenv("ENVIRONMENT", "dev").lower() == "dev"
 if is_dev:
-    origins = ["https://stock.bamtoly.com", "http://localhost:5173"]
+    origins = [
+        "https://stock.bamtoly.com",
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ]
 else:
     origins = ["https://stock.bamtoly.com"]
 

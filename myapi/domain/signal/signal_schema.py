@@ -235,14 +235,6 @@ class AnalyticsReportPromptResponse(BaseModel):
 
 
 class SignalPromptResponse(BaseModel):
-
-    # ticker: Stock/ETF ticker.
-    # reasoning: Step-by-step explanation of the recommendation.
-    # recommendation: "BUY", "SELL", or "HOLD".
-    # entry_price: Suggested entry price (null for HOLD).
-    # stop_loss_price: Suggested stop-loss price (null for HOLD).
-    # take_profit_price: Suggested take-profit price (null for HOLD).
-
     ticker: str
     good_things: str | None = None
     bad_things: str | None = None
@@ -252,10 +244,10 @@ class SignalPromptResponse(BaseModel):
     probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
     senarios: str | None = None
-    entry_price: float | None = None
-    stop_loss_price: float | None = None
-    take_profit_price: float | None = None
-    close_price: float | None = None
+    entry_price: float = 0.0
+    stop_loss_price: float = 0.0
+    take_profit_price: float = 0.0
+    close_price: float = 0.0
     # additional_info: Additional information or context for the recommendation.
 
 
@@ -429,6 +421,7 @@ class SignalJoinTickerResponse(BaseModel):
         senario: Optional[str] = None
         good_things: Optional[str] = None
         bad_things: Optional[str] = None
+        close_price: Optional[float] = None
 
     class Ticker(BaseModel):
         # Ticker 정보
