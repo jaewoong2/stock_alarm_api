@@ -1,6 +1,6 @@
 import sqlalchemy
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 import logging
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy import text, desc, func, and_
@@ -482,7 +482,7 @@ class SignalsRepository:
         tickers: Optional[List[str]],
         start_date: datetime,
         end_date: datetime,
-        action: str,
+        action: Literal["Buy", "Sell", "Hold"],
     ) -> List[Dict[str, int]]:
         """주어진 기간 동안 액션별 시그널 개수를 조회합니다."""
         self._ensure_valid_session()
@@ -490,13 +490,15 @@ class SignalsRepository:
         query = (
             self.db_session.query(Signals.ticker, func.count(Signals.id).label("count"))
             .filter(Signals.timestamp >= start_date, Signals.timestamp <= end_date)
-            .filter(Signals.action == action)
+            .filter(Signals.action == action.lower())
         )
 
         if tickers:
             query = query.filter(Signals.ticker.in_(tickers))
 
-        results = query.group_by(Signals.ticker).order_by(func.count(Signals.id).asc()).all()
+        results = (
+            query.group_by(Signals.ticker).order_by(func.count(Signals.id).asc()).all()
+        )
 
         return [{"ticker": ticker, "count": count} for ticker, count in results]
 

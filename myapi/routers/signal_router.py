@@ -1,7 +1,7 @@
 import datetime
 import json
 import logging
-from typing import List, Literal
+from typing import List, Literal, Optional
 from venv import logger
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
@@ -456,20 +456,33 @@ async def get_today_signals_by_ticker(
     return ticker_signals
 
 
-@router.get("/weekly-action-count")
+@router.get("/weekly/action-count")
 @inject
 async def get_weekly_action_count(
-    tickers: str = "",
-    reference_date: date = date.today(),
-    action: Literal["buy", "sell"] = "buy",
+    tickers: Optional[str] = None,
+    reference_date: Optional[date] = date.today(),
+    action: Literal["Buy", "Sell"] = "Buy",
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """지정한 날짜 기준 일주일간 액션별 시그널 개수를 조회합니다."""
 
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t] if tickers else None
-    return await db_signal_service.get_weekly_action_counts(ticker_list, reference_date, action)
+    ticker_list = (
+        [t.strip().upper() for t in tickers.split(",") if t]
+        if tickers
+        else DefaultTickers
+    )
+
+    reference_date = reference_date if reference_date else date.today()
+
+    result = await db_signal_service.get_weekly_action_counts(
+        ticker_list, reference_date, action
+    )
+
+    return {
+        "signals": result,
+    }
 
 
 @router.get("/date")

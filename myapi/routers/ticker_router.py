@@ -1,6 +1,6 @@
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Literal
+from typing import List, Literal, Optional
 from datetime import date, timedelta
 
 from dependency_injector.wiring import inject, Provide
@@ -255,18 +255,29 @@ def get_signal_accuracy(
         )
 
 
-@router.get("/weekly-price-movement")
+@router.get("/weekly/price-movement")
 @inject
 def get_weekly_price_movement(
-    tickers: str = "",
-    reference_date: date = date.today(),
+    tickers: Optional[str] = None,
+    reference_date: Optional[date] = date.today(),
     direction: Literal["up", "down"] = "up",
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
     """일주일간 가격이 상승하거나 하락한 횟수를 조회합니다."""
 
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t] if tickers else None
-    end_dt = reference_date
+    ticker_list = (
+        [t.strip().upper() for t in tickers.split(",") if t]
+        if tickers
+        else DefaultTickers
+    )
+
+    end_dt = reference_date if reference_date else date.today()
     start_dt = end_dt - timedelta(days=7)
 
-    return ticker_service.count_price_movements(ticker_list, start_dt, end_dt, direction)
+    tickers_with_count = ticker_service.count_price_movements(
+        ticker_list, start_dt, end_dt, direction
+    )
+
+    return {
+        "tickers": tickers_with_count,
+    }

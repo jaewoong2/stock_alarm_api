@@ -142,10 +142,9 @@ class TickerRepository:
     ) -> List[Dict[str, int]]:
         """기간 동안 가격 변동(상승/하락) 횟수를 계산합니다."""
 
-        query = (
-            self.db_session.query(Ticker.symbol, func.count(Ticker.id).label("count"))
-            .filter(Ticker.date >= start_date, Ticker.date <= end_date)
-        )
+        query = self.db_session.query(
+            Ticker.symbol, func.count(Ticker.id).label("count")
+        ).filter(Ticker.date >= start_date, Ticker.date <= end_date)
 
         if symbols:
             query = query.filter(Ticker.symbol.in_(symbols))
@@ -155,5 +154,8 @@ class TickerRepository:
         elif direction == "down":
             query = query.filter(Ticker.close_price < Ticker.open_price)
 
-        results = query.group_by(Ticker.symbol).order_by(func.count(Ticker.id).asc()).all()
+        results = (
+            query.group_by(Ticker.symbol).order_by(func.count(Ticker.id).asc()).all()
+        )
+
         return [{"ticker": sym, "count": cnt} for sym, cnt in results]
