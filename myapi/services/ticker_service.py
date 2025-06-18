@@ -424,3 +424,13 @@ class TickerService:
         """
         tickers = self.ticker_repository.get_all_ticker_name()
         return tickers
+
+    def count_price_movements(
+        self,
+        symbols: Optional[List[str]],
+        start_date: date,
+        end_date: date,
+        direction: str,
+    ) -> List[Dict[str, int]]:
+        """기간 동안 가격 상승/하락 횟수를 반환합니다."""
+        return self.ticker_repository.count_price_movements(symbols, start_date, end_date, direction)

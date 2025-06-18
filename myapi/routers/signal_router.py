@@ -456,6 +456,22 @@ async def get_today_signals_by_ticker(
     return ticker_signals
 
 
+@router.get("/weekly-action-count")
+@inject
+async def get_weekly_action_count(
+    tickers: str = "",
+    reference_date: date = date.today(),
+    action: Literal["buy", "sell"] = "buy",
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """지정한 날짜 기준 일주일간 액션별 시그널 개수를 조회합니다."""
+
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t] if tickers else None
+    return await db_signal_service.get_weekly_action_counts(ticker_list, reference_date, action)
+
+
 @router.get("/date")
 @inject
 async def get_signal_by_date(

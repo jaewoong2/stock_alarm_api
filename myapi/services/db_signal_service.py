@@ -403,3 +403,25 @@ class DBSignalService:
                 f"Error getting signals for {ticker} on {date_value}: {e}"
             )
             return []
+
+    async def get_weekly_action_counts(
+        self,
+        tickers: Optional[List[str]],
+        reference_date: date,
+        action: str,
+    ) -> List[Dict[str, int]]:
+        """지정한 날짜를 기준으로 일주일간 액션별 시그널 개수를 조회합니다."""
+
+        try:
+            if action not in ["buy", "sell"]:
+                raise HTTPException(status_code=400, detail="Action must be 'buy' or 'sell'")
+
+            end_dt = datetime.combine(reference_date, datetime.max.time())
+            start_dt = end_dt - timedelta(days=7)
+
+            return self.repository.count_signals_by_action(tickers, start_dt, end_dt, action)
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            self.logger.error(f"Error fetching weekly action counts: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch action counts: {e}")

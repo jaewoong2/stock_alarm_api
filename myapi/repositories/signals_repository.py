@@ -477,6 +477,29 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
+    def count_signals_by_action(
+        self,
+        tickers: Optional[List[str]],
+        start_date: datetime,
+        end_date: datetime,
+        action: str,
+    ) -> List[Dict[str, int]]:
+        """주어진 기간 동안 액션별 시그널 개수를 조회합니다."""
+        self._ensure_valid_session()
+
+        query = (
+            self.db_session.query(Signals.ticker, func.count(Signals.id).label("count"))
+            .filter(Signals.timestamp >= start_date, Signals.timestamp <= end_date)
+            .filter(Signals.action == action)
+        )
+
+        if tickers:
+            query = query.filter(Signals.ticker.in_(tickers))
+
+        results = query.group_by(Signals.ticker).order_by(func.count(Signals.id).asc()).all()
+
+        return [{"ticker": ticker, "count": count} for ticker, count in results]
+
     def get_by_ticker_and_date(self, ticker: str, date_value: date):
         """특정 날짜와 티커의 시그널을 조회"""
         # 해당 날짜의 시작과 끝 시간 계산

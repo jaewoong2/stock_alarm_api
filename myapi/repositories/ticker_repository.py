@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import date, timedelta
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -132,3 +132,28 @@ class TickerRepository:
             .order_by(Ticker.date)
             .first()
         )
+
+    def count_price_movements(
+        self,
+        symbols: Optional[List[str]],
+        start_date: date,
+        end_date: date,
+        direction: str,
+    ) -> List[Dict[str, int]]:
+        """기간 동안 가격 변동(상승/하락) 횟수를 계산합니다."""
+
+        query = (
+            self.db_session.query(Ticker.symbol, func.count(Ticker.id).label("count"))
+            .filter(Ticker.date >= start_date, Ticker.date <= end_date)
+        )
+
+        if symbols:
+            query = query.filter(Ticker.symbol.in_(symbols))
+
+        if direction == "up":
+            query = query.filter(Ticker.close_price > Ticker.open_price)
+        elif direction == "down":
+            query = query.filter(Ticker.close_price < Ticker.open_price)
+
+        results = query.group_by(Ticker.symbol).order_by(func.count(Ticker.id).asc()).all()
+        return [{"ticker": sym, "count": cnt} for sym, cnt in results]
