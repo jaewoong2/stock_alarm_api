@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, func
+from sqlalchemy import Column, Float, Integer, String, DateTime, func
 
 from myapi.database import Base
 
@@ -17,4 +17,18 @@ class WebSearchResult(Base):
     summary = Column(String, nullable=True)
     detail_description = Column(String, nullable=True)
     recommendation = Column(String, nullable=True)  # e.g., 'buy', 'sell', 'hold'
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class MarketForecast(Base):
+    """Table to store daily US market forecasts."""
+
+    __tablename__ = "market_forecasts"
+    __table_args__ = {"schema": "crypto"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    date_yyyymmdd = Column(String, nullable=False, index=True)
+    outlook = Column(String, nullable=False)
+    reason = Column(String, nullable=False)
+    up_percentage = Column(Float, nullable=True)  # e.g., '70'
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -4,9 +4,13 @@ from fastapi import APIRouter, Depends
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.domain.news.news_schema import WebSearchMarketResponse
+from myapi.domain.news.news_schema import (
+    MarketForecastResponse,
+    WebSearchMarketResponse,
+)
 from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
+from myapi.services.web_search_service import WebSearchService
 
 router = APIRouter(prefix="/news", tags=["news"])
 
@@ -63,3 +67,15 @@ def news_summary(
             results=result.search_results,
         )
     return result
+
+
+@router.get("/market-forecast", response_model=MarketForecastResponse)
+@inject
+def market_forecast(
+    forecast_date: date = date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+) -> MarketForecastResponse:
+
+    return websearch_service.forecast_market(forecast_date)

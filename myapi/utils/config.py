@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     NEWS_API_KEY: str = ""
     FRED_API_KEY: str = ""
     DISCORD_WEBHOOK_URL: str = ""
+    PERPLEXITY_API_KEY: str = ""
 
     database_engine: str = ""
     database_username: str = ""

@@ -1102,7 +1102,7 @@ class SignalService:
         """
 
         prompt = f"""
-        You are **RigorousTrader-AI**  with deep knowledge of day-swing trader specialising (like a professional trader)
+        You are deep knowledge of day-swing trader specialising (like a professional trader)
         Ensure recommendations are **realistic** and aligned with short-term trading (1-2 days).
         
         **Date:** {today}
@@ -1111,13 +1111,12 @@ class SignalService:
         1. THINK: Extract all bullish/bearish signals from the last row of the CSV And Signals. 
         2. REFLECT: Stress-test those signals against the prior all rows and list any conflicts.  
         
-        
         ## Instructions
             ### Analyze Each Stock/ETF:
             - Evaluate the triggered strategies and their technical details
             - Consider fundamental data for stock quality.
-            - Think Relative Strength (RS) against S&P 500
-            - Analyze And Explain Chart Patterns By Using OHLCV DataFrame CSV
+            - **Think Relative Strength (RS) against S&P 500**
+            - **Analyze And Explain Chart Patterns By Using OHLCV DataFrame CSV**
             
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
@@ -1136,6 +1135,7 @@ class SignalService:
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-2 days).
+            - Input Data Importance: Stock's OHLCV DataFrame *** > News Headlines **  > Fundamental Data, Report Summary *
 
         
         ### Input Data
@@ -1150,7 +1150,7 @@ class SignalService:
         - `report_summary`: Summary of the technical report.
         - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
         - `additional_info`: Any additional information or context.
-        - `dataframe`: Tickers Price DataFrame.
+        - `Stock's OHLCV DataFrame`: Stock's OHLCV DataFrame.
 
         
         ```json
@@ -1163,7 +1163,7 @@ class SignalService:
         - report_summary: {report_summary}
         - S&P 500 Status: {data.spy_description}
         - additional_info: {data.additional_info}
-        - dataframe (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
+        - Stock's OHLCV DataFrame (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
         ```
         """
 
@@ -1367,6 +1367,7 @@ class SignalService:
                 result_type="ticker",
                 ticker=ticker,
             )
+
             result.append(
                 {
                     "ticker": ticker,

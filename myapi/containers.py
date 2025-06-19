@@ -19,6 +19,7 @@ from myapi.services.ticker_service import TickerService
 from myapi.services.signal_service import SignalService
 from myapi.services.tqqq_service import TqqqService
 from myapi.services.trading.trade_service import TradingService
+from myapi.services.web_search_service import WebSearchService
 from myapi.utils.config import Settings
 
 
@@ -95,6 +96,12 @@ class ServiceModule(containers.DeclarativeContainer):
 
     db_signal_service = providers.Factory(
         DBSignalService, repository=repositories.signals_repository
+    )
+
+    websearch_service = providers.Factory(
+        WebSearchService,
+        websearch_repository=repositories.web_search_repository,
+        ai_service=ai_service,
     )
 
 

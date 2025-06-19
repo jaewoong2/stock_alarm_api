@@ -23,6 +23,25 @@ class AIService:
         self.open_api_key = settings.OPENAI_API_KEY
         self.gemini_api_key = settings.GEMINI_API_KEY
         self.huggingface_api_key = settings.HUGGINGFACE_API_KEY
+        self.perplexity_api_key = settings.PERPLEXITY_API_KEY
+
+    def perplexity_completion(
+        self,
+        prompt: str,
+        schema: Type[T],
+    ):
+        client = openai.OpenAI(
+            base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
+        )
+        response = client.beta.chat.completions.parse(
+            model="sonar-small-chat",
+            messages=[{"role": "user", "content": prompt}],
+            response_format=schema,
+        )
+
+        result = response.choices[0].message.parsed
+
+        return result
 
     def hyperbolic_completion(
         self,
