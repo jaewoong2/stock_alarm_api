@@ -1117,6 +1117,7 @@ class SignalService:
             - Evaluate the triggered strategies and their technical details
             - Consider fundamental data for stock quality.
             - Think Relative Strength (RS) against S&P 500
+            - Analyze And Explain Chart Patterns By Using OHLCV DataFrame CSV
             
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
@@ -1130,6 +1131,7 @@ class SignalService:
 
             ### Reasoning:
             - Explain your recommendation step-by-step.
+            - Re-Test The signals By Using Input Datas
 
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.

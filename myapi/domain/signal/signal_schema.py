@@ -234,6 +234,15 @@ class AnalyticsReportPromptResponse(BaseModel):
     overall_assessment: str
 
 
+class ChartPattern(BaseModel):
+    name: str
+    description: str
+    pattern_type: Literal["bullish", "bearish", "neutral"]
+    confidence_level: float = (
+        0.0  # Confidence level of the pattern detection (0.0 to 1.0)
+    )
+
+
 class SignalPromptResponse(BaseModel):
     ticker: str
     good_things: str | None = None
@@ -248,7 +257,7 @@ class SignalPromptResponse(BaseModel):
     stop_loss_price: float = 0.0
     take_profit_price: float = 0.0
     close_price: float = 0.0
-    # additional_info: Additional information or context for the recommendation.
+    chart_pattern: ChartPattern
 
 
 class SignalResponse(BaseModel):
