@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 
@@ -32,5 +32,5 @@ class MarketForecastSchema(BaseModel):
     date_yyyymmdd: str
     outlook: Literal["UP", "DOWN"]
     reason: str
-    up_percentage: float | None = None  # e.g., '70'
-    created_at: str | None = None  # ISO format string for datetime
+    up_percentage: Optional[float] = None  # e.g., '70'
+    created_at: Optional[str] = None  # ISO format string for datetime

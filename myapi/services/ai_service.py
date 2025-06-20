@@ -33,15 +33,19 @@ class AIService:
         client = openai.OpenAI(
             base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
         )
-        response = client.beta.chat.completions.parse(
-            model="sonar-small-chat",
+        response = client.chat.completions.create(
+            model="sonar-pro",
             messages=[{"role": "user", "content": prompt}],
-            response_format=schema,
         )
 
-        result = response.choices[0].message.parsed
+        result = response.choices[0].message
 
-        return result
+        response = self.gemini_completion(
+            prompt=f"{result.content}\n\nPlease return the result in JSON format.",
+            schema=schema,
+        )
+
+        return response
 
     def hyperbolic_completion(
         self,

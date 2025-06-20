@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime
+from sqlalchemy import Column, Integer, Float, String, DateTime, JSON
 from datetime import datetime
 from myapi.database import Base
 
@@ -23,3 +23,4 @@ class Signals(Base):
     senario = Column(String, nullable=True)  # 시나리오 설명 250606 추가
     good_things = Column(String, nullable=True)  # 좋은 점 250606 추가
     bad_things = Column(String, nullable=True)  # 나쁜 점 250606 추가
+    chart_pattern = Column(JSON, nullable=True)

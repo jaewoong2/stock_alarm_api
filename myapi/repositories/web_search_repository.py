@@ -86,7 +86,17 @@ class WebSearchResultRepository:
         self.db_session.commit()
         self.db_session.refresh(forecast)
 
-        return MarketForecastSchema.model_validate(forecast) if forecast else None
+        up_percentage = None
+        if forecast.up_percentage is not None:
+            up_percentage = float(str(forecast.up_percentage))
+
+        return MarketForecastSchema(
+            created_at=forecast.created_at.isoformat(),
+            date_yyyymmdd=str(forecast.date_yyyymmdd),
+            outlook="UP" if str(forecast.outlook) == "UP" else "DOWN",
+            reason=str(forecast.reason),
+            up_percentage=up_percentage,
+        )
 
     def get_by_date(self, date_yyyymmdd: str):
         result = (
@@ -94,5 +104,17 @@ class WebSearchResultRepository:
             .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
             .first()
         )
+        if not result:
+            return None
 
-        return MarketForecastSchema.model_validate(result) if result else None
+        up_percentage = None
+        if result.up_percentage is not None:
+            up_percentage = float(str(result.up_percentage))
+
+        return MarketForecastSchema(
+            created_at=result.created_at.isoformat(),
+            date_yyyymmdd=str(result.date_yyyymmdd),
+            outlook="UP" if str(result.outlook) == "UP" else "DOWN",
+            reason=str(result.reason),
+            up_percentage=(up_percentage),
+        )

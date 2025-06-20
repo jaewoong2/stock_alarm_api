@@ -1,3 +1,4 @@
+from pyparsing import C
 import sqlalchemy
 from sqlalchemy.orm import Session
 from typing import Dict, List, Literal, Optional
@@ -8,6 +9,7 @@ from datetime import date, datetime, timedelta
 
 from myapi.domain.signal.signal_models import Signals
 from myapi.domain.signal.signal_schema import (
+    ChartPattern,
     GetSignalRequest,
     SignalBaseResponse,
     SignalJoinTickerResponse,
@@ -54,6 +56,7 @@ class SignalsRepository:
         senario: Optional[str] = None,  # 시나리오 설명
         good_things: Optional[str] = None,  # 좋은 점
         bad_things: Optional[str] = None,  # 나쁜 점
+        chart_pattern: Optional[ChartPattern] = None,  # 차트 패턴 정보
     ) -> SignalBaseResponse:
         """
         새로운 신호를 생성합니다.
@@ -76,6 +79,9 @@ class SignalsRepository:
                 senario=senario,  # 시나리오 설명 추가
                 good_things=good_things,  # 좋은 점 추가
                 bad_things=bad_things,  # 나쁜 점 추가
+                chart_pattern=(
+                    chart_pattern.model_dump() if chart_pattern else None
+                ),  # 차트 패턴 정보 추가
             )
             self.db_session.add(signal)
             self.db_session.commit()
@@ -108,7 +114,7 @@ class SignalsRepository:
 
         return [str(signal.ticker) for signal in signals]
 
-    def get_signals(self, request: GetSignalRequest) -> List[SignalBaseResponse]:
+    def get_signals(self, request: GetSignalRequest):
         """
         모든 신호를 가져옵니다.
         """

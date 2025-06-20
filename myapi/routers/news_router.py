@@ -5,7 +5,6 @@ from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
 from myapi.domain.news.news_schema import (
-    MarketForecastResponse,
     WebSearchMarketResponse,
 )
 from myapi.services.signal_service import SignalService
@@ -69,13 +68,14 @@ def news_summary(
     return result
 
 
-@router.get("/market-forecast", response_model=MarketForecastResponse)
+@router.get("/market-forecast")
 @inject
 def market_forecast(
     forecast_date: date = date.today(),
+    source: Literal["Major", "Minor"] = "Major",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),
-) -> MarketForecastResponse:
+):
 
-    return websearch_service.forecast_market(forecast_date)
+    return websearch_service.forecast_market(forecast_date, source=source)

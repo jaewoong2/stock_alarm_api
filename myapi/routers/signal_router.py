@@ -12,6 +12,7 @@ from pandas import DataFrame
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
+    ChartPattern,
     DefaultStrategies,
     DefaultTickers,
     DiscordMessageRequest,
@@ -117,6 +118,12 @@ def generate_signal_result(
             senario=result.senarios,
             good_things=result.good_things,
             bad_things=result.bad_things,
+            chart_pattern=ChartPattern(
+                name=result.chart_pattern.name,
+                description=result.chart_pattern.description,
+                pattern_type=result.chart_pattern.pattern_type,
+                confidence_level=result.chart_pattern.confidence_level,
+            ),
         )
 
         # try:
