@@ -4,7 +4,7 @@ from typing import Literal
 import openai
 
 from myapi.domain.news.news_models import MarketForecast
-from myapi.domain.news.news_schema import MarketForecastSchema
+from myapi.domain.news.news_schema import MarketForecastResponse, MarketForecastSchema
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
 from myapi.utils.config import Settings
@@ -48,9 +48,7 @@ class WebSearchService:
         \n
         """
 
-    def forecast_market(
-        self, today: date, source: Literal["Major", "Minor"] = "Major"
-    ) -> MarketForecastSchema:
+    def forecast_market(self, today: date, source: Literal["Major", "Minor"] = "Major"):
         today_str = today.strftime("%Y-%m-%d")
         # cached = self.websearch_repository.get_by_date(today_str)
 
@@ -61,10 +59,10 @@ class WebSearchService:
 
         response = self.ai_service.perplexity_completion(
             prompt=prompt,
-            schema=MarketForecastSchema,
+            schema=MarketForecastResponse,
         )
 
-        if not isinstance(response, MarketForecastSchema):
+        if not isinstance(response, MarketForecastResponse):
             raise ValueError("Invalid response format from AI service")
 
         self.websearch_repository.create(

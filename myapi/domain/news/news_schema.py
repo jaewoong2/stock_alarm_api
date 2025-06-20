@@ -17,6 +17,7 @@ class WebSearchMarketResponse(BaseModel):
 class MarketForecastResponse(BaseModel):
     outlook: Literal["UP", "DOWN"]
     reason: str
+    up_percentage: Optional[float]
 
 
 class MarketForecastSchema(BaseModel):
