@@ -41,7 +41,7 @@ class AIService:
         result = response.choices[0].message
 
         response = self.gemini_completion(
-            prompt=f"{result.content}\n\nPlease return the result in JSON format.",
+            prompt=f"{result.content}\n\nPlease return the result in JSON format. And Do not use {"\n"} ",
             schema=schema,
         )
 

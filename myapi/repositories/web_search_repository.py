@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
@@ -98,10 +98,13 @@ class WebSearchResultRepository:
             up_percentage=up_percentage,
         )
 
-    def get_by_date(self, date_yyyymmdd: str):
+    def get_by_date(
+        self, date_yyyymmdd: str, source: Literal["Major", "Minor"]
+    ) -> Optional[MarketForecastSchema]:
         result = (
             self.db_session.query(MarketForecast)
             .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
+            .filter(MarketForecast.source == source)
             .first()
         )
         if not result:

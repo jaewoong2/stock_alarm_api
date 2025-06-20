@@ -50,10 +50,10 @@ class WebSearchService:
 
     def forecast_market(self, today: date, source: Literal["Major", "Minor"] = "Major"):
         today_str = today.strftime("%Y-%m-%d")
-        # cached = self.websearch_repository.get_by_date(today_str)
+        cached = self.websearch_repository.get_by_date(today_str, source)
 
-        # if cached:
-        #     return cached
+        if cached:
+            return cached
 
         prompt = self._build_prompt(today_str, source)
 
@@ -71,6 +71,7 @@ class WebSearchService:
                 outlook=response.outlook,
                 reason=response.reason,
                 up_percentage=response.up_percentage,
+                source=source,
             )
         )
 
