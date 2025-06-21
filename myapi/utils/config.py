@@ -53,8 +53,11 @@ class Settings(BaseSettings):
     database_host: str = ""
     database_port: str = ""
     database_dbname: str = ""
-    database_port: str = ""
     database_schema: str = ""
+
+    # Database connection pool settings
+    database_pool_size: int = 5
+    database_max_overflow: int = 2
 
     GEMINI_API_KEY: str = ""
 
