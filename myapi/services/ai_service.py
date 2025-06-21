@@ -30,9 +30,7 @@ class AIService:
         prompt: str,
         schema: Type[T],
     ):
-        client = openai.OpenAI(
-            base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
-        )
+        client = openai.OpenAI(base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key)
         response = client.chat.completions.create(
             model="sonar-pro",
             messages=[{"role": "user", "content": prompt}],
@@ -41,7 +39,7 @@ class AIService:
         result = response.choices[0].message
 
         response = self.gemini_completion(
-            prompt=f"{result.content}\n\nPlease return the result in JSON format. And Do not use {"\n"} ",
+            prompt=f"{result.content}\n\nPlease return the result in JSON format.",
             schema=schema,
         )
 
@@ -99,24 +97,23 @@ class AIService:
         prompt: str,
         schema: Type[T],
     ):
-        client = genai.Client(api_key=self.gemini_api_key)
+        try:
+            client = genai.Client(api_key=self.gemini_api_key)
 
-        google_search_tool = Tool(google_search=GoogleSearch())
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt,
-            config=GenerateContentConfig(
-                tools=[google_search_tool],
-                response_modalities=["TEXT"],
-            ),
-        )
+            google_search_tool = Tool(google_search=GoogleSearch())
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-05-20",
+                contents=prompt,
+                config=GenerateContentConfig(
+                    tools=[google_search_tool],
+                    response_modalities=["TEXT"],
+                ),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
 
         result = ""
-        if (
-            response.candidates
-            and response.candidates[0].content
-            and hasattr(response.candidates[0].content, "parts")
-        ):
+        if response.candidates and response.candidates[0].content and hasattr(response.candidates[0].content, "parts"):
             if response.candidates[0].content.parts:
                 for each in response.candidates[0].content.parts:
                     if each.text is not None:
@@ -142,17 +139,19 @@ class AIService:
         OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
         """
-        client = genai.Client(api_key=self.gemini_api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": schema,
-            },
-        )
-
-        return response.parsed
+        try:
+            client = genai.Client(api_key=self.gemini_api_key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-05-20",
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": schema,
+                },
+            )
+            return response.parsed
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
 
     def analyze_grid(
         self,
@@ -357,9 +356,7 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError(
-                "The response is not in valid JSON format. Response: " + str(result_str)
-            ) from e
+            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
 
     def analzye_image(self, prompt: str, image_path: str):
         """ """
@@ -403,9 +400,7 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError(
-                "The response is not in valid JSON format. Response: " + str(result_str)
-            ) from e
+            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
 
     def completions_parse(
         self,
@@ -462,9 +457,7 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError(
-                "The response is not in valid JSON format. Response: " + str(result_str)
-            ) from e
+            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
 
     def completion(
         self,

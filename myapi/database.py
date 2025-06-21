@@ -28,7 +28,13 @@ url = URL.create(
 
 # SQLALCHEMY_DATABASE_URL = f"{settings.database_engine}://{settings.database_username}:{password}@{settings.database_host}:{settings.database_port}/{settings.database_dbname}"
 SQLALCHEMY_DATABASE_URL = url.render_as_string(hide_password=False)
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=settings.database_pool_size,
+    max_overflow=settings.database_max_overflow,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
