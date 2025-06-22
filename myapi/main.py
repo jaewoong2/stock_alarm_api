@@ -1,5 +1,4 @@
 import logging
-from math import log
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -8,20 +7,9 @@ from mangum import Mangum
 from starlette.middleware.cors import CORSMiddleware
 
 from myapi import containers
-from myapi.exceptions.futures_exceptions import register_exception_handlers
 from myapi.exceptions.index import ServiceException
-from myapi.routers import (
-    coinone_router,
-    ticker_router,
-    futures_router,
-    kakao_router,
-    signal_router,
-    trading_router,
-    news_router,
-)
+from myapi.routers import news_router, signal_router, ticker_router
 from myapi.utils.config import init_logging
-
-from .routers import tqqq_router
 
 
 app = FastAPI()
@@ -30,20 +18,9 @@ load_dotenv("myapi/.env")
 app.container = containers.Container()  # type: ignore
 
 init_logging()
-
-origins = ["http://localhost:5173"]
-
 logger = logging.getLogger(__name__)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-register_exception_handlers(app)
 
 # CORS Middleware
 is_dev = os.getenv("ENVIRONMENT", "dev").lower() == "dev"
@@ -115,11 +92,6 @@ def hello():
     return {"message": "Hello World!!"}
 
 
-app.include_router(tqqq_router.router)
-app.include_router(kakao_router.router)
-app.include_router(trading_router.router)
-app.include_router(coinone_router.router)
-app.include_router(futures_router.router)
 app.include_router(signal_router.router)
 app.include_router(ticker_router.router)
 app.include_router(news_router.router)
