@@ -1,13 +1,11 @@
 from datetime import date
 from typing import Literal
 
-import openai
 
 from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import MarketForecastResponse, MarketForecastSchema
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
-from myapi.utils.config import Settings
 
 
 class WebSearchService:
@@ -33,8 +31,8 @@ class WebSearchService:
 
         ### Rules
             1. Do **not** rely on any source not dated {today}.
-            {"2. Cite at least three independent, reputable sources (major financial news outlets, government releases, or primary data providers)." if source == "Major" else ""}
-            {"2. Cite at least three independent Community Source (like 'X[Tweet]', 'Reddit', 'Facebook[Threads]') " if source == "Minor" else ""}
+            {"2. Cite at least three independent, reputable sources (major financial news outlets, Analyst Reports, or primary data providers)." if source == "Major" else ""}
+            {"2. Cite at least three independent Community Source (like 'X[Tweet]', 'Reddit', 'Facebook[Threads]', 'Youtube') " if source == "Minor" else ""}
             3. Be concise – three to five bullet points of reasoning maximum.
 
         ### Response

@@ -1146,7 +1146,7 @@ class SignalService:
         - `triggered_strategies`: List of triggered strategies (e.g., VOLUME_EXPANSION, PULLBACK).
         - `technical_details`: Detailed metrics for each triggered strategy (e.g., RSI, SMA values).
         - `fundamentals`: Fundamental metrics (trailing_pe, eps_surprise_pct, revenue_growth, roe, debt_to_equity, fcf_yield).
-        - `news`: Recent news headlines
+        - `news`: Recent news (7 Days Ago ~ Today) headlines
         - `report_summary`: Summary of the technical report.
         - `spy_description`: S&P 500 status (e.g., bullish, bearish, neutral).
         - `additional_info`: Any additional information or context.
@@ -1301,10 +1301,8 @@ class SignalService:
         │   ② "Ticker[{ticker}] stock news catalyst past 7 days"
         │   ③ "Ticker[{ticker}] analyst report OR price target OR upgrade OR downgrade past 7 days"
         │   ④ "Ticker[{ticker}] unusual options activity OR block trade past 3 days"  --recency=3
-        │ • Domains hint (optional): bloomberg.com, reuters.com, https://www.tradingview.com/symbols/NASDAQ-{ticker}/news/, https://stockscan.io/stocks/{ticker}/news
-        │   seekingalpha.com, barrons.com, sec.gov, nasdaq.com, streetinsider.com, fintel.io
+        │ • Domains hint (optional): https://www.tradingview.com/symbols/NASDAQ-{ticker}/news/, https://stockscan.io/stocks/{ticker}/news, bloomberg.com, reuters.com
         │ • Fetch max 10 unique docs total. Skip duplicates.
-        │ • If no valid hit → return "NO RECENT CATALYSTS".
         ╰─ END PROTOCOL
         """
         return prompt

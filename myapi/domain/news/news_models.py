@@ -32,5 +32,4 @@ class MarketForecast(Base):
     reason = Column(String, nullable=False)
     up_percentage = Column(Float, nullable=True)  # e.g., '70'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    # source: Literal["Major", "Minor"]
     source = Column(String, nullable=False)  # e.g., 'Major' or 'Minor'

@@ -51,6 +51,7 @@ DefaultStrategies: List[Strategy] = [
 ]
 
 DefaultTickers = [
+    # 기존 티커들
     "TSLA",
     "NVDA",
     "AMZN",
@@ -111,6 +112,31 @@ DefaultTickers = [
     "RBLX",
     "LMT",
     "MMM",
+    # 추가된 티커들
+    "TMUS",
+    "CMCSA",
+    "CMG",
+    "LULU",
+    "MCD",
+    "NKE",
+    "SBUX",
+    "CDNS",
+    "SNPS",
+    "LRCX",
+    "KLAC",
+    "ANET",
+    "GE",
+    "CAT",
+    "DE",
+    "CARR",
+    "NOC",
+    "MS",
+    "CME",
+    "UBER",
+    "CRWD",
+    "NOW",
+    "PWR",
+    "NRG",
 ]
 
 
