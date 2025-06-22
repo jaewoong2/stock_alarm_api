@@ -6,9 +6,7 @@ import json
 
 from pydantic import BaseModel
 
-from myapi.domain.ai.ai_schema import ChatModel, TradingResponse
-from myapi.domain.ai.const import generate_prompt
-from myapi.domain.trading.coinone_schema import ActiveOrder
+from myapi.domain.ai.ai_schema import ChatModel
 from myapi.utils.config import Settings
 from google import genai
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
@@ -30,7 +28,9 @@ class AIService:
         prompt: str,
         schema: Type[T],
     ):
-        client = openai.OpenAI(base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key)
+        client = openai.OpenAI(
+            base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
+        )
         response = client.chat.completions.create(
             model="sonar-pro",
             messages=[{"role": "user", "content": prompt}],
@@ -113,7 +113,11 @@ class AIService:
             raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
 
         result = ""
-        if response.candidates and response.candidates[0].content and hasattr(response.candidates[0].content, "parts"):
+        if (
+            response.candidates
+            and response.candidates[0].content
+            and hasattr(response.candidates[0].content, "parts")
+        ):
             if response.candidates[0].content.parts:
                 for each in response.candidates[0].content.parts:
                     if each.text is not None:
@@ -222,92 +226,6 @@ class AIService:
                 detail=str(e),
             )
 
-    def analyze_market(
-        self,
-        market_data: dict,
-        technical_indicators: dict,
-        previous_trade_info: str,
-        balances_data: str,
-        orderbook_data: str,
-        sentiment_data: str,
-        current_active_orders: List[ActiveOrder],
-        news_data: dict,
-        schema: Type[T] = TradingResponse,
-        quote_currency: str = "KRW",
-        target_currency: str = "BTC",
-        additional_context: str = "",
-        interval: str = "1h",
-        arbitrage_signal: str = "",
-    ):
-        """
-        OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
-        결과는 아래 JSON 스키마 형식으로 반환됩니다:
-        """
-        prompt, system_prompt = generate_prompt(
-            market_data=market_data,
-            previous_trade_info=previous_trade_info,
-            technical_indicators=technical_indicators,
-            balances_data=balances_data,
-            quote_currency=quote_currency,
-            target_currency=target_currency,
-            orderbook_data=orderbook_data,
-            sentiment_data=sentiment_data,
-            news_data=news_data,
-            current_active_orders=current_active_orders,
-            arbitrage_signal=arbitrage_signal,
-            additional_context=additional_context,
-            interval=interval,
-        )
-
-        client = openai.OpenAI(
-            api_key=self.open_api_key,  # This is the default and can be omitted
-        )
-
-        try:
-            response = client.beta.chat.completions.parse(
-                model="o3-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                frequency_penalty=0.0,  # 반복 억제 정도
-                presence_penalty=0.0,  # 새로운 주제 도입 억제
-                response_format=schema,
-            )
-            # response.choices[0].message.content
-            content = response.choices[0].message.parsed
-
-            if not content:
-                raise HTTPException(
-                    status_code=403,
-                    detail="응답 스키마가 올바르지 않습니다.",
-                )
-
-            # result = self.transform_message_to_schema(
-            #     message=content, schema=TradingResponse
-            # )
-
-            # 스키마에 action과 reason 키가 있는지 확인
-            if content:
-                return content, prompt
-            else:
-                raise HTTPException(
-                    status_code=403,
-                    detail="응답 스키마가 올바르지 않습니다.",
-                )
-        except Exception as e:
-            # 에러 발생 시, JSON 스키마 형식으로 에러 메시지 반환
-            raise HTTPException(
-                status_code=403,
-                detail=str(e),
-            )
-
     def transform_message_to_schema(self, message: str, schema: Type[T]) -> T:
         """
         Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.
@@ -356,7 +274,9 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e
 
     def analzye_image(self, prompt: str, image_path: str):
         """ """
@@ -400,7 +320,9 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e
 
     def completions_parse(
         self,
@@ -457,7 +379,9 @@ class AIService:
         try:
             return result_str
         except json.JSONDecodeError as e:
-            raise ValueError("The response is not in valid JSON format. Response: " + str(result_str)) from e
+            raise ValueError(
+                "The response is not in valid JSON format. Response: " + str(result_str)
+            ) from e
 
     def completion(
         self,

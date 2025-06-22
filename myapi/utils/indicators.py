@@ -1,82 +1,14 @@
-from dataclasses import dataclass
 import io
-from typing import Any, Dict
 import matplotlib
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
-
-from myapi.domain.futures.futures_schema import MeanTechnicalIndicators
-from myapi.domain.trading.trading_schema import TechnicalIndicators
 
 
 matplotlib.use(
     "Agg", force=True
 )  # GUI 백엔드 대신 Agg 사용 (반드시 import plt 전에 호출)
 import mplfinance as mpf
-
-
-def summarize_market_data(df: pd.DataFrame, n: int = 24):
-    """
-    df: 시계열 순서대로 정렬된 (오래된 -> 최신) 데이터프레임
-    n: 최근 n개 구간을 활용해 통계를 구할 범위
-    return: (TechnicalIndicators, {각 지표에 대한 동적 해석})
-    """
-
-    # 1) 최근 n개 구간만 추출
-    df_recent = df.tail(n)
-
-    # 2) n개 구간의 평균/표준편차 등 계산
-    ma_short_9 = round(df_recent["MA_9"].mean(), 2)
-    ma_long_21 = round(df_recent["MA_21"].mean(), 2)
-    ma_long_120 = round(df_recent["MA_120"].mean(), 2)
-    rsi_14 = round(df_recent["RSI_14"].mean(), 2)
-    macd = round(df_recent["MACD"].mean(), 2)
-    macd_signal = round(df_recent["MACD_Signal"].mean(), 2)
-    bb_upper = round(df_recent["BB_Upper"].mean(), 2)
-    bb_lower = round(df_recent["BB_Lower"].mean(), 2)
-    adx = round(df_recent["adx"].mean(), 2)
-    atr_14 = round(df_recent["ATR_14"].mean(), 2)
-    latest_close = round(df_recent["close"].mean(), 2)
-    latest_open = round(df_recent["open"].mean(), 2)
-    volatility = round(df_recent["close"].std(), 2)
-    high = round(df_recent["high"].mean(), 2)
-
-    # extra 필드
-    close_mean = round(df_recent["close"].mean(), 2)
-    rsi_slope = round(
-        (df_recent["RSI_14"].iloc[-1] - df_recent["RSI_14"].iloc[0]) / n, 2
-    )
-    ma9_slope = round((df_recent["MA_9"].iloc[-1] - df_recent["MA_9"].iloc[0]) / n, 2)
-    plus_di_avg = round(df_recent["+di"].mean(), 2)
-    minus_di_avg = round(df_recent["-di"].mean(), 2)
-    volume_avg = round(df_recent["volume"].mean(), 2)
-
-    # 3) TechnicalIndicators 인스턴스 생성
-    indicators = MeanTechnicalIndicators(
-        MA_short_9=ma_short_9,
-        MA_long_21=ma_long_21,
-        MA_long_120=ma_long_120,
-        RSI_14=rsi_14,
-        MACD=macd,
-        MACD_Signal=macd_signal,
-        BB_Upper=bb_upper,
-        BB_Lower=bb_lower,
-        ADX=adx,
-        ATR_14=atr_14,
-        Latest_Close=latest_close,
-        Latest_Open=latest_open,
-        volatility=volatility,
-        high=high,
-        close_mean=close_mean,
-        rsi_slope=rsi_slope,
-        ma9_slope=ma9_slope,
-        plus_di_avg=plus_di_avg,
-        minus_di_avg=minus_di_avg,
-        volume_avg=volume_avg,
-    )
-
-    return indicators
 
 
 def calculate_moving_average(df: pd.DataFrame, window: int) -> pd.Series:
@@ -174,86 +106,6 @@ def compute_adx(df, period=14):
     df["dx"] = 100 * abs(df["+di"] - df["-di"]) / (df["+di"] + df["-di"])
     df["adx"] = df["dx"].rolling(window=period).mean()
     return df
-
-
-def get_technical_indicators(
-    df: pd.DataFrame | None, length: int, reverse: bool = True
-):
-    """
-    df: 캔들 DataFrame
-        - 원본 df는 [0]이 최신, [마지막]이 과거 순서라고 가정.
-        - 본 함수는 rolling, diff 등의 지표 계산을 위해 시간순(과거→현재)으로 뒤집어서 처리합니다.
-        - 계산 후에는 df.iloc[-1]이 가장 최신 행(원본 df의 첫 행)에 해당합니다.
-
-    length: Bollinger Band 계산 등에 쓰이는 window 값
-    """
-
-    # 예: 여기서는 120개 미만 시 에러
-    if df is None or len(df) < 120:
-        raise ValueError("DataFrame must have at least 120 rows (or is None)")
-
-    if reverse:
-        # (1) df를 시간순(옛날→최신)으로 뒤집기
-        df = df.iloc[::-1].copy()
-        # df.reset_index(drop=True, inplace=True)
-        df = df.reset_index()  # drop=True 제거, timestamp를 열로 유지
-
-    # (2) 지표 계산
-    # 이동평균
-    df["MA_9"] = calculate_moving_average(df, 9)
-    df["MA_21"] = calculate_moving_average(df, 21)
-    df["MA_120"] = calculate_moving_average(df, 120)
-
-    # RSI
-    df["RSI_14"] = calculate_rsi(df, 14)
-
-    # MACD
-    macd_line, signal_line = calculate_macd(df)
-    df["MACD"] = macd_line
-    df["MACD_Signal"] = signal_line
-
-    # 볼린저 밴드
-    ma_bb, upper_band, lower_band = calculate_bollinger_bands(df, length, 2)
-    # window=length 이므로, 실제로 length=20이면 BB_20, length=21이면 BB_21...
-    df[f"BB_MA_{length}"] = ma_bb
-    df["BB_Upper"] = upper_band
-    df["BB_Lower"] = lower_band
-
-    # ATR
-    df["ATR_14"] = calculate_atr(df)
-
-    # 로그 수익률 기반 변동성
-    df["volatility"] = calculate_volatility_from_df(df)
-
-    # ADX
-    df = compute_adx(df)
-
-    # (3) 뒤집은 상태에서 '마지막 행'이 곧 최신 데이터
-    latest = df.iloc[len(df) - 1]
-
-    mean_indicators = summarize_market_data(df, 24)
-
-    # (4) 결과를 딕셔너리로 반환
-    result = {
-        "MA_short_9": round(latest["MA_9"], 2),
-        "MA_long_21": round(latest["MA_21"], 2),
-        "MA_long_120": round(latest["MA_120"], 2),
-        "RSI_14": round(latest["RSI_14"], 2),
-        "MACD": round(latest["MACD"], 2),
-        "MACD_Signal": round(latest["MACD_Signal"], 2),
-        # Bollinger Band 컬럼 이름을 length에 맞춰서
-        f"BB_MA_{length}": round(latest[f"BB_MA_{length}"], 2),
-        "BB_Upper": round(latest["BB_Upper"], 2),
-        "BB_Lower": round(latest["BB_Lower"], 2),
-        "ADX": round(latest["adx"], 2),
-        "ATR_14": round(latest["ATR_14"], 2),
-        "Latest_Close": round(latest["close"], 2),
-        "Latest_Open": round(latest["open"], 2),
-        "volatility": round(latest["volatility"], 2),
-        "high": round(latest["high"], 2),
-    }
-
-    return TechnicalIndicators(**result), df, mean_indicators
 
 
 def plot_with_indicators(df: pd.DataFrame, length: int):
