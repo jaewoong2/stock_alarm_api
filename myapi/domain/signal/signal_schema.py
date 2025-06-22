@@ -457,6 +457,7 @@ class SignalJoinTickerResponse(BaseModel):
         good_things: Optional[str] = None
         bad_things: Optional[str] = None
         close_price: Optional[float] = None
+        chart_pattern: Optional[ChartPattern] = None
 
     class Ticker(BaseModel):
         # Ticker 정보

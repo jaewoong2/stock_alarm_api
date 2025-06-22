@@ -1117,6 +1117,7 @@ class SignalService:
             - Consider fundamental data for stock quality.
             - **Think Relative Strength (RS) against S&P 500**
             - **Analyze And Explain Chart Patterns By Using OHLCV DataFrame CSV**
+                - confidence_level: 0.0 ~ 1.0 (0.0 = no pattern, 1.0 = strong pattern) 
             
             ### Provide Recommendations:
             - For each stock/ETF, recommend one of: BUY, SELL, or HOLD.
@@ -1163,7 +1164,7 @@ class SignalService:
         - report_summary: {report_summary}
         - S&P 500 Status: {data.spy_description}
         - additional_info: {data.additional_info}
-        - Stock's OHLCV DataFrame (Analyze Step By Step With Technical Analyze [eg, Chart Pattern]): {data.dataframe}
+        - Stock's OHLCV DataFrame (Analyze Step By Step): {data.dataframe}
         ```
         """
 
