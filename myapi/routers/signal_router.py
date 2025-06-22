@@ -6,6 +6,8 @@ from venv import logger
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 
+from myapi.utils.date_utils import validate_date
+
 from dependency_injector.wiring import inject, Provide
 from pandas import DataFrame
 
@@ -481,7 +483,7 @@ async def get_weekly_action_count(
         else DefaultTickers
     )
 
-    reference_date = reference_date if reference_date else date.today()
+    reference_date = validate_date(reference_date if reference_date else date.today())
 
     result = await db_signal_service.get_weekly_action_counts(
         ticker_list, reference_date, action
@@ -507,6 +509,7 @@ async def get_signal_by_date(
     symbol_list = symbols.split(",") if symbols else []
 
     date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+    validate_date(date_value)
     response = await db_signal_service.get_signals_result(
         date=date_value, symbols=symbol_list
     )

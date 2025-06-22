@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Literal, Optional
 from datetime import date, timedelta
 
+from myapi.utils.date_utils import validate_date
+
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
@@ -71,7 +73,7 @@ def get_ticker_by_date(
     date: date = Query(..., description="조회할 날짜"),
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
-    # date_obj = datetime.date.fromisoformat(date)  # 문자열을 date 객체로 변환
+    validate_date(date)
     ticker = ticker_service.get_ticker_by_date(symbol, date)
     if ticker is None:
         raise HTTPException(
@@ -271,7 +273,7 @@ def get_weekly_price_movement(
         else DefaultTickers
     )
 
-    end_dt = reference_date if reference_date else date.today()
+    end_dt = validate_date(reference_date if reference_date else date.today())
     start_dt = end_dt - timedelta(days=7)
 
     tickers_with_count = ticker_service.count_price_movements(

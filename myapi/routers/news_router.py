@@ -1,5 +1,7 @@
 from datetime import date
 from typing import Literal, Optional
+
+from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
 from dependency_injector.wiring import inject, Provide
 
@@ -22,7 +24,7 @@ def get_news(
     news_date: Optional[date] = date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
-    today_str = date.today() if news_date is None else news_date
+    today_str = validate_date(news_date if news_date else date.today())
     result = signal_service.get_web_search_summary(
         type=news_type,
         ticker=ticker,
@@ -39,11 +41,12 @@ def news_recommendations(
     date: Optional[date] = date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
+    valid_date = validate_date(date if date else date.today())
     return {
         "results": signal_service.get_ticker_news_by_recommendation(
             recommendation=recommendation,
             limit=limit,
-            date=date,
+            date=valid_date,
         )
     }
 
@@ -77,5 +80,6 @@ def market_forecast(
         Provide[Container.services.websearch_service]
     ),
 ):
+    forecast_date = validate_date(forecast_date)
 
     return websearch_service.forecast_market(forecast_date, source=source)
