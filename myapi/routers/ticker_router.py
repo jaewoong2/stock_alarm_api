@@ -22,7 +22,6 @@ from myapi.domain.ticker.ticker_schema import (
     UpdateTickerRequest,
 )
 from myapi.services.db_signal_service import DBSignalService
-from myapi.services.signal_service import SignalService
 from myapi.services.ticker_service import TickerService
 
 router = APIRouter(

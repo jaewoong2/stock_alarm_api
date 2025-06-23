@@ -194,6 +194,7 @@ class AwsService:
         path: str,
         method: Literal["GET", "POST", "PUT", "DELETE"],
         query_string_parameters: Optional[dict] = None,
+        auth_token: Optional[str] = "",
     ) -> dict:
         """
         HTTP 요청을 SQS 메시지 형식으로 변환합니다.
@@ -220,6 +221,7 @@ class AwsService:
                 "Accept-Encoding": "gzip, deflate, sdch",
                 "Accept-Language": "ko",
                 "Accept-Charset": "utf-8",
+                "Authorization": f"Bearer {auth_token}",
             },
             "requestContext": {
                 "path": f"/{path}",

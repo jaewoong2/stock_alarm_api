@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends
 from myapi.utils.auth import verify_bearer_token
 from datetime import date, timedelta
 
+from myapi.utils.config import Settings
 from myapi.utils.date_utils import validate_date
 
 from dependency_injector.wiring import inject, Provide
-from pandas import DataFrame
 
 from myapi.containers import Container
 from myapi.domain.ai.ai_schema import ChatModel
@@ -38,14 +38,12 @@ from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
 from myapi.utils.utils import (
     export_slim_tail_csv,
-    format_signal_embed,
 )
 
 
 router = APIRouter(
     prefix="/signals",
     tags=["signals"],
-    dependencies=[Depends(verify_bearer_token)],
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 @router.post(
     "/investment-pdf",
+    dependencies=[Depends(verify_bearer_token)],
 )
 @inject
 def get_investment_pdf(
@@ -78,7 +77,10 @@ def get_investment_pdf(
     return None
 
 
-@router.post("/generate-signal-reult")
+@router.post(
+    "/generate-signal-reult",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 def generate_signal_result(
     request: GenerateSignalResultRequest,
@@ -86,7 +88,6 @@ def generate_signal_result(
         Provide[Container.repositories.signals_repository]
     ),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
-    aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -164,13 +165,17 @@ def generate_signal_result(
         return {"error": str(e)}
 
 
-@router.post("/llm-query")
+@router.post(
+    "/llm-query",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 def llm_query(
     req: SignalPromptData,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+    settings: Settings = Depends(Provide[Container.config.config]),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -242,6 +247,7 @@ def llm_query(
             path="signals/generate-signal-reult",
             method="POST",
             query_string_parameters={},
+            auth_token=settings.auth_token,  # Use auth token from settings
         )
         aws_service.send_sqs_fifo_message(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
@@ -267,6 +273,7 @@ def llm_query(
             path="signals/generate-signal-reult",
             method="POST",
             query_string_parameters={},
+            auth_token=settings.auth_token,  # Use auth token from settings
         )
         aws_service.send_sqs_fifo_message(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
@@ -282,12 +289,16 @@ def llm_query(
     return [google_result, openai_result]
 
 
-@router.post("/")
+@router.post(
+    "/",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 async def get_signals(
     req: SignalRequest,
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
+    settings: Settings = Depends(Provide[Container.config.config]),
 ):
     START_DAYS_BACK: int = 400
     run_date = date.today()
@@ -391,6 +402,7 @@ async def get_signals(
                 path="signals/llm-query",
                 method="POST",
                 query_string_parameters={},
+                auth_token=settings.auth_token,  # Use auth token from settings
             )
         except Exception as e:
             logger.error(f"Error generating SQS message: {e}")
@@ -411,7 +423,10 @@ async def get_signals(
     }
 
 
-@router.get("/naver/news/today")
+@router.get(
+    "/naver/news/today",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 async def naver_today_news(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
@@ -526,7 +541,9 @@ async def get_signal_by_date(
     }
 
 
-@router.post("/discord/message", tags=["discord"])
+@router.post(
+    "/discord/message", tags=["discord"], dependencies=[Depends(verify_bearer_token)]
+)
 @inject
 def send_discord_message(
     request: DiscordMessageRequest,

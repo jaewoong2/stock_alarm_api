@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change_me"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
+    auth_token: str = ""
 
     database_engine: str = ""
     database_username: str = ""

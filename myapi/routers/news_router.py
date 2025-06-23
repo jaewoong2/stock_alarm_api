@@ -40,10 +40,12 @@ def get_news(
 def news_recommendations(
     recommendation: Literal["Buy", "Hold", "Sell"] = "Buy",
     limit: int = 5,
-    date: Optional[date] = date.today(),
+    request_date: Optional[date] = date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
-    valid_date = validate_date(date if date else date.today())
+    valid_date = validate_date(
+        request_date if request_date is not None else date.today()
+    )
     return {
         "results": signal_service.get_ticker_news_by_recommendation(
             recommendation=recommendation,
