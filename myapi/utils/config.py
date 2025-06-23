@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     DISCORD_WEBHOOK_URL: str = ""
     PERPLEXITY_API_KEY: str = ""
 
+    # JWT authentication settings
+    AUTH_USERNAME: str = "admin"
+    AUTH_PASSWORD: str = "password"
+    JWT_SECRET_KEY: str = "change_me"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60
+
     database_engine: str = ""
     database_username: str = ""
     database_password: str = ""

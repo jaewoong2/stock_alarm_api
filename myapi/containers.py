@@ -71,6 +71,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.signal_router",
             "myapi.routers.ticker_router",
             "myapi.routers.news_router",
+            "myapi.routers.auth_router",
         ]
     )
 

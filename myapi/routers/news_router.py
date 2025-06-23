@@ -3,6 +3,8 @@ from typing import Literal, Optional
 
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
+
+from myapi.utils.auth import verify_bearer_token
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
@@ -51,7 +53,11 @@ def news_recommendations(
     }
 
 
-@router.get("/summary", response_model=WebSearchMarketResponse)
+@router.get(
+    "/summary",
+    response_model=WebSearchMarketResponse,
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 def news_summary(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),

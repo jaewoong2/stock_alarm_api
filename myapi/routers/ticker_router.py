@@ -1,5 +1,7 @@
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from myapi.utils.auth import verify_bearer_token
 from typing import List, Literal, Optional
 from datetime import date, timedelta
 
@@ -176,7 +178,7 @@ async def get_latest_tickers_with_changes(
         )
 
 
-@router.post("/update")
+@router.post("/update", dependencies=[Depends(verify_bearer_token)])
 @inject
 def update_ticker_informations(
     request: UpdateTickerRequest,

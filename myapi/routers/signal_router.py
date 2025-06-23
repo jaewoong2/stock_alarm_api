@@ -4,6 +4,8 @@ import logging
 from typing import List, Literal, Optional
 from venv import logger
 from fastapi import APIRouter, Depends
+
+from myapi.utils.auth import verify_bearer_token
 from datetime import date, timedelta
 
 from myapi.utils.date_utils import validate_date
@@ -40,7 +42,11 @@ from myapi.utils.utils import (
 )
 
 
-router = APIRouter(prefix="/signals", tags=["signals"])
+router = APIRouter(
+    prefix="/signals",
+    tags=["signals"],
+    dependencies=[Depends(verify_bearer_token)],
+)
 
 logger = logging.getLogger(__name__)
 

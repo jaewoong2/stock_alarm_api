@@ -25,3 +25,4 @@ pandas_datareader==0.10.0
 cloudscraper==1.2.71
 pdfplumber==0.11.6
 google-genai
+PyJWT==2.8.0
