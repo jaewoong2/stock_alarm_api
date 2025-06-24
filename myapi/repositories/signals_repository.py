@@ -632,7 +632,7 @@ class SignalsRepository:
             # 전략 필터링
             if strategy_filter == "AI_GENERATED":
                 query = query.filter(Signals.strategy == "AI_GENERATED")
-            elif strategy_filter == "NOT_AI_GENERATED":
+            else:
                 query = query.filter(Signals.strategy != "AI_GENERATED")
 
             # 정렬
