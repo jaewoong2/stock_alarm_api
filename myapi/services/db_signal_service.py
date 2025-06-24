@@ -60,46 +60,37 @@ class DBSignalService:
         self,
         date: date,
         symbols: Optional[List[str]] = None,
-        strategy: Optional[str] = None,
+        strategy_type: Optional[str] = None,
     ):
         """
-        특정 날짜의모든 신호 결과를 조회합니다. (Join With Ticker)
+        특정 날짜의 시그널 결과를 조회합니다.
+
+        Args:
+            date: 조회할 날짜
+            symbols: 조회할 티커 심볼 목록 (None이면 모든 심볼)
+            strategy_type: 조회할 전략 유형 ('AI_GENERATED', 'NOT_AI_GENERATED', None=모든 전략)
         """
         try:
-            signals = []
-
-            if strategy == "AI_GENERATED" and symbols and len(symbols) > 0:
-                signals = (
-                    self.repository.get_signal_join_ticker_with_symbol_ai_generated(
-                        date, symbols=symbols
-                    )
-                )
-
-            elif symbols and len(symbols) > 0:
-                signals = self.repository.get_signal_join_ticker_with_symbol(
-                    date, symbols
-                )
-            else:
-                signals = self.repository.get_signal_join_ticker(date)
+            # 통합된 리포지토리 메서드 사용
+            signals = self.repository.get_signals_with_ticker(
+                date_value=date, symbols=symbols, strategy_filter=strategy_type
+            )
 
             if not signals or len(signals) == 0:
                 raise HTTPException(
                     status_code=404, detail=f"No signals found for date {date}"
                 )
 
+            # 결과 처리
             for row in signals:
                 signal, ticker = row.signal, row.ticker
 
                 if not signal or not ticker:
                     continue
 
-                price_change, result_action, is_correct = (
-                    0.0,
-                    "unknown",
-                    False,
-                )
+                price_change, result_action, is_correct = 0.0, "unknown", False
 
-                # Signal의 예측 TP와 실제 High 를 비교
+                # 매수 시그널 가격 차이 계산
                 if (
                     signal.action
                     and signal.action.lower() == "buy"
@@ -108,7 +99,7 @@ class DBSignalService:
                 ):
                     price_change = signal.take_profit - ticker.close_price
 
-                # Signal의 예측 SL과 실제 Low 를 비교 (예측 괴리율)
+                # 매도 시그널 가격 차이 계산
                 if (
                     signal.action
                     and signal.action.lower() == "sell"
@@ -117,7 +108,7 @@ class DBSignalService:
                 ):
                     price_change = signal.stop_loss - ticker.close_price
 
-                # Signal의 예측 결과 (Action) 와 실제 결과 (올랐는지 안올랐는지)를 비교
+                # 실제 가격 변동 결과 확인
                 if ticker.close_price and ticker.open_price:
                     if ticker.close_price > ticker.open_price:
                         result_action = "up"
@@ -126,25 +117,28 @@ class DBSignalService:
                     else:
                         result_action = "unchanged"
 
+                # 예측 정확도 확인
                 if signal.action:
                     if result_action == "up" and signal.action.lower() == "buy":
                         is_correct = True
-
-                    if result_action == "down" and signal.action.lower() == "sell":
+                    elif result_action == "down" and signal.action.lower() == "sell":
+                        is_correct = True
+                    elif (
+                        result_action == "unchanged" and signal.action.lower() == "hold"
+                    ):
                         is_correct = True
 
-                    if result_action == "unchanged" and signal.action.lower() == "hold":
-                        is_correct = True
-
-                result = SignalJoinTickerResponse.Result(
+                # 결과 데이터 설정
+                row.result = SignalJoinTickerResponse.Result(
                     action=result_action,
                     price_diff=price_change,
                     is_correct=is_correct,
                 )
 
-                row.result = result
-
             return signals
+
+        except HTTPException as e:
+            raise e
         except Exception as e:
             self.logger.error(f"Error fetching signals for date {date}: {str(e)}")
             raise HTTPException(

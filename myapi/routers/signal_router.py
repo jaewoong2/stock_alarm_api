@@ -518,50 +518,31 @@ async def get_weekly_action_count(
     }
 
 
-@router.get("/date/ai-generated")
-@inject
-async def get_ai_generated_signal_by_date(
-    date: str,
-    symbols: str = "",
-    db_signal_service: DBSignalService = Depends(
-        Provide[Container.services.db_signal_service]
-    ),
-):
-    """
-    특정 날짜에 생성된 시그널을 조회합니다.
-    """
-    symbol_list = symbols.split(",") if symbols else []
-
-    date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
-    validate_date(date_value)
-    response = await db_signal_service.get_signals_result(
-        date=date_value, symbols=symbol_list, strategy="AI_GENERATED"
-    )
-
-    return {
-        "date": date_value,
-        "signals": response,
-    }
-
-
 @router.get("/date")
 @inject
 async def get_signal_by_date(
     date: str,
     symbols: str = "",
+    strategy_type: Optional[str] = None,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
     특정 날짜에 생성된 시그널을 조회합니다.
+
+    Args:
+        date: 조회할 날짜 (YYYY-MM-DD 형식)
+        symbols: 쉼표로 구분된 티커 심볼 목록
+        strategy_type: 조회할 전략 유형 ('AI_GENERATED', 'NOT_AI_GENERATED', None=모든 전략)
     """
-    symbol_list = symbols.split(",") if symbols else []
+    symbol_list = symbols.split(",") if symbols and symbols.strip() else []
 
     date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
     validate_date(date_value)
+
     response = await db_signal_service.get_signals_result(
-        date=date_value, symbols=symbol_list
+        date=date_value, symbols=symbol_list, strategy_type=strategy_type
     )
 
     return {
@@ -667,17 +648,17 @@ async def get_signals_by_only_ai(
                     ticker=ticker_data.ticker,
                     action="buy",
                     entry_price=0.0,  # 기본값 설정
-                    stop_loss=0.0,
-                    take_profit=0.0,
-                    close_price=0.0,
-                    probability="0",
+                    stop_loss=None,
+                    take_profit=None,
+                    close_price=None,
+                    probability=None,
                     strategy="AI_GENERATED",
                     result_description=ticker_data.result_description,
-                    report_summary="",
+                    report_summary=None,
                     ai_model=request.ai_model,
-                    senario="",
-                    good_things="",
-                    bad_things="",
+                    senario=None,
+                    good_things=None,
+                    bad_things=None,
                 )
                 signals_created.append(signal)
             except Exception as e:
@@ -690,17 +671,17 @@ async def get_signals_by_only_ai(
                     ticker=ticker_data.ticker,
                     action="sell",
                     entry_price=0.0,  # 기본값 설정
-                    stop_loss=0.0,
-                    take_profit=0.0,
-                    close_price=0.0,
-                    probability="0",
+                    stop_loss=None,
+                    take_profit=None,
+                    close_price=None,
+                    probability=None,
                     strategy="AI_GENERATED",
                     result_description=ticker_data.result_description,
-                    report_summary="",
+                    report_summary=None,
                     ai_model=request.ai_model,
-                    senario="",
-                    good_things="",
-                    bad_things="",
+                    senario=None,
+                    good_things=None,
+                    bad_things=None,
                 )
                 signals_created.append(signal)
             except Exception as e:
