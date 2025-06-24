@@ -624,6 +624,7 @@ class SignalsRepository:
                     == date,  # 시그널 날짜가 입력 날짜와 일치
                     Signals.ticker.in_(symbols),  # 심볼이 일치하는 경우만 필터링
                 )
+                .filter(Signals.strategy != "AI_GENERATED")
                 .order_by(
                     Signals.timestamp.desc(), Ticker.date.asc()
                 )  # 시그널은 최신순, 티커는 가장 가까운 다음 거래일 우선
@@ -708,6 +709,7 @@ class SignalsRepository:
                     func.date(Signals.timestamp)
                     == date  # 시그널 날짜가 입력 날짜와 일치
                 )
+                .filter(Signals.strategy != "AI_GENERATED")
                 .order_by(
                     Signals.timestamp.desc(), Ticker.date.asc()
                 )  # 시그널은 최신순, 티커는 가장 가까운 다음 거래일 우선
@@ -759,6 +761,95 @@ class SignalsRepository:
 
                 response_list.append(SignalJoinTickerResponse.model_validate(response))
 
+            return response_list
+        except Exception as e:
+            logging.error(f"Error fetching signals with ticker join: {e}")
+            return []
+
+    def get_signal_join_ticker_with_symbol_ai_generated(
+        self, date: date, symbols: List[str]
+    ) -> List[SignalJoinTickerResponse]:
+        """
+        특정 날짜와 심볼에 대한 시그널과 티커 정보를 조인하여 가져옵니다.
+
+        Args:
+            date: 조회할 날짜(시그널 날짜 기준)
+            symbol: 조회할 티커 심볼
+
+        Returns:
+            List[SignalJoinTickerResponse]: 시그널과 티커 정보가 결합된 응답 모델의 리스트
+        """
+        self._ensure_valid_session()
+        try:
+            # 특정 날짜와 심볼에 대한 시그널과 티커 정보를 조인하여 조회
+            results = (
+                self.db_session.query(Signals, Ticker)
+                .outerjoin(
+                    Ticker,
+                    and_(
+                        Signals.ticker == Ticker.symbol,
+                        Signals.action != "hold",
+                        Ticker.date >= func.cast(Signals.timestamp, sqlalchemy.Date),
+                        Ticker.date
+                        <= func.cast(
+                            Signals.timestamp + timedelta(days=5), sqlalchemy.Date
+                        ),
+                    ),
+                )
+                .filter(
+                    func.date(Signals.timestamp)
+                    == date,  # 시그널 날짜가 입력 날짜와 일치
+                    Signals.ticker.in_(symbols),  # 심볼이 일치하는 경우만 필터링
+                )
+                .filter(Signals.strategy == "AI_GENERATED")
+                .order_by(
+                    Signals.timestamp.desc(), Ticker.date.asc()
+                )  # 시그널은 최신순, 티커는 가장 가까운 다음 거래일 우선
+                .all()
+            )
+
+            # 결과를 응답 모델로 변환
+            response_list = []
+            for signal, ticker in results:
+                response = {"signal": {}, "ticker": None}
+
+                if signal is not None:
+                    response["signal"] = {
+                        # Signal 필드
+                        "ticker": signal.ticker,
+                        "strategy": signal.strategy,
+                        "entry_price": signal.entry_price,
+                        "stop_loss": signal.stop_loss,
+                        "take_profit": signal.take_profit,
+                        "action": signal.action,
+                        "timestamp": signal.timestamp,
+                        "probability": signal.probability,
+                        "result_description": signal.result_description,
+                        "report_summary": signal.report_summary,
+                        "ai_model": signal.ai_model,
+                        "senario": signal.senario,
+                        "good_things": signal.good_things,
+                        "bad_things": signal.bad_things,
+                        "close_price": signal.close_price,
+                        "chart_pattern": signal.chart_pattern,
+                    }
+
+                if ticker is not None:
+                    response["ticker"] = {
+                        "symbol": ticker.symbol,
+                        "name": ticker.name,
+                        "price": ticker.price,
+                        "open_price": ticker.open_price,
+                        "high_price": ticker.high_price,
+                        "low_price": ticker.low_price,
+                        "close_price": ticker.close_price,
+                        "volume": ticker.volume,
+                        "ticker_date": ticker.date,
+                        "created_at": ticker.created_at,
+                        "updated_at": ticker.updated_at,
+                    }
+                response["result"] = None
+                response_list.append(SignalJoinTickerResponse.model_validate(response))
             return response_list
         except Exception as e:
             logging.error(f"Error fetching signals with ticker join: {e}")

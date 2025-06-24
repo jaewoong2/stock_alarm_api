@@ -5,6 +5,7 @@ from typing import List, Literal, Optional
 from venv import logger
 from fastapi import APIRouter, Depends
 
+from myapi.services import ai_service
 from myapi.utils.auth import verify_bearer_token
 from datetime import date, timedelta
 
@@ -21,6 +22,8 @@ from myapi.domain.signal.signal_schema import (
     DefaultTickers,
     DiscordMessageRequest,
     GenerateSignalResultRequest,
+    GetSignalByOnlyAIPromptSchema,
+    GetSignalByOnlyAIRequest,
     GetSignalRequest,
     SignalBaseResponse,
     SignalPromptData,
@@ -515,6 +518,32 @@ async def get_weekly_action_count(
     }
 
 
+@router.get("/date/ai-generated")
+@inject
+async def get_ai_generated_signal_by_date(
+    date: str,
+    symbols: str = "",
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    특정 날짜에 생성된 시그널을 조회합니다.
+    """
+    symbol_list = symbols.split(",") if symbols else []
+
+    date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+    validate_date(date_value)
+    response = await db_signal_service.get_signals_result(
+        date=date_value, symbols=symbol_list, strategy="AI_GENERATED"
+    )
+
+    return {
+        "date": date_value,
+        "signals": response,
+    }
+
+
 @router.get("/date")
 @inject
 async def get_signal_by_date(
@@ -539,6 +568,156 @@ async def get_signal_by_date(
         "date": date_value,
         "signals": response,
     }
+
+
+@router.post(
+    "/signals/by-only-ai",
+    dependencies=[Depends(verify_bearer_token)],
+)
+@inject
+async def get_signals_by_only_ai(
+    request: GetSignalByOnlyAIRequest,
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    signals_repository: SignalsRepository = Depends(
+        Provide[Container.repositories.signals_repository]
+    ),
+):
+    """
+    AI로 생성된 시그널만 조회합니다.
+    """
+    try:
+        # 티커 목록 설정 (없으면 기본 티커 사용)
+        tickers = request.tickers if request.tickers else DefaultTickers
+        date_str = request.date.strftime("%Y-%m-%d")
+
+        logger.info(f"Generating AI signals for {len(tickers)} tickers on {date_str}")
+
+        # AI 모델을 사용하여 시그널 생성
+        prompt = f"""
+        You are a top-tier quantitative analyst and stock market expert with 20+ years of experience on Wall Street. Your analysis is known for accuracy, depth, and actionable insights.
+
+        TASK: Generate investment recommendations for a carefully selected list of stocks based on current market data.
+
+        CONTEXT:
+        - Current date for analysis: {date_str}
+        - Ticker symbols to analyze: {', '.join(tickers)}
+        - Required output: Forecast Today's "BUY/SELL" recommendations For Tickers Today with supporting evidence
+
+        STEP-BY-STEP PROCESS:
+        1. For each ticker, thoroughly research the latest information as of {date_str}, including:
+            * Recent earnings reports and guidance
+            * Analyst ratings and price targets
+            * Key news events and press releases
+            * Technical indicators and price action
+            * Sector-specific trends and competitive positioning
+
+        2. Evaluate each stock using a multi-factor decision framework:
+            * Current valuation metrics vs historical and sector averages
+            * Revenue/EPS growth trajectory and future outlook
+            * Recent price momentum and technical setup
+            * Potential catalysts or risks on the horizon
+            * Overall market sentiment and sector rotation dynamics
+
+        3. For each stock, determine if there is sufficient evidence for a BUY or SELL recommendation.
+            * Assign a recommendation ONLY if you have high conviction
+            * If evidence is mixed or insufficient, exclude the stock from your recommendations
+
+        4. For each recommendation, provide a concise, evidence-based justification (2-4 sentences maximum).
+
+        OUTPUT FORMAT:
+        Respond ONLY with a single valid JSON object structured exactly as follows:
+        ```json
+        {{
+        "ai_model": "[Your model name]",
+        "buy_tickers": (forecast more than 5 tickers) [
+            {{"ticker": "XYZ", "result_description": "Clear rationale for buying based on specific metrics, catalysts, and analysis", "action": "buy"}}
+        ],
+        "sell_tickers": (forecast more than 5 tickers) [
+            {{"ticker": "ABC", "result_description": "Clear rationale for selling based on specific metrics, risks, and analysis", "action": "sell"}}
+        ]
+        }}
+        ```
+        
+        IMPORTANT CONSTRAINTS: Include ONLY stocks where you have high conviction (approximately 30-40% of the provided tickers)
+        """
+
+        # AI 모델에 따라 다른 메서드 호출
+        result = None
+
+        if request.ai_model == "GOOGLE":
+            result = ai_service.gemini_search_grounding(
+                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+            )
+
+        elif request.ai_model == "PERPLEXITY":
+            result = ai_service.perplexity_completion(
+                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+            )
+
+        if not result or not isinstance(result, GetSignalByOnlyAIPromptSchema):
+            return {"status": "error", "message": "AI model failed to generate signals"}
+
+        # 결과를 DB에 저장
+        signals_created = []
+
+        # 매수 추천 처리
+        for ticker_data in result.buy_tickers:
+            try:
+                signal = signals_repository.create_signal(
+                    ticker=ticker_data.ticker,
+                    action="buy",
+                    entry_price=0.0,  # 기본값 설정
+                    stop_loss=0.0,
+                    take_profit=0.0,
+                    close_price=0.0,
+                    probability="0",
+                    strategy="AI_GENERATED",
+                    result_description=ticker_data.result_description,
+                    report_summary="",
+                    ai_model=request.ai_model,
+                    senario="",
+                    good_things="",
+                    bad_things="",
+                )
+                signals_created.append(signal)
+            except Exception as e:
+                logger.error(f"Error creating buy signal for {ticker_data.ticker}: {e}")
+
+        # 매도 추천 처리
+        for ticker_data in result.sell_tickers:
+            try:
+                signal = signals_repository.create_signal(
+                    ticker=ticker_data.ticker,
+                    action="sell",
+                    entry_price=0.0,  # 기본값 설정
+                    stop_loss=0.0,
+                    take_profit=0.0,
+                    close_price=0.0,
+                    probability="0",
+                    strategy="AI_GENERATED",
+                    result_description=ticker_data.result_description,
+                    report_summary="",
+                    ai_model=request.ai_model,
+                    senario="",
+                    good_things="",
+                    bad_things="",
+                )
+                signals_created.append(signal)
+            except Exception as e:
+                logger.error(
+                    f"Error creating sell signal for {ticker_data.ticker}: {e}"
+                )
+
+        return {
+            "status": "success",
+            "message": f"Generated {len(signals_created)} signals using {request.ai_model}",
+            "signals": signals_created,
+            "ai_response": result,
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching AI-generated signals: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @router.post(

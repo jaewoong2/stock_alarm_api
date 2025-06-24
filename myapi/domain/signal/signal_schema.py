@@ -488,3 +488,33 @@ class SignalJoinTickerResponse(BaseModel):
     result: Optional[Result]
 
     model_config = {"from_attributes": True}
+
+
+class GetSignalByOnlyAIRequest(BaseModel):
+    """
+    Request schema for getting signals by AI model.
+    """
+
+    ai_model: Literal["GOOGLE", "PERPLEXITY"] = "GOOGLE"
+    tickers: List[str] | None = None  # Optional ticker filter
+    date: datetime = datetime.today()  # Optional start date for filtering
+
+
+class GetSignalByOnlyAIPromptSchema(BaseModel):
+    """
+    Prompt schema for getting signals by AI model.
+    """
+
+    class Tickers(BaseModel):
+        """
+        Tickers schema for the AI model.
+        Contains a list of tickers to filter the signals.
+        """
+
+        ticker: str = ""
+        result_description: str = ""
+        action: Literal["buy", "sell", "hold"] = "buy"
+
+    ai_model: Literal["GOOGLE", "PERPLEXITY"] = "GOOGLE"
+    buy_tickers: List[Tickers] = []
+    sell_tickers: List[Tickers] = []

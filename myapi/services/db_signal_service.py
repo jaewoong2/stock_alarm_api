@@ -56,14 +56,26 @@ class DBSignalService:
                 status_code=500, detail=f"Failed to fetch signals: {str(e)}"
             )
 
-    async def get_signals_result(self, date: date, symbols: Optional[List[str]] = None):
+    async def get_signals_result(
+        self,
+        date: date,
+        symbols: Optional[List[str]] = None,
+        strategy: Optional[str] = None,
+    ):
         """
         특정 날짜의모든 신호 결과를 조회합니다. (Join With Ticker)
         """
         try:
             signals = []
 
-            if symbols and len(symbols) > 0:
+            if strategy == "AI_GENERATED" and symbols and len(symbols) > 0:
+                signals = (
+                    self.repository.get_signal_join_ticker_with_symbol_ai_generated(
+                        date, symbols=symbols
+                    )
+                )
+
+            elif symbols and len(symbols) > 0:
                 signals = self.repository.get_signal_join_ticker_with_symbol(
                     date, symbols
                 )

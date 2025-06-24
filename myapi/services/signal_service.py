@@ -23,6 +23,7 @@ from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     Article,
+    GetSignalByOnlyAIRequest,
     SignalPromptData,
     TechnicalSignal,
     Strategy,
