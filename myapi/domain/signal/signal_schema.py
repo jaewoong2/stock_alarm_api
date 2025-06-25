@@ -495,9 +495,11 @@ class GetSignalByOnlyAIRequest(BaseModel):
     Request schema for getting signals by AI model.
     """
 
-    ai_model: Literal["GOOGLE", "PERPLEXITY"] = "GOOGLE"
+    ai_model: Literal["GOOGLE", "PERPLEXITY", "ALL"] = "GOOGLE"
     tickers: List[str] | None = None  # Optional ticker filter
-    date: datetime = datetime.today()  # Optional start date for filtering
+    date: Optional[datetime] | None = (
+        datetime.today()
+    )  # Optional start date for filtering
 
 
 class GetSignalByOnlyAIPromptSchema(BaseModel):

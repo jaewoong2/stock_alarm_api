@@ -38,9 +38,12 @@ class AIService:
 
         result = response.choices[0].message
 
-        response = self.gemini_completion(
+        response = self.completions_parse(
             prompt=f"{result.content}\n\nPlease return the result in JSON format.",
             schema=schema,
+            system_prompt="You are a helpful assistant Return the result in JSON format.",
+            chat_model=ChatModel.O4_MINI,
+            image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
         )
 
         return response
@@ -123,9 +126,12 @@ class AIService:
                     if each.text is not None:
                         result += each.text
 
-        result = self.gemini_completion(
+        result = self.completions_parse(
             prompt="" + result + "\n\nPlease return the result in JSON format.",
             schema=schema,
+            system_prompt="You are a helpful assistant. Return the result in JSON format.",
+            chat_model=ChatModel.O4_MINI,
+            image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
         )
 
         # Return Type Only Schema

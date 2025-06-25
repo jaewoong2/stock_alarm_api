@@ -195,7 +195,13 @@ def llm_query(
             ),
             schema=WebSearchTickerResponse,
         )
-        if web_search_gemini_result:
+
+        if web_search_gemini_result and isinstance(
+            web_search_gemini_result, WebSearchTickerResponse
+        ):
+            logger.info(
+                f"Web search results for {req.ticker} on {today_YYYY_MM_DD}: {web_search_gemini_result.search_results}"
+            )
             signal_service.save_web_search_results(
                 result_type="ticker",
                 results=web_search_gemini_result.search_results,
@@ -569,7 +575,11 @@ async def get_signals_by_only_ai(
     try:
         # 티커 목록 설정 (없으면 기본 티커 사용)
         tickers = request.tickers if request.tickers else DefaultTickers
-        date_str = request.date.strftime("%Y-%m-%d")
+        date_str = (
+            request.date.strftime("%Y-%m-%d")
+            if request.date
+            else date.today().strftime("%Y-%m-%d")
+        )
 
         logger.info(f"Generating AI signals for {len(tickers)} tickers on {date_str}")
 
@@ -623,77 +633,103 @@ async def get_signals_by_only_ai(
         """
 
         # AI 모델에 따라 다른 메서드 호출
-        result = None
+        results = {}
 
         if request.ai_model == "GOOGLE":
-            result = ai_service.gemini_search_grounding(
-                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
-            )
+            results = {
+                "GOOGLE": ai_service.gemini_search_grounding(
+                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+                )
+            }
 
         elif request.ai_model == "PERPLEXITY":
-            result = ai_service.perplexity_completion(
-                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
-            )
+            results = {
+                "PERPLEXITY": ai_service.perplexity_completion(
+                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+                )
+            }
 
-        if not result or not isinstance(result, GetSignalByOnlyAIPromptSchema):
+        elif request.ai_model == "ALL":
+            results = {
+                "GOOGLE": ai_service.gemini_search_grounding(
+                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+                )
+            }
+            results = {
+                "PERPLEXITY": ai_service.perplexity_completion(
+                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+                )
+            }
+
+        if not results:
             return {"status": "error", "message": "AI model failed to generate signals"}
 
-        # 결과를 DB에 저장
-        signals_created = []
-
-        # 매수 추천 처리
-        for ticker_data in result.buy_tickers:
-            try:
-                signal = signals_repository.create_signal(
-                    ticker=ticker_data.ticker,
-                    action="buy",
-                    entry_price=0.0,  # 기본값 설정
-                    stop_loss=None,
-                    take_profit=None,
-                    close_price=None,
-                    probability=None,
-                    strategy="AI_GENERATED",
-                    result_description=ticker_data.result_description,
-                    report_summary=None,
-                    ai_model=request.ai_model,
-                    senario=None,
-                    good_things=None,
-                    bad_things=None,
-                )
-                signals_created.append(signal)
-            except Exception as e:
-                logger.error(f"Error creating buy signal for {ticker_data.ticker}: {e}")
-
-        # 매도 추천 처리
-        for ticker_data in result.sell_tickers:
-            try:
-                signal = signals_repository.create_signal(
-                    ticker=ticker_data.ticker,
-                    action="sell",
-                    entry_price=0.0,  # 기본값 설정
-                    stop_loss=None,
-                    take_profit=None,
-                    close_price=None,
-                    probability=None,
-                    strategy="AI_GENERATED",
-                    result_description=ticker_data.result_description,
-                    report_summary=None,
-                    ai_model=request.ai_model,
-                    senario=None,
-                    good_things=None,
-                    bad_things=None,
-                )
-                signals_created.append(signal)
-            except Exception as e:
+        for ai_model in results:
+            result = results[ai_model]
+            if not isinstance(result, GetSignalByOnlyAIPromptSchema):
                 logger.error(
-                    f"Error creating sell signal for {ticker_data.ticker}: {e}"
+                    f"Invalid result type: {type(result)}. Expected GetSignalByOnlyAIPromptSchema."
                 )
+                return {"status": "error", "message": "Invalid AI response format"}
+
+            # 결과를 DB에 저장
+            signals_created = []
+
+            # 매수 추천 처리
+            for ticker_data in result.buy_tickers:
+                try:
+                    signal = signals_repository.create_signal(
+                        ticker=ticker_data.ticker,
+                        action="buy",
+                        entry_price=0.0,  # 기본값 설정
+                        stop_loss=None,
+                        take_profit=None,
+                        close_price=None,
+                        probability=None,
+                        strategy="AI_GENERATED",
+                        result_description=ticker_data.result_description,
+                        report_summary=None,
+                        ai_model=ai_model,
+                        senario=None,
+                        good_things=None,
+                        bad_things=None,
+                    )
+                    signals_created.append(signal)
+                except Exception as e:
+                    logger.error(
+                        f"Error creating buy signal for {ticker_data.ticker}: {e}"
+                    )
+
+            # 매도 추천 처리
+            for ticker_data in result.sell_tickers:
+                try:
+                    signal = signals_repository.create_signal(
+                        ticker=ticker_data.ticker,
+                        action="sell",
+                        entry_price=0.0,  # 기본값 설정
+                        stop_loss=None,
+                        take_profit=None,
+                        close_price=None,
+                        probability=None,
+                        strategy="AI_GENERATED",
+                        result_description=ticker_data.result_description,
+                        report_summary=None,
+                        ai_model=ai_model,
+                        senario=None,
+                        good_things=None,
+                        bad_things=None,
+                    )
+                    signals_created.append(signal)
+                except Exception as e:
+                    logger.error(
+                        f"Error creating sell signal for {ticker_data.ticker}: {e}"
+                    )
 
         return {
             "status": "success",
             "message": f"Generated {len(signals_created)} signals using {request.ai_model}",
             "signals": signals_created,
-            "ai_response": result,
+            "ai_response": results,
         }
 
     except Exception as e:
