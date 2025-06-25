@@ -650,16 +650,13 @@ async def get_signals_by_only_ai(
             }
 
         elif request.ai_model == "ALL":
-            results = {
-                "GOOGLE": ai_service.gemini_search_grounding(
-                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
-                )
-            }
-            results = {
-                "PERPLEXITY": ai_service.perplexity_completion(
-                    prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
-                )
-            }
+            results["GOOGLE"] = ai_service.gemini_search_grounding(
+                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+            )
+
+            results["PERPLEXITY"] = ai_service.perplexity_completion(
+                prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
+            )
 
         if not results:
             return {"status": "error", "message": "AI model failed to generate signals"}
