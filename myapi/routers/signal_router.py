@@ -113,7 +113,9 @@ def generate_signal_result(
             )
 
         if request.ai == "NOVA":
-            result = ai_service.nova_lite_completion(prompt=request.prompt)
+            result = ai_service.nova_lite_completion(
+                prompt=request.prompt, schema=SignalPromptResponse
+            )
 
         if not isinstance(result, SignalPromptResponse):
             return result

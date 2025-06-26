@@ -1,5 +1,7 @@
 # services/ai_service.py
 from typing import Any, Dict, List, Optional, Type, TypeVar
+import boto3
+from botocore.exceptions import ClientError
 from fastapi import HTTPException
 import openai
 import json
@@ -97,18 +99,60 @@ class AIService:
 
         return completion.choices[0].message
 
-    def nova_lite_completion(self, prompt: str):
-        """Call AWS Bedrock Nova Lite model using OpenAI SDK style."""
+    def nova_lite_completion(self, prompt: str, schema: Type[T]):
+        """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""
         try:
-            client = openai.OpenAI(
-                base_url=self.bedrock_base_url,
-                api_key=self.bedrock_api_key,
+            # Bedrock Runtime 클라이언트 생성
+            client = boto3.client(
+                service_name="bedrock-runtime",
+                region_name="ap-northeast-2",  # AWS 리전을 적절히 설정하세요
             )
-            completion = client.chat.completions.create(
-                model="nova-lite",
-                messages=[{"role": "user", "content": prompt}],
+            model_id = "apac.amazon.nova-lite-v1:0"
+
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [{"text": prompt}],
+                }
+            ]
+
+            try:
+                # Bedrock 모델 호출
+                response = client.converse(
+                    modelId=model_id,
+                    messages=conversation,
+                    inferenceConfig={"maxTokens": 5000},
+                )
+            except (ClientError, Exception) as e:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Model not found: {e}",
+                )
+
+            if not response:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No response body found from Bedrock model.",
+                )
+            # 응답 파싱
+            completion_content = response["output"]["message"]["content"][0]["text"]
+
+            if not completion_content:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No content found in the Bedrock model response.",
+                )
+
+            # 결과 처리
+            result = self.completions_parse(
+                prompt=f"{completion_content}",
+                schema=schema,
+                system_prompt="You are a helpful assistant. Return the result in JSON format.",
+                chat_model=ChatModel.GPT_4O_MINI,
+                image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
             )
-            return completion.choices[0].message
+
+            return result
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Bedrock service error: {e}")
 
