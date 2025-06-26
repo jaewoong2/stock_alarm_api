@@ -394,7 +394,7 @@ class GenerateSignalResultRequest(BaseModel):
     Response schema for the generate signal result endpoint.
     """
 
-    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
+    ai: Literal["OPENAI", "GOOGLE", "NOVA"] = "OPENAI"  # Store the AI model used for the signal
     data: SignalPromptData
     summary: str
     prompt: str

@@ -112,6 +112,9 @@ def generate_signal_result(
                 chat_model=ChatModel.O4_MINI,
             )
 
+        if request.ai == "NOVA":
+            result = ai_service.nova_lite_completion(prompt=request.prompt)
+
         if not isinstance(result, SignalPromptResponse):
             return result
 
@@ -242,7 +245,7 @@ def llm_query(
 
     prompt = signal_service.generate_prompt(data=req, report_summary=summary)
 
-    google_result, openai_result = None, None
+    google_result, openai_result, nova_result = None, None, None
 
     try:
         body = GenerateSignalResultRequest(
@@ -295,7 +298,32 @@ def llm_query(
         logger.error(f"Error generating OpenAI signal result: {e}")
         openai_result = None
 
-    return [google_result, openai_result]
+    try:
+        body = GenerateSignalResultRequest(
+            data=req,
+            summary=summary or "No summary available",
+            prompt=prompt,
+            ai="NOVA",  # Request using Nova Lite
+        )
+        nova_result = aws_service.generate_queue_message_http(
+            body=body.model_dump_json(),
+            path="signals/generate-signal-reult",
+            method="POST",
+            query_string_parameters={},
+            auth_token=settings.auth_token,
+        )
+        aws_service.send_sqs_fifo_message(
+            queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
+            message_body=json.dumps(nova_result),
+            message_group_id="nova",
+            message_deduplication_id=req.ticker + "nova" + str(date.today()),
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating Nova signal result: {e}")
+        nova_result = None
+
+    return [google_result, openai_result, nova_result]
 
 
 @router.post(

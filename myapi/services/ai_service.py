@@ -22,6 +22,8 @@ class AIService:
         self.gemini_api_key = settings.GEMINI_API_KEY
         self.huggingface_api_key = settings.HUGGINGFACE_API_KEY
         self.perplexity_api_key = settings.PERPLEXITY_API_KEY
+        self.bedrock_api_key = settings.BEDROCK_API_KEY
+        self.bedrock_base_url = settings.BEDROCK_BASE_URL
 
     def perplexity_completion(
         self,
@@ -94,6 +96,21 @@ class AIService:
         )
 
         return completion.choices[0].message
+
+    def nova_lite_completion(self, prompt: str):
+        """Call AWS Bedrock Nova Lite model using OpenAI SDK style."""
+        try:
+            client = openai.OpenAI(
+                base_url=self.bedrock_base_url,
+                api_key=self.bedrock_api_key,
+            )
+            completion = client.chat.completions.create(
+                model="nova-lite",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return completion.choices[0].message
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Bedrock service error: {e}")
 
     def gemini_search_grounding(
         self,

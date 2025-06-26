@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     FRED_API_KEY: str = ""
     DISCORD_WEBHOOK_URL: str = ""
     PERPLEXITY_API_KEY: str = ""
+    BEDROCK_API_KEY: str = ""
+    BEDROCK_BASE_URL: str = ""
 
     # JWT authentication settings
     AUTH_USERNAME: str = "admin"
