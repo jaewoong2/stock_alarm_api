@@ -274,8 +274,12 @@ def get_weekly_price_movement(
         else DefaultTickers
     )
 
-    end_dt = validate_date(reference_date if reference_date else date.today())
-    start_dt = end_dt - timedelta(days=7)
+    yesterday = date.today() - timedelta(days=1)
+
+    end_dt = validate_date(
+        reference_date - timedelta(days=1) if reference_date else yesterday
+    )
+    start_dt = end_dt - timedelta(days=6)
 
     tickers_with_count = ticker_service.count_price_movements(
         ticker_list, start_dt, end_dt, direction

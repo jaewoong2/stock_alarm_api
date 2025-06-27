@@ -56,7 +56,11 @@ class WebSearchService:
         )
 
         if cached:
-            return cached
+            cached_latest = cached[-1]
+
+            if isinstance(cached_latest, MarketForecastSchema):
+                if cached_latest.date_yyyymmdd == end_date:
+                    return cached
 
         prompt = self._build_prompt(end_date, source)
 

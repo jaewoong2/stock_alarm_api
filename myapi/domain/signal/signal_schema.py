@@ -271,14 +271,14 @@ class ChartPattern(BaseModel):
 
 class SignalPromptResponse(BaseModel):
     ticker: str
-    good_things: str | None = None
-    bad_things: str | None = None
+    good_things: str = ""
+    bad_things: str = ""
     reasoning: str
-    think_steps: str | None = None
+    think_steps: str = ""
     probability_of_rising_up_percentage: float
     probability_of_rising_up: str
     recommendation: Literal["BUY", "SELL", "HOLD"]
-    senarios: str | None = None
+    senarios: str = ""
     entry_price: float = 0.0
     stop_loss_price: float = 0.0
     take_profit_price: float = 0.0
@@ -394,7 +394,9 @@ class GenerateSignalResultRequest(BaseModel):
     Response schema for the generate signal result endpoint.
     """
 
-    ai: Literal["OPENAI", "GOOGLE", "NOVA"] = "OPENAI"  # Store the AI model used for the signal
+    ai: Literal["OPENAI", "GOOGLE", "NOVA"] = (
+        "OPENAI"  # Store the AI model used for the signal
+    )
     data: SignalPromptData
     summary: str
     prompt: str

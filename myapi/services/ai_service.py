@@ -109,6 +109,11 @@ class AIService:
             )
             model_id = "apac.amazon.nova-lite-v1:0"
 
+            prompt = (
+                prompt
+                + f"\n\n You Need to Response Like Response JSON Format: {json.dumps(schema.model_json_schema())}"
+            )
+
             conversation = [
                 {
                     "role": "user",

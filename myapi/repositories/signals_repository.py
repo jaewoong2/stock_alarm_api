@@ -489,12 +489,29 @@ class SignalsRepository:
         start_date: datetime,
         end_date: datetime,
         action: Literal["Buy", "Sell", "Hold"],
-    ) -> List[Dict[str, int]]:
-        """주어진 기간 동안 액션별 시그널 개수를 조회합니다."""
+    ):
+        """
+        주어진 기간 동안 티커별로 날짜별 액션 시그널 개수 배열을 반환합니다.
+        배열의 각 요소는 해당 날짜의 시그널 개수를 나타냅니다.
+        """
         self._ensure_valid_session()
 
+        # 날짜 범위 계산
+        date_range = [
+            (start_date + timedelta(days=i)).date()
+            for i in range((end_date.date() - start_date.date()).days + 1)
+        ]
+
+        # 날짜 컬럼을 추출 (시간 부분 제외)
+        date_column = func.date(Signals.timestamp)
+
+        # 티커별, 날짜별 쿼리
         query = (
-            self.db_session.query(Signals.ticker, func.count(Signals.id).label("count"))
+            self.db_session.query(
+                Signals.ticker,
+                date_column.label("date"),
+                func.count(Signals.id).label("count"),
+            )
             .filter(Signals.timestamp >= start_date, Signals.timestamp <= end_date)
             .filter(Signals.action == action.lower())
         )
@@ -502,11 +519,37 @@ class SignalsRepository:
         if tickers:
             query = query.filter(Signals.ticker.in_(tickers))
 
-        results = (
-            query.group_by(Signals.ticker).order_by(func.count(Signals.id).asc()).all()
-        )
+        results = query.group_by(Signals.ticker, date_column).all()
 
-        return [{"ticker": ticker, "count": count} for ticker, count in results]
+        # 결과를 티커별로 그룹화
+        count_by_ticker_date = {}
+        for ticker, date, count in results:
+            if ticker not in count_by_ticker_date:
+                count_by_ticker_date[ticker] = {}
+            count_by_ticker_date[ticker][date] = count
+
+        # 모든 티커에 대해 날짜별 배열 생성
+        final_results = []
+        all_tickers = set(ticker for ticker, _, _ in results) if results else set()
+        if tickers:  # 만약 특정 티커가 요청되었지만 결과가 없는 경우도 포함
+            all_tickers = all_tickers.union(set(tickers))
+
+        for ticker in all_tickers:
+            counts = []
+            dates = []
+            for d in date_range:
+                counts.append(count_by_ticker_date.get(ticker, {}).get(d, 0))
+                dates.append(d.strftime("%Y-%m-%d"))
+
+            final_results.append(
+                {
+                    "ticker": ticker,
+                    "count": counts,
+                    "date": dates,
+                }
+            )
+
+        return final_results
 
     def get_by_ticker_and_date(self, ticker: str, date_value: date):
         """특정 날짜와 티커의 시그널을 조회"""

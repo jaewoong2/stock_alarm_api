@@ -139,12 +139,22 @@ class TickerRepository:
         start_date: date,
         end_date: date,
         direction: str,
-    ) -> List[Dict[str, int]]:
-        """기간 동안 가격 변동(상승/하락) 횟수를 계산합니다."""
+    ):
+        """
+        기간 동안 티커별로 날짜별 가격 변동(상승/하락) 배열을 반환합니다.
+        배열의 각 요소는 해당 날짜의 가격이 지정된 방향으로 움직였는지 여부(1 또는 0)입니다.
+        """
 
-        query = self.db_session.query(
-            Ticker.symbol, func.count(Ticker.id).label("count")
-        ).filter(Ticker.date >= start_date, Ticker.date <= end_date)
+        # 날짜 범위 계산
+        date_range = [
+            start_date + timedelta(days=i)
+            for i in range((end_date - start_date).days + 1)
+        ]
+
+        # 티커별, 날짜별 쿼리
+        query = self.db_session.query(Ticker.symbol, Ticker.date).filter(
+            Ticker.date >= start_date, Ticker.date <= end_date
+        )
 
         if symbols:
             query = query.filter(Ticker.symbol.in_(symbols))
@@ -154,8 +164,39 @@ class TickerRepository:
         elif direction == "down":
             query = query.filter(Ticker.close_price < Ticker.open_price)
 
-        results = (
-            query.group_by(Ticker.symbol).order_by(func.count(Ticker.id).asc()).all()
-        )
+        results = query.all()
 
-        return [{"ticker": sym, "count": cnt} for sym, cnt in results]
+        # 결과를 티커별, 날짜별로 그룹화
+        movements_by_ticker_date = {}
+        for symbol, date in results:
+            if symbol not in movements_by_ticker_date:
+                movements_by_ticker_date[symbol] = set()
+            movements_by_ticker_date[symbol].add(date)
+
+        # 모든 티커에 대해 날짜별 배열 생성
+        final_results = []
+        all_symbols = set(symbol for symbol, _ in results) if results else set()
+        if symbols:
+            all_symbols = all_symbols.union(set(symbols))
+
+        for symbol in all_symbols:
+            counts = []
+            dates = []
+            for d in date_range:
+                # 해당 날짜에 가격 변동이 있었는지 여부 (1 또는 0)
+                count = 1 if d in movements_by_ticker_date.get(symbol, set()) else 0
+                counts.append(count)
+                dates.append(d.strftime("%Y-%m-%d"))
+
+            if sum(counts) == 0:
+                continue
+
+            final_results.append(
+                {
+                    "ticker": symbol,
+                    "count": counts,
+                    "date": dates,
+                }
+            )
+
+        return final_results

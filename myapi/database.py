@@ -36,7 +36,9 @@ engine = create_engine(
     pool_recycle=1800,
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
+)
 
 Base = declarative_base(metadata=MetaData(schema=settings.database_schema))
 
@@ -45,6 +47,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
