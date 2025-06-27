@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 
 
@@ -47,13 +47,18 @@ class WebSearchService:
         """
 
     def forecast_market(self, today: date, source: Literal["Major", "Minor"] = "Major"):
-        today_str = today.strftime("%Y-%m-%d")
-        cached = self.websearch_repository.get_by_date(today_str, source)
+        #  2주간 움직임
+        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        end_date = (today).strftime("%Y-%m-%d")
+
+        cached = self.websearch_repository.get_by_date(
+            start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
+        )
 
         if cached:
             return cached
 
-        prompt = self._build_prompt(today_str, source)
+        prompt = self._build_prompt(end_date, source)
 
         response = self.ai_service.perplexity_completion(
             prompt=prompt,
@@ -65,7 +70,7 @@ class WebSearchService:
 
         self.websearch_repository.create(
             MarketForecast(
-                date_yyyymmdd=today_str,
+                date_yyyymmdd=end_date,
                 outlook=response.outlook,
                 reason=response.reason,
                 up_percentage=response.up_percentage,
@@ -73,4 +78,9 @@ class WebSearchService:
             )
         )
 
-        return response
+        cached = self.websearch_repository.get_by_date(
+            start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
+        )
+
+        if cached:
+            return cached

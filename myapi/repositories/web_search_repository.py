@@ -99,25 +99,46 @@ class WebSearchResultRepository:
         )
 
     def get_by_date(
-        self, date_yyyymmdd: str, source: Literal["Major", "Minor"]
-    ) -> Optional[MarketForecastSchema]:
-        result = (
+        self,
+        start_date_yyyymmdd: str,
+        end_date_yyyymmdd: str,
+        source: Literal["Major", "Minor"],
+    ):
+        # result = (
+        #     self.db_session.query(MarketForecast)
+        #     .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
+        #     .filter(MarketForecast.source == source)
+        #     .first()
+        # )
+
+        response = (
             self.db_session.query(MarketForecast)
-            .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
+            .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
+            .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
             .filter(MarketForecast.source == source)
-            .first()
+            .order_by(MarketForecast.date_yyyymmdd.asc())
+            .all()
         )
-        if not result:
+
+        if not response:
             return None
 
-        up_percentage = None
-        if result.up_percentage is not None:
-            up_percentage = float(str(result.up_percentage))
+        results = []
 
-        return MarketForecastSchema(
-            created_at=result.created_at.isoformat(),
-            date_yyyymmdd=str(result.date_yyyymmdd),
-            outlook="UP" if str(result.outlook) == "UP" else "DOWN",
-            reason=str(result.reason),
-            up_percentage=(up_percentage),
-        )
+        for result in response:
+            up_percentage = None
+
+            if result.up_percentage is not None:
+                up_percentage = float(str(result.up_percentage))
+
+            results.append(
+                MarketForecastSchema(
+                    created_at=result.created_at.isoformat(),
+                    date_yyyymmdd=str(result.date_yyyymmdd),
+                    outlook="UP" if str(result.outlook) == "UP" else "DOWN",
+                    reason=str(result.reason),
+                    up_percentage=up_percentage,
+                )
+            )
+
+        return results

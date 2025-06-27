@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     BEDROCK_BASE_URL: str = ""
 
     # JWT authentication settings
-    AUTH_USERNAME: str = "admin"
-    AUTH_PASSWORD: str = "password"
-    JWT_SECRET_KEY: str = "change_me"
+    AUTH_USERNAME: str = ""
+    AUTH_PASSWORD: str = ""
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
     auth_token: str = ""
