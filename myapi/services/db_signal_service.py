@@ -94,19 +94,19 @@ class DBSignalService:
                 if (
                     signal.action
                     and signal.action.lower() == "buy"
-                    and signal.take_profit
+                    and signal.close_price
                     and ticker.close_price
                 ):
-                    price_change = signal.take_profit - ticker.close_price
+                    price_change = signal.close_price - ticker.close_price
 
                 # 매도 시그널 가격 차이 계산
                 if (
                     signal.action
                     and signal.action.lower() == "sell"
-                    and signal.stop_loss
+                    and signal.close_price
                     and ticker.close_price
                 ):
-                    price_change = signal.stop_loss - ticker.close_price
+                    price_change = signal.close_price - ticker.close_price
 
                 # 실제 가격 변동 결과 확인
                 if ticker.close_price and ticker.open_price:
