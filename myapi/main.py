@@ -21,14 +21,15 @@ init_logging()
 logger = logging.getLogger(__name__)
 
 
-
 # CORS Middleware
 is_dev = os.getenv("ENVIRONMENT", "dev").lower() == "dev"
 if is_dev:
     origins = [
         "https://stock.bamtoly.com",
-        "http://localhost:5173",
+        "http://localhost:3000",
         "http://localhost:5174",
+        "http://localhost:5173",
+        "https://lqiqjbap36vcqands43tgqjz3e0buafo.lambda-url.ap-northeast-2.on.aws",
     ]
 else:
     origins = ["https://stock.bamtoly.com"]
