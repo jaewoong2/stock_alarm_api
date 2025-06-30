@@ -46,7 +46,7 @@ class AIService:
             prompt=f"{result.content}\n\nPlease return the result in JSON format.",
             schema=schema,
             system_prompt="You are a helpful assistant Return the result in JSON format.",
-            chat_model=ChatModel.O4_MINI,
+            chat_model=ChatModel.GPT_4O_MINI,
             image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
         )
 
@@ -126,7 +126,7 @@ class AIService:
                 response = client.converse(
                     modelId=model_id,
                     messages=conversation,
-                    inferenceConfig={"maxTokens": 5000},
+                    inferenceConfig={"maxTokens": 8192},
                 )
             except (ClientError, Exception) as e:
                 raise HTTPException(

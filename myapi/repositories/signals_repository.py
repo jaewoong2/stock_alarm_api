@@ -13,6 +13,7 @@ from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     SignalBaseResponse,
     SignalJoinTickerResponse,
+    SignalValueObject,
 )
 from myapi.domain.ticker.ticker_model import Ticker
 
@@ -39,6 +40,43 @@ class SignalsRepository:
             # 기타 예외 처리
             logging.error(f"Session error: {e}")
             self.db_session.rollback()
+
+    def create_signal_bulk(
+        self, signals_vo_list: List[SignalValueObject]
+    ) -> List[SignalBaseResponse]:
+        """
+        여러 신호를 한 번에 생성합니다.
+
+        Args:
+            signals_vo_list: SignalValueObject 리스트
+
+        Returns:
+            생성된 신호 리스트
+        """
+        self._ensure_valid_session()
+        try:
+            # SignalValueObject 리스트를 Signals 객체로 변환
+            signals_models = []
+            for signal_vo in signals_vo_list:
+                # SignalValueObject를 Signals 모델로 변환
+                signal_model = signal_vo.to_orm(Signals)
+                signals_models.append(signal_model)
+
+            # DB에 한 번에 저장
+            self.db_session.add_all(signals_models)
+            self.db_session.commit()
+
+            # 응답 생성
+            results = []
+            for signal in signals_models:
+                self.db_session.refresh(signal)
+                results.append(SignalBaseResponse.model_validate(signal))
+
+            return results
+        except Exception as e:
+            self.db_session.rollback()
+            logging.error(f"DB bulk signal creation failed: {e}")
+            raise
 
     def create_signal(
         self,
@@ -493,27 +531,31 @@ class SignalsRepository:
         """
         주어진 기간 동안 티커별로 날짜별 액션 시그널 개수 배열을 반환합니다.
         배열의 각 요소는 해당 날짜의 시그널 개수를 나타냅니다.
+        주말(토요일, 일요일)은 제외됩니다.
         """
         self._ensure_valid_session()
 
-        # 날짜 범위 계산
+        # 주말을 제외한 날짜 범위 계산
         date_range = [
             (start_date + timedelta(days=i)).date()
             for i in range((end_date.date() - start_date.date()).days + 1)
+            if (start_date + timedelta(days=i)).weekday() < 5  # 0-4: 월-금, 5-6: 토-일
         ]
 
-        # 날짜 컬럼을 추출 (시간 부분 제외)
+        # 날짜 컬럼 추출 (시간 부분 제외)
         date_column = func.date(Signals.timestamp)
 
-        # 티커별, 날짜별 쿼리
-        query = (
-            self.db_session.query(
-                Signals.ticker,
-                date_column.label("date"),
-                func.count(Signals.id).label("count"),
-            )
-            .filter(Signals.timestamp >= start_date, Signals.timestamp <= end_date)
-            .filter(Signals.action == action.lower())
+        # 주말을 제외한 쿼리 작성
+        query = self.db_session.query(
+            Signals.ticker,
+            date_column.label("date"),
+            func.count(Signals.id).label("count"),
+        ).filter(
+            Signals.timestamp >= start_date,
+            Signals.timestamp <= end_date,
+            Signals.action == action.lower(),
+            # 주말 제외 필터 추가 (0=월요일, 6=일요일)
+            func.extract("dow", Signals.timestamp).notin_([0, 6]),
         )
 
         if tickers:
@@ -521,31 +563,32 @@ class SignalsRepository:
 
         results = query.group_by(Signals.ticker, date_column).all()
 
-        # 결과를 티커별로 그룹화
+        # 결과를 티커별로 그룹화 (딕셔너리 컴프리헨션 사용)
         count_by_ticker_date = {}
         for ticker, date, count in results:
             if ticker not in count_by_ticker_date:
                 count_by_ticker_date[ticker] = {}
             count_by_ticker_date[ticker][date] = count
 
-        # 모든 티커에 대해 날짜별 배열 생성
-        final_results = []
+        # 요청된 티커와 결과에서 얻은 티커를 모두 포함
         all_tickers = set(ticker for ticker, _, _ in results) if results else set()
-        if tickers:  # 만약 특정 티커가 요청되었지만 결과가 없는 경우도 포함
+        if tickers:
             all_tickers = all_tickers.union(set(tickers))
 
+        # 결과 생성 - 각 티커별로 날짜 범위에 대한 시그널 개수 배열 생성
+        final_results = []
+        formatted_dates = [d.strftime("%Y-%m-%d") for d in date_range]
+
         for ticker in all_tickers:
-            counts = []
-            dates = []
-            for d in date_range:
-                counts.append(count_by_ticker_date.get(ticker, {}).get(d, 0))
-                dates.append(d.strftime("%Y-%m-%d"))
+            ticker_counts = [
+                count_by_ticker_date.get(ticker, {}).get(d, 0) for d in date_range
+            ]
 
             final_results.append(
                 {
                     "ticker": ticker,
-                    "count": counts,
-                    "date": dates,
+                    "count": ticker_counts,
+                    "date": formatted_dates,
                 }
             )
 

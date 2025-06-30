@@ -1,3 +1,4 @@
+from signal import Signals
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 from typing import List, Dict, Literal, Optional
@@ -522,3 +523,39 @@ class GetSignalByOnlyAIPromptSchema(BaseModel):
     ai_model: Literal["GOOGLE", "PERPLEXITY"] = "GOOGLE"
     buy_tickers: List[Tickers] = []
     sell_tickers: List[Tickers] = []
+
+
+class SignalValueObject(BaseModel):
+    """시그널 값 객체(Value Object) 스키마 - Signals 모델과 동기화"""
+
+    id: Optional[int] = None
+    ticker: str
+    strategy: Optional[str] = None
+    entry_price: float
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    close_price: Optional[float] = None
+    action: Literal["buy", "sell", "hold"]
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    probability: Optional[str] = None
+    result_description: Optional[str] = None
+    report_summary: Optional[str] = None
+    ai_model: Optional[str] = "OPENAI_O4MINI"
+    senario: Optional[str] = None
+    good_things: Optional[str] = None
+    bad_things: Optional[str] = None
+    chart_pattern: Optional[Dict] = None
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        """Signals 모델 객체를 SignalValueObject로 변환"""
+        return cls.model_validate(obj)
+
+    @classmethod
+    def to_orm(cls, value_object) -> Signals:
+        """SignalValueObject를 Signals 모델 객체로 변환"""
+        data = value_object.model_dump(exclude={"id"})
+        return Signals(**data)

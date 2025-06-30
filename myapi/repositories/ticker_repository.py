@@ -143,17 +143,21 @@ class TickerRepository:
         """
         기간 동안 티커별로 날짜별 가격 변동(상승/하락) 배열을 반환합니다.
         배열의 각 요소는 해당 날짜의 가격이 지정된 방향으로 움직였는지 여부(1 또는 0)입니다.
+        주말(토요일, 일요일)은 제외됩니다.
         """
-
-        # 날짜 범위 계산
+        # 주말을 제외한 날짜 범위 계산
         date_range = [
             start_date + timedelta(days=i)
             for i in range((end_date - start_date).days + 1)
+            if (start_date + timedelta(days=i)).weekday() < 5  # 0-4: 월-금, 5-6: 토-일
         ]
 
-        # 티커별, 날짜별 쿼리
+        # 티커별, 날짜별 쿼리 (주말 제외)
         query = self.db_session.query(Ticker.symbol, Ticker.date).filter(
-            Ticker.date >= start_date, Ticker.date <= end_date
+            Ticker.date >= start_date,
+            Ticker.date <= end_date,
+            # 주말 제외 필터 추가 (0=월요일, 6=일요일)
+            func.extract("dow", Ticker.date).notin_([0, 6]),
         )
 
         if symbols:
@@ -166,28 +170,30 @@ class TickerRepository:
 
         results = query.all()
 
-        # 결과를 티커별, 날짜별로 그룹화
+        # 결과를 티커별, 날짜별로 그룹화 (dict 사용)
         movements_by_ticker_date = {}
-        for symbol, date in results:
+        for symbol, date_val in results:
             if symbol not in movements_by_ticker_date:
                 movements_by_ticker_date[symbol] = set()
-            movements_by_ticker_date[symbol].add(date)
+            movements_by_ticker_date[symbol].add(date_val)
 
-        # 모든 티커에 대해 날짜별 배열 생성
-        final_results = []
+        # 요청된 심볼과 결과에서 얻은 심볼을 모두 포함
         all_symbols = set(symbol for symbol, _ in results) if results else set()
         if symbols:
             all_symbols = all_symbols.union(set(symbols))
 
-        for symbol in all_symbols:
-            counts = []
-            dates = []
-            for d in date_range:
-                # 해당 날짜에 가격 변동이 있었는지 여부 (1 또는 0)
-                count = 1 if d in movements_by_ticker_date.get(symbol, set()) else 0
-                counts.append(count)
-                dates.append(d.strftime("%Y-%m-%d"))
+        # 결과 생성 - 각 심볼별로 날짜 범위에 대한 변동 배열 생성
+        final_results = []
+        formatted_dates = [d.strftime("%Y-%m-%d") for d in date_range]
 
+        for symbol in all_symbols:
+            # 각 날짜별로 변동 여부 확인 (1: 변동 있음, 0: 변동 없음)
+            counts = [
+                1 if d in movements_by_ticker_date.get(symbol, set()) else 0
+                for d in date_range
+            ]
+
+            # 변동이 하나도 없는 심볼은 결과에서 제외
             if sum(counts) == 0:
                 continue
 
@@ -195,7 +201,7 @@ class TickerRepository:
                 {
                     "ticker": symbol,
                     "count": counts,
-                    "date": dates,
+                    "date": formatted_dates,
                 }
             )
 

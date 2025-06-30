@@ -665,21 +665,21 @@ async def get_signals_by_only_ai(
         # AI 모델에 따라 다른 메서드 호출
         results = {}
 
-        if request.ai_model == "GOOGLE":
+        if request.ai_model.upper() == "GOOGLE":
             results = {
                 "GOOGLE": ai_service.gemini_search_grounding(
                     prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
                 )
             }
 
-        elif request.ai_model == "PERPLEXITY":
+        elif request.ai_model.upper() == "PERPLEXITY":
             results = {
                 "PERPLEXITY": ai_service.perplexity_completion(
                     prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
                 )
             }
 
-        elif request.ai_model == "ALL":
+        elif request.ai_model.upper() == "ALL":
             results["GOOGLE"] = ai_service.gemini_search_grounding(
                 prompt=prompt, schema=GetSignalByOnlyAIPromptSchema
             )
