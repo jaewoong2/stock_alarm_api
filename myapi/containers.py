@@ -72,7 +72,6 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.ticker_router",
             "myapi.routers.news_router",
             "myapi.routers.auth_router",
-            "myapi.routers.market_analysis_router",
         ]
     )
 

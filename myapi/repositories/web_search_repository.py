@@ -3,10 +3,16 @@ from typing import List, Literal, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
-from myapi.domain.news.news_models import MarketForecast, WebSearchResult
+from myapi.domain.news.news_models import (
+    MarketForecast,
+    WebSearchResult,
+    AiAnalysisModel,
+)
 from myapi.domain.news.news_schema import (
     MarketForecastSchema,
     WebSearchResultSchema,
+    MarketAnalysis,
+    AiAnalysisVO,
 )
 
 
@@ -158,3 +164,25 @@ class WebSearchResultRepository:
             )
 
         return results
+
+    def get_analysis_by_date(self, analysis_date: datetime.date) -> AiAnalysisVO | None:
+        result = (
+            self.db_session.query(AiAnalysisModel)
+            .filter(AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"))
+            .first()
+        )
+
+        if not result:
+            return None
+
+        return AiAnalysisVO(id=result.id, date=str(result.date), value=result.value)
+
+    def create_analysis(self, analysis_date: datetime.date, analysis: MarketAnalysis) -> AiAnalysisVO:
+        db_obj = AiAnalysisModel(
+            date=analysis_date.strftime("%Y-%m-%d"),
+            value=analysis.model_dump(mode="json"),
+        )
+        self.db_session.add(db_obj)
+        self.db_session.commit()
+        self.db_session.refresh(db_obj)
+        return AiAnalysisVO(id=db_obj.id, date=str(db_obj.date), value=db_obj.value)

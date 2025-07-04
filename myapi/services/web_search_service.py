@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from typing import Literal
+from fastapi import HTTPException
 
 
 from myapi.domain.news.news_models import MarketForecast
@@ -7,6 +8,8 @@ from myapi.domain.news.news_schema import (
     MarketForecastResponse,
     MarketForecastSchema,
     SectorMomentumResponse,
+    MarketAnalysis,
+    MarketAnalysisResponse,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -117,3 +120,80 @@ class WebSearchService:
             raise ValueError("Invalid response format from AI service")
 
         return response
+
+    def _build_market_analysis_prompt(self, today: str) -> str:
+        return f"""
+        ## Advanced Prompt (copy & paste)
+
+        > **“As of U.S. Eastern Time *prior to today’s cash-market open* (EST), analyze the top *three* sectors with the strongest expected **1-to-3-day momentum** for short-term trading.”**
+        >
+        > 1. Begin with a **one-paragraph market overview** that summarizes the overnight macro backdrop and lists up to three *major catalysts* (time-stamped in EST).
+        > 2. Rank the three sectors by momentum strength (1 = highest).
+        > 3. For each sector, provide the details below in **valid JSON** that the system can parse.
+        > 4. Your analysis must explain not only **what** is happening but also **why** it matters and **how** traders might act.
+        > 5. Support every key point with a concrete **news or data source** (include publication name and time).
+        > 6. Use concise, punchy language; avoid generic statements.”**
+
+        ### JSON schema & field guidelines
+        ```json
+        {{
+        "analysis_date_est": "{today}",
+        "market_overview": {{
+            "summary": "<75-word snapshot of the overnight session>",
+            "major_catalysts": [
+            "EST HH:MM - <event one>",
+            "EST HH:MM - <event two>",
+            "EST HH:MM - <event three>"
+            ]
+        }},
+        "top_momentum_sectors": [
+            {{
+            "sector_ranking": 1,
+            "sector": "<name>",
+            "reason": "<2-3 sentences on why momentum is strongest>",
+            "risk_factor": "<specific near-term threat that could stall the move>",
+            "themes": [
+                {{
+                "key_theme": "<dominant intra-sector theme>",
+                "stocks": [
+                    {{
+                    "ticker": "<symbol>",
+                    "name": "<company name>",
+                    "pre_market_change": "<price % and relative volume versus 30-day avg>",
+                    "key_news": {{
+                        "headline": "<single most impactful headline>",
+                        "source": "<publication>",
+                        "summary": "<1-sentence essence>"
+                    }},
+                    "short_term_strategy": "If <technical or news condition>, consider <actionable trade idea with entry/exit levels or triggers>."
+                    }}
+                ]
+                }}
+            ]
+            }},
+            {{ /* repeat for sector_ranking 2 */ }},
+            {{ /* repeat for sector_ranking 3 */ }}
+        ]
+        }}
+        """
+
+    def get_market_analysis(self, today: date) -> MarketAnalysis:
+        cached = self.websearch_repository.get_analysis_by_date(today)
+        if cached:
+            return MarketAnalysis.model_validate(cached.value)
+
+        prompt = self._build_market_analysis_prompt(today.strftime("%Y-%m-%d"))
+        try:
+            response = self.ai_service.perplexity_completion(
+                prompt=prompt,
+                schema=MarketAnalysisResponse,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+        if not isinstance(response, MarketAnalysisResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        analysis = response.analysis
+        self.websearch_repository.create_analysis(today, analysis)
+        return analysis

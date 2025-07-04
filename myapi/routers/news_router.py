@@ -12,6 +12,7 @@ from myapi.domain.news.news_schema import (
     WebSearchMarketResponse,
     WebSearchResultSchema,
     SectorMomentumResponse,
+    MarketAnalysis,
 )
 from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
@@ -106,3 +107,15 @@ def sector_momentum(
     request_date = validate_date(request_date)
     result = websearch_service.analyze_sector_momentum(request_date)
     return result
+
+
+@router.get("/market-analysis", response_model=MarketAnalysis)
+@inject
+def market_analysis(
+    today: date,
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    today = validate_date(today)
+    return websearch_service.get_market_analysis(today)

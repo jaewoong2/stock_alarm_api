@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, String, DateTime, func
+from sqlalchemy import Column, Float, Integer, String, DateTime, Date, JSON, func
 
 from myapi.database import Base
 
@@ -33,3 +33,12 @@ class MarketForecast(Base):
     up_percentage = Column(Float, nullable=True)  # e.g., '70'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     source = Column(String, nullable=False)  # e.g., 'Major' or 'Minor'
+
+
+class AiAnalysisModel(Base):
+    __tablename__ = "ai_analysis"
+    __table_args__ = {"schema": "crypto"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, nullable=False, unique=True)
+    value = Column(JSON, nullable=False)
