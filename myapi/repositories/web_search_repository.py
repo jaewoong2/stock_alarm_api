@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, TypeVar, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
@@ -20,23 +20,10 @@ class WebSearchResultRepository:
     def __init__(self, db_session: Session):
         self.db_session = db_session
 
-    def _to_schema(self, obj: WebSearchResult) -> WebSearchResultSchema:
-        return WebSearchResultSchema(
-            id=obj.id,
-            result_type=obj.result_type,
-            ticker=obj.ticker,
-            date_yyyymmdd=obj.date_yyyymmdd,
-            headline=obj.headline,
-            summary=obj.summary,
-            detail_description=obj.detail_description,
-            recommendation=obj.recommendation,
-            created_at=obj.created_at.isoformat() if obj.created_at else None,
-        )
-
-    def bulk_create(self, records: List[WebSearchResult]) -> List[WebSearchResultSchema]:
+    def bulk_create(self, records: List[WebSearchResult]) -> List[WebSearchResult]:
         self.db_session.bulk_save_objects(records)
         self.db_session.commit()
-        return [self._to_schema(r) for r in records]
+        return records
 
     def get_search_results(
         self,
@@ -44,7 +31,7 @@ class WebSearchResultRepository:
         ticker: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-    ) -> List[WebSearchResultSchema]:
+    ) -> List[WebSearchResult]:
         query = self.db_session.query(WebSearchResult).filter(
             WebSearchResult.result_type == result_type
         )
@@ -59,7 +46,7 @@ class WebSearchResultRepository:
 
         query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
 
-        return [self._to_schema(r) for r in query.all()]
+        return query.all()
 
     def get_ticker_counts_by_recommendation(
         self, recommendation: str, limit: int, date: Optional[datetime.date]
@@ -165,6 +152,23 @@ class WebSearchResultRepository:
 
         return results
 
+    def safe_convert(self, value: Any, target_type: type = int) -> Optional[Any]:
+        """SQLAlchemy Column이나 다른 객체에서 안전하게 원하는 타입으로 변환합니다.
+
+        Args:
+            value: 변환할 값
+            target_type: 변환할 타입 (기본값: int)
+
+        Returns:
+            변환된 값 또는 None (변환 실패 시)
+        """
+        if value is None:
+            return None
+        try:
+            return target_type(value)
+        except (TypeError, ValueError):
+            return None
+
     def get_analysis_by_date(self, analysis_date: datetime.date) -> AiAnalysisVO | None:
         result = (
             self.db_session.query(AiAnalysisModel)
@@ -175,9 +179,15 @@ class WebSearchResultRepository:
         if not result:
             return None
 
-        return AiAnalysisVO(id=result.id, date=str(result.date), value=result.value)
+        return AiAnalysisVO(
+            id=self.safe_convert(result.id),
+            date=str(result.date),
+            value=result.value,
+        )
 
-    def create_analysis(self, analysis_date: datetime.date, analysis: MarketAnalysis) -> AiAnalysisVO:
+    def create_analysis(
+        self, analysis_date: datetime.date, analysis: MarketAnalysis
+    ) -> AiAnalysisVO:
         db_obj = AiAnalysisModel(
             date=analysis_date.strftime("%Y-%m-%d"),
             value=analysis.model_dump(mode="json"),
@@ -185,4 +195,8 @@ class WebSearchResultRepository:
         self.db_session.add(db_obj)
         self.db_session.commit()
         self.db_session.refresh(db_obj)
-        return AiAnalysisVO(id=db_obj.id, date=str(db_obj.date), value=db_obj.value)
+        return AiAnalysisVO(
+            id=self.safe_convert(db_obj.id),
+            date=str(db_obj.date),
+            value=db_obj.value,
+        )
