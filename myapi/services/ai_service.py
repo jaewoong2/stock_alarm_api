@@ -1,5 +1,5 @@
 # services/ai_service.py
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, Optional, Type, TypeVar
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
@@ -13,7 +13,6 @@ from myapi.utils.config import Settings
 from google import genai
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
-# T는 BaseModel을 상속하는 타입이어야 합니다.
 T = TypeVar("T", bound=BaseModel)
 
 
