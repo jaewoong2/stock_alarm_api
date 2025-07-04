@@ -4,17 +4,33 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
 from myapi.domain.news.news_models import MarketForecast, WebSearchResult
-from myapi.domain.news.news_schema import MarketForecastSchema
+from myapi.domain.news.news_schema import (
+    MarketForecastSchema,
+    WebSearchResultSchema,
+)
 
 
 class WebSearchResultRepository:
     def __init__(self, db_session: Session):
         self.db_session = db_session
 
-    def bulk_create(self, records: List[WebSearchResult]) -> List[WebSearchResult]:
+    def _to_schema(self, obj: WebSearchResult) -> WebSearchResultSchema:
+        return WebSearchResultSchema(
+            id=obj.id,
+            result_type=obj.result_type,
+            ticker=obj.ticker,
+            date_yyyymmdd=obj.date_yyyymmdd,
+            headline=obj.headline,
+            summary=obj.summary,
+            detail_description=obj.detail_description,
+            recommendation=obj.recommendation,
+            created_at=obj.created_at.isoformat() if obj.created_at else None,
+        )
+
+    def bulk_create(self, records: List[WebSearchResult]) -> List[WebSearchResultSchema]:
         self.db_session.bulk_save_objects(records)
         self.db_session.commit()
-        return records
+        return [self._to_schema(r) for r in records]
 
     def get_search_results(
         self,
@@ -22,7 +38,7 @@ class WebSearchResultRepository:
         ticker: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-    ) -> List[WebSearchResult]:
+    ) -> List[WebSearchResultSchema]:
         query = self.db_session.query(WebSearchResult).filter(
             WebSearchResult.result_type == result_type
         )
@@ -37,7 +53,7 @@ class WebSearchResultRepository:
 
         query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
 
-        return query.all()
+        return [self._to_schema(r) for r in query.all()]
 
     def get_ticker_counts_by_recommendation(
         self, recommendation: str, limit: int, date: Optional[datetime.date]

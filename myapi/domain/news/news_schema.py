@@ -35,3 +35,53 @@ class MarketForecastSchema(BaseModel):
     reason: str
     up_percentage: Optional[float] = None  # e.g., '70'
     created_at: Optional[str] = None  # ISO format string for datetime
+
+
+class WebSearchResultSchema(BaseModel):
+    id: Optional[int] = None
+    result_type: str
+    ticker: Optional[str] = None
+    date_yyyymmdd: str
+    headline: Optional[str] = None
+    summary: Optional[str] = None
+    detail_description: Optional[str] = None
+    recommendation: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class KeyNewsSchema(BaseModel):
+    headline: str
+    source: str
+    summary: str
+
+
+class StockMomentumSchema(BaseModel):
+    ticker: str
+    name: str
+    pre_market_change: str
+    key_news: KeyNewsSchema
+    short_term_strategy: str
+
+
+class SectorThemeSchema(BaseModel):
+    key_theme: str
+    stocks: List[StockMomentumSchema]
+
+
+class MomentumSectorSchema(BaseModel):
+    sector_ranking: int
+    sector: str
+    reason: str
+    risk_factor: str
+    themes: List[SectorThemeSchema]
+
+
+class MarketOverviewSchema(BaseModel):
+    summary: str
+    major_catalysts: List[str]
+
+
+class SectorMomentumResponse(BaseModel):
+    analysis_date_est: str
+    market_overview: MarketOverviewSchema
+    top_momentum_sectors: List[MomentumSectorSchema]

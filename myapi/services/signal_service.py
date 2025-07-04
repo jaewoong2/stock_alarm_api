@@ -1371,16 +1371,7 @@ class SignalService:
             result.append(
                 {
                     "ticker": ticker,
-                    "news": [
-                        {
-                            "date": it.date_yyyymmdd,
-                            "headline": it.headline,
-                            "summary": it.summary,
-                            "detail_description": it.detail_description,
-                            "recommendation": it.recommendation,
-                        }
-                        for it in items
-                    ],
+                    "news": [it.model_dump() for it in items],
                 }
             )
         return result

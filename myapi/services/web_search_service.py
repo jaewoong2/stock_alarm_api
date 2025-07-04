@@ -3,7 +3,11 @@ from typing import Literal
 
 
 from myapi.domain.news.news_models import MarketForecast
-from myapi.domain.news.news_schema import MarketForecastResponse, MarketForecastSchema
+from myapi.domain.news.news_schema import (
+    MarketForecastResponse,
+    MarketForecastSchema,
+    SectorMomentumResponse,
+)
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
 
@@ -72,7 +76,7 @@ class WebSearchService:
         if not isinstance(response, MarketForecastResponse):
             raise ValueError("Invalid response format from AI service")
 
-        self.websearch_repository.create(
+        created = self.websearch_repository.create(
             MarketForecast(
                 date_yyyymmdd=end_date,
                 outlook=response.outlook,
@@ -83,8 +87,33 @@ class WebSearchService:
         )
 
         cached = self.websearch_repository.get_by_date(
-            start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
+            start_date_yyyymmdd=start_date,
+            end_date_yyyymmdd=end_date,
+            source=source,
         )
 
         if cached:
             return cached
+
+        return [created]
+
+    def _build_sector_prompt(self, today: str) -> str:
+        return f"""
+미국 동부 시간(EST) 기준 오늘 ({today}) 증시 개장 전에, 단기(1~3일) 트레이딩 관점에서 가장 강력한 모멘텀이 예상되는 상위 3개 섹터를 분석하고, 그 핵심 배경을 구체적으로 설명해 줘.
+
+각 섹터별로 가장 주목해야 할 핵심 테마와 해당 테마의 주도주들을 아래의 JSON 형식에 맞춰 제공해 줘.
+
+{SectorMomentumResponse.model_json_schema()}
+"""
+
+    def analyze_sector_momentum(self, today: date) -> SectorMomentumResponse:
+        prompt = self._build_sector_prompt(today.strftime("%Y-%m-%d"))
+        response = self.ai_service.perplexity_completion(
+            prompt=prompt,
+            schema=SectorMomentumResponse,
+        )
+
+        if not isinstance(response, SectorMomentumResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        return response

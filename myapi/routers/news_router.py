@@ -10,6 +10,8 @@ from dependency_injector.wiring import inject, Provide
 from myapi.containers import Container
 from myapi.domain.news.news_schema import (
     WebSearchMarketResponse,
+    WebSearchResultSchema,
+    SectorMomentumResponse,
 )
 from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
@@ -18,7 +20,7 @@ from myapi.services.web_search_service import WebSearchService
 router = APIRouter(prefix="/news", tags=["news"])
 
 
-@router.get("/")
+@router.get("/", response_model=dict)
 @inject
 def get_news(
     ticker: Optional[str] = "",
@@ -32,7 +34,7 @@ def get_news(
         ticker=ticker,
         date=today_str,
     )
-    return {"result": result}
+    return {"result": [r.model_dump() for r in result]}
 
 
 @router.get("/recommendations")
@@ -46,13 +48,12 @@ def news_recommendations(
     valid_date = validate_date(
         request_date if request_date is not None else date.today()
     )
-    return {
-        "results": signal_service.get_ticker_news_by_recommendation(
-            recommendation=recommendation,
-            limit=limit,
-            date=valid_date,
-        )
-    }
+    results = signal_service.get_ticker_news_by_recommendation(
+        recommendation=recommendation,
+        limit=limit,
+        date=valid_date,
+    )
+    return {"results": results}
 
 
 @router.get(
@@ -92,3 +93,16 @@ def market_forecast(
     forecast_date = validate_date(forecast_date)
 
     return websearch_service.forecast_market(forecast_date, source=source)
+
+
+@router.get("/sector-momentum")
+@inject
+def sector_momentum(
+    request_date: date = date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    request_date = validate_date(request_date)
+    result = websearch_service.analyze_sector_momentum(request_date)
+    return result
