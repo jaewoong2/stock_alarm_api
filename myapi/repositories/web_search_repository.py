@@ -152,7 +152,7 @@ class WebSearchResultRepository:
 
         return results
 
-    def safe_convert(self, value: Any, target_type: type = int) -> Optional[Any]:
+    def safe_convert(self, value: Any, target_type: type = int):
         """SQLAlchemy Column이나 다른 객체에서 안전하게 원하는 타입으로 변환합니다.
 
         Args:
@@ -182,15 +182,15 @@ class WebSearchResultRepository:
         return AiAnalysisVO(
             id=self.safe_convert(result.id),
             date=str(result.date),
-            value=result.value,
+            value=MarketAnalysis.model_validate(
+                result.value
+            ),  # model_validate_json 대신 model_validate 사용
         )
 
-    def create_analysis(
-        self, analysis_date: datetime.date, analysis: MarketAnalysis
-    ) -> AiAnalysisVO:
+    def create_analysis(self, analysis_date: datetime.date, analysis: MarketAnalysis):
         db_obj = AiAnalysisModel(
             date=analysis_date.strftime("%Y-%m-%d"),
-            value=analysis.model_dump(mode="json"),
+            value=analysis.model_dump(mode="json"),  # 이 부분은 올바릅니다
         )
         self.db_session.add(db_obj)
         self.db_session.commit()
@@ -198,5 +198,5 @@ class WebSearchResultRepository:
         return AiAnalysisVO(
             id=self.safe_convert(db_obj.id),
             date=str(db_obj.date),
-            value=db_obj.value,
+            value=analysis,  # 이미 MarketAnalysis 객체이므로 변환 필요 없음
         )

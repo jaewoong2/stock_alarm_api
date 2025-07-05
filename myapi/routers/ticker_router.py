@@ -1,5 +1,6 @@
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from yfinance import Ticker
 
 from myapi.utils.auth import verify_bearer_token
 from typing import List, Literal, Optional
@@ -15,6 +16,7 @@ from myapi.domain.ticker.ticker_schema import (
     SignalAccuracyResponse,
     TickerCreate,
     TickerLatestWithChangeResponse,
+    TickerOrderBy,
     TickerResponse,
     TickerUpdate,
     TickerMultiDateQuery,
@@ -288,3 +290,26 @@ def get_weekly_price_movement(
     return {
         "tickers": tickers_with_count,
     }
+
+
+@router.get("/order-by/date")
+@inject
+def get_tickers_ordered_by(
+    target_date: Optional[date] = date.today(),
+    direction: Literal["asc", "desc"] = "asc",
+    field: Literal["close_change", "volume_change"] = "close_change",
+    limit: int = 20,
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """
+    티커를 심볼, 가격, 변화율에 따라 정렬하여 조회합니다.
+    """
+
+    target_date = validate_date(target_date) if target_date else date.today()
+    target_date_yesterday = target_date - timedelta(days=1)
+
+    response = ticker_service.get_ticker_orderby(
+        target_date_yesterday, TickerOrderBy(field=field, direction=direction), limit
+    )
+
+    return response

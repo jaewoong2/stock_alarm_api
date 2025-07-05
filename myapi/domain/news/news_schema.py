@@ -132,7 +132,4 @@ class MarketAnalysisResponse(BaseModel):
 class AiAnalysisVO(BaseModel):
     id: Optional[int]
     date: str  # ISO format string for date
-    value: dict  # JSON object containing the analysis data
-
-    class Config:
-        orm_mode = True  # Enable ORM mode for compatibility with SQLAlchemy models
+    value: MarketAnalysis  # JSON object containing the analysis data

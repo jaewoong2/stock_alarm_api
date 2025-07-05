@@ -7,7 +7,6 @@ from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import (
     MarketForecastResponse,
     MarketForecastSchema,
-    SectorMomentumResponse,
     MarketAnalysis,
     MarketAnalysisResponse,
 )
@@ -100,34 +99,13 @@ class WebSearchService:
 
         return [created]
 
-    def _build_sector_prompt(self, today: str) -> str:
-        return f"""
-미국 동부 시간(EST) 기준 오늘 ({today}) 증시 개장 전에, 단기(1~3일) 트레이딩 관점에서 가장 강력한 모멘텀이 예상되는 상위 3개 섹터를 분석하고, 그 핵심 배경을 구체적으로 설명해 줘.
-
-각 섹터별로 가장 주목해야 할 핵심 테마와 해당 테마의 주도주들을 아래의 JSON 형식에 맞춰 제공해 줘.
-
-{SectorMomentumResponse.model_json_schema()}
-"""
-
-    def analyze_sector_momentum(self, today: date) -> SectorMomentumResponse:
-        prompt = self._build_sector_prompt(today.strftime("%Y-%m-%d"))
-        response = self.ai_service.perplexity_completion(
-            prompt=prompt,
-            schema=SectorMomentumResponse,
-        )
-
-        if not isinstance(response, SectorMomentumResponse):
-            raise ValueError("Invalid response format from AI service")
-
-        return response
-
     def _build_market_analysis_prompt(self, today: str) -> str:
         return f"""
         ## Advanced Prompt (copy & paste)
 
         > **“As of U.S. Eastern Time *prior to today’s cash-market open* (EST), analyze the top *three* sectors with the strongest expected **1-to-3-day momentum** for short-term trading.”**
         >
-        > 1. Begin with a **one-paragraph market overview** that summarizes the overnight macro backdrop and lists up to three *major catalysts* (time-stamped in EST).
+        > 1. Begin with a **one-paragraph market overview** that summarizes the today`s macro backdrop and lists up to three *major catalysts* (time-stamped in EST).
         > 2. Rank the three sectors by momentum strength (1 = highest).
         > 3. For each sector, provide the details below in **valid JSON** that the system can parse.
         > 4. Your analysis must explain not only **what** is happening but also **why** it matters and **how** traders might act.
@@ -139,18 +117,18 @@ class WebSearchService:
         {{
         "analysis_date_est": "{today}",
         "market_overview": {{
-            "summary": "<75-word snapshot of the overnight session>",
+            "summary": "<75-word summary of today`s macro conditions and predict market direction>",
             "major_catalysts": [
-            "EST HH:MM - <event one>",
-            "EST HH:MM - <event two>",
-            "EST HH:MM - <event three>"
+                "<Today`s key catalyst 1 with timestamp in EST> And Senario",
+                "<Today`s key catalyst 2 with timestamp in EST> And Senario",
+                "<Today`s key catalyst 3 with timestamp in EST> And Senario"
             ]
         }},
         "top_momentum_sectors": [
             {{
             "sector_ranking": 1,
             "sector": "<name>",
-            "reason": "<2-3 sentences on why momentum is strongest>",
+            "reason": "<why momentum is strongest with rationale and how to move the prices>",
             "risk_factor": "<specific near-term threat that could stall the move>",
             "themes": [
                 {{
@@ -165,7 +143,7 @@ class WebSearchService:
                         "source": "<publication>",
                         "summary": "<1-sentence essence>"
                     }},
-                    "short_term_strategy": "If <technical or news condition>, consider <actionable trade idea with entry/exit levels or triggers>."
+                    "short_term_strategy": "If <technical or news condition>, consider <actionable trade idea with entry/exit levels or triggers>. forcast: <short-term price target with rationale>"
                     }}
                 ]
                 }}
@@ -177,7 +155,7 @@ class WebSearchService:
         }}
         """
 
-    def get_market_analysis(self, today: date) -> MarketAnalysis:
+    def get_market_analysis(self, today: date):
         cached = self.websearch_repository.get_analysis_by_date(today)
         if cached:
             return MarketAnalysis.model_validate(cached.value)

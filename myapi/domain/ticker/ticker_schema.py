@@ -1,5 +1,5 @@
 import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -132,3 +132,12 @@ class UpdateTickerRequest(BaseModel):
 
     start_date: Optional[str]  # 시작 날짜 (YYYY-MM-DD 형식)
     end_date: Optional[str]  # 종료 날짜 (YYYY-MM-DD 형식)
+
+
+class TickerOrderBy(BaseModel):
+    """티커 정렬 기준 스키마"""
+
+    field: Literal["close_change", "volume_change"] = (
+        "close_change"  # 정렬할 필드 이름 (예: 'price', 'date')
+    )
+    direction: Literal["asc", "desc"] = "desc"  # 정렬 방향 ('asc' 또는 'desc')

@@ -21,7 +21,7 @@ from myapi.services.web_search_service import WebSearchService
 router = APIRouter(prefix="/news", tags=["news"])
 
 
-@router.get("/", response_model=dict)
+@router.get("/")
 @inject
 def get_news(
     ticker: Optional[str] = "",
@@ -35,7 +35,7 @@ def get_news(
         ticker=ticker,
         date=today_str,
     )
-    return {"result": [r.model_dump() for r in result]}
+    return {"result": result}
 
 
 @router.get("/recommendations")
@@ -96,23 +96,10 @@ def market_forecast(
     return websearch_service.forecast_market(forecast_date, source=source)
 
 
-@router.get("/sector-momentum")
-@inject
-def sector_momentum(
-    request_date: date = date.today(),
-    websearch_service: WebSearchService = Depends(
-        Provide[Container.services.websearch_service]
-    ),
-):
-    request_date = validate_date(request_date)
-    result = websearch_service.analyze_sector_momentum(request_date)
-    return result
-
-
-@router.get("/market-analysis", response_model=MarketAnalysis)
+@router.get("/market-analysis")
 @inject
 def market_analysis(
-    today: date,
+    today: date = date.today(),
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),

@@ -9,6 +9,7 @@ from myapi.domain.ticker.ticker_schema import (
     SignalAccuracyResponse,
     TickerCreate,
     TickerLatestWithChangeResponse,
+    TickerOrderBy,
     TickerResponse,
     TickerUpdate,
     TickerChangeResponse,
@@ -433,4 +434,21 @@ class TickerService:
         direction: str,
     ) -> List[Dict[str, int]]:
         """기간 동안 가격 상승/하락 횟수를 반환합니다."""
-        return self.ticker_repository.count_price_movements(symbols, start_date, end_date, direction)
+        return self.ticker_repository.count_price_movements(
+            symbols, start_date, end_date, direction
+        )
+
+    def get_ticker_orderby(self, date: date, order_by: TickerOrderBy, limit: int = 20):
+        """
+        특정 날짜의 티커 정보를 가져오고, 지정된 필드로 정렬합니다.
+
+        Args:
+            date: 조회할 날짜
+            order_by: 정렬 기준 필드 (기본값: 'date')
+
+        Returns:
+            List of TickerResponse objects sorted by the specified field.
+        """
+        tickers = self.ticker_repository.get_ticker_order_by(date, order_by, limit)
+
+        return tickers

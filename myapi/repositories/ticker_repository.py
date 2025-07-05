@@ -4,7 +4,13 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from myapi.domain.ticker.ticker_model import Ticker
-from myapi.domain.ticker.ticker_schema import TickerCreate, TickerUpdate, TickerVO
+from myapi.domain.ticker.ticker_schema import (
+    TickerChangeResponse,
+    TickerCreate,
+    TickerOrderBy,
+    TickerUpdate,
+    TickerVO,
+)
 
 
 class TickerRepository:
@@ -206,3 +212,123 @@ class TickerRepository:
             )
 
         return final_results
+
+    def get_ticker_order_by(
+        self, date_value: date, order_by: TickerOrderBy, limit=10
+    ) -> List[TickerChangeResponse]:
+        """
+        특정 날짜의 티커를 close_change 또는 volume_change 기준으로 정렬하여 조회합니다.
+        전날 데이터와 비교하여 변화율을 계산하고 TickerChangeResponse 형태로 반환합니다.
+        ORM을 활용한 단일 쿼리 최적화 버전.
+        """
+        # 전날 날짜 계산
+        prev_date = date_value - timedelta(days=1)
+
+        # 현재 날짜의 티커 데이터를 위한 서브쿼리
+        current_day = (
+            self.db_session.query(
+                Ticker.symbol.label("symbol"),
+                Ticker.date.label("date"),
+                Ticker.open_price.label("open_price"),
+                Ticker.high_price.label("high_price"),
+                Ticker.low_price.label("low_price"),
+                Ticker.close_price.label("close_price"),
+                Ticker.volume.label("volume"),
+            )
+            .filter(Ticker.date == date_value)
+            .subquery("current_day")
+        )
+
+        # 전날의 티커 데이터를 위한 서브쿼리
+        prev_day = (
+            self.db_session.query(
+                Ticker.symbol.label("symbol"),
+                Ticker.open_price.label("prev_open_price"),
+                Ticker.close_price.label("prev_close_price"),
+                Ticker.volume.label("prev_volume"),
+            )
+            .filter(Ticker.date == prev_date)
+            .subquery("prev_day")
+        )
+
+        # 두 서브쿼리를 조인하고 변화율 계산
+        close_change = (
+            (current_day.c.close_price - prev_day.c.prev_close_price)
+            / func.nullif(prev_day.c.prev_close_price, 0)
+            * 100
+        ).label("close_change")
+
+        open_change = (
+            (current_day.c.open_price - prev_day.c.prev_open_price)
+            / func.nullif(prev_day.c.prev_open_price, 0)
+            * 100
+        ).label("open_change")
+
+        price_change = (
+            (current_day.c.close_price - prev_day.c.prev_close_price)
+            / func.nullif(prev_day.c.prev_close_price, 0)
+            * 100
+        ).label("price_change")
+
+        volume_change = (
+            (current_day.c.volume - prev_day.c.prev_volume)
+            / func.nullif(prev_day.c.prev_volume, 0)
+            * 100
+        ).label("volume_change")
+
+        query = self.db_session.query(
+            current_day.c.symbol,
+            current_day.c.date,
+            current_day.c.open_price,
+            current_day.c.high_price,
+            current_day.c.low_price,
+            current_day.c.close_price,
+            current_day.c.volume,
+            close_change,
+            open_change,
+            price_change,
+            volume_change,
+        ).join(
+            prev_day,
+            current_day.c.symbol == prev_day.c.symbol,
+            # isouter=True,  # LEFT OUTER JOIN으로 전일 데이터가 없는 경우도 포함
+        )
+
+        # 정렬 적용 (NULL 값 처리)
+        if order_by.field == "close_change":
+            if order_by.direction == "desc":
+                # NULL을 마지막으로 정렬 (IS NULL은 True/False 반환)
+                query = query.order_by(close_change.is_(None), close_change.desc())
+            else:
+                query = query.order_by(close_change.is_(None), close_change)
+        elif order_by.field == "volume_change":
+            if order_by.direction == "desc":
+                query = query.order_by(volume_change.is_(None), volume_change.desc())
+            else:
+                query = query.order_by(volume_change.is_(None), volume_change)
+
+        # 결과 제한
+        query = query.limit(limit)
+
+        # 쿼리 실행 및 결과 변환
+        results = query.all()
+
+        # 결과를 TickerChangeResponse 객체로 변환
+        ticker_changes = []
+        for row in results:
+            ticker_change = TickerChangeResponse(
+                symbol=row.symbol or "",
+                date=row.date or date_value,
+                open_price=row.open_price,
+                high_price=row.high_price,
+                low_price=row.low_price,
+                close_price=row.close_price,
+                volume=row.volume,
+                close_change=row.close_change,
+                open_change=row.open_change,
+                price_change=row.price_change,
+                volume_change=row.volume_change,
+            )
+            ticker_changes.append(ticker_change)
+
+        return ticker_changes
