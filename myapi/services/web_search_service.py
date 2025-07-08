@@ -52,21 +52,30 @@ class WebSearchService:
         \n
         """
 
-    def forecast_market(self, today: date, source: Literal["Major", "Minor"] = "Major"):
-        #  2주간 움직임
+    def get_market_forecast(
+        self, today: date, source: Literal["Major", "Minor"] = "Major"
+    ):
+        """Return cached market forecast if available."""
+
         start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-        end_date = (today).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
 
         cached = self.websearch_repository.get_by_date(
             start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
         )
 
         if cached:
-            cached_latest = cached[-1]
+            return cached
 
-            if isinstance(cached_latest, MarketForecastSchema):
-                if cached_latest.date_yyyymmdd == end_date:
-                    return cached
+        raise HTTPException(status_code=404, detail="Forecast not found")
+
+    def create_market_forecast(
+        self, today: date, source: Literal["Major", "Minor"] = "Major"
+    ):
+        """Create a new market forecast using the AI service."""
+
+        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
 
         prompt = self._build_prompt(end_date, source)
 
@@ -78,7 +87,7 @@ class WebSearchService:
         if not isinstance(response, MarketForecastResponse):
             raise ValueError("Invalid response format from AI service")
 
-        created = self.websearch_repository.create(
+        self.websearch_repository.create(
             MarketForecast(
                 date_yyyymmdd=end_date,
                 outlook=response.outlook,
@@ -94,10 +103,7 @@ class WebSearchService:
             source=source,
         )
 
-        if cached:
-            return cached
-
-        return [created]
+        return cached if cached else []
 
     def _build_market_analysis_prompt(self, today: str) -> str:
         return f"""
@@ -156,9 +162,15 @@ class WebSearchService:
         """
 
     def get_market_analysis(self, today: date):
+        """Return cached market analysis if available."""
         cached = self.websearch_repository.get_analysis_by_date(today)
         if cached:
             return MarketAnalysis.model_validate(cached.value)
+
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    def create_market_analysis(self, today: date):
+        """Generate and store market analysis using the AI service."""
 
         prompt = self._build_market_analysis_prompt(today.strftime("%Y-%m-%d"))
         try:

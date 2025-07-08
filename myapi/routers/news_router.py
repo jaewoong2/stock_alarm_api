@@ -93,7 +93,21 @@ def market_forecast(
 ):
     forecast_date = validate_date(forecast_date)
 
-    return websearch_service.forecast_market(forecast_date, source=source)
+    return websearch_service.get_market_forecast(forecast_date, source=source)
+
+
+@router.post("/market-forecast")
+@inject
+def create_market_forecast(
+    forecast_date: date = date.today(),
+    source: Literal["Major", "Minor"] = "Major",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    forecast_date = validate_date(forecast_date)
+
+    return websearch_service.create_market_forecast(forecast_date, source=source)
 
 
 @router.get("/market-analysis")
@@ -106,3 +120,15 @@ def market_analysis(
 ):
     today = validate_date(today)
     return websearch_service.get_market_analysis(today)
+
+
+@router.post("/market-analysis")
+@inject
+def create_market_analysis(
+    today: date = date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    today = validate_date(today)
+    return websearch_service.create_market_analysis(today)
