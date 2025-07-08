@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional
 from datetime import date, timedelta
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from myapi.domain.ticker.ticker_schema import (
     TickerUpdate,
     TickerVO,
 )
+from myapi.utils.utils import get_prev_date
 
 
 class TickerRepository:
@@ -221,9 +222,6 @@ class TickerRepository:
         전날 데이터와 비교하여 변화율을 계산하고 TickerChangeResponse 형태로 반환합니다.
         ORM을 활용한 단일 쿼리 최적화 버전.
         """
-        # 전날 날짜 계산
-        prev_date = date_value - timedelta(days=1)
-
         # 현재 날짜의 티커 데이터를 위한 서브쿼리
         current_day = (
             self.db_session.query(
@@ -235,11 +233,22 @@ class TickerRepository:
                 Ticker.close_price.label("close_price"),
                 Ticker.volume.label("volume"),
             )
-            .filter(Ticker.date == date_value)
+            .filter(Ticker.date == date_value.strftime("%Y-%m-%d"))
             .subquery("current_day")
         )
 
-        # 전날의 티커 데이터를 위한 서브쿼리
+        # 실제 이전 거래일 데이터를 찾는 서브쿼리
+        # 각 심볼별로 현재 날짜보다 이전인 날짜 중 가장 최근 날짜를 찾음
+        prev_trading_date_subquery = (
+            self.db_session.query(
+                Ticker.symbol, func.max(Ticker.date).label("prev_date")
+            )
+            .filter(Ticker.date < date_value.strftime("%Y-%m-%d"))
+            .group_by(Ticker.symbol)
+            .subquery("prev_trading_dates")
+        )
+
+        # 이전 거래일의 실제 데이터를 가져오는 서브쿼리
         prev_day = (
             self.db_session.query(
                 Ticker.symbol.label("symbol"),
@@ -247,7 +256,11 @@ class TickerRepository:
                 Ticker.close_price.label("prev_close_price"),
                 Ticker.volume.label("prev_volume"),
             )
-            .filter(Ticker.date == prev_date)
+            .join(
+                prev_trading_date_subquery,
+                (Ticker.symbol == prev_trading_date_subquery.c.symbol)
+                & (Ticker.date == prev_trading_date_subquery.c.prev_date),
+            )
             .subquery("prev_day")
         )
 
@@ -291,13 +304,11 @@ class TickerRepository:
         ).join(
             prev_day,
             current_day.c.symbol == prev_day.c.symbol,
-            # isouter=True,  # LEFT OUTER JOIN으로 전일 데이터가 없는 경우도 포함
         )
 
         # 정렬 적용 (NULL 값 처리)
         if order_by.field == "close_change":
             if order_by.direction == "desc":
-                # NULL을 마지막으로 정렬 (IS NULL은 True/False 반환)
                 query = query.order_by(close_change.is_(None), close_change.desc())
             else:
                 query = query.order_by(close_change.is_(None), close_change)

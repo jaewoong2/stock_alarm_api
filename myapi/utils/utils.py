@@ -360,6 +360,42 @@ def format_signal_embed(response: SignalPromptResponse, model: str):
         "color": (
             0x2ECC71 if "BUY" in (response.recommendation or "").upper() else 0xE74C3C
         ),
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        # "timestamp": datetime.datetime.now().isoformat() + "Z",  # ISO 8601 형식
     }
     return [embed]
+
+
+from datetime import datetime, timedelta
+
+
+def get_prev_date(date=None):
+    """
+    주어진 날짜의 이전 영업일(워크데이)을 반환합니다.
+    월요일이면 금요일, 나머지 평일이면 전날을 반환합니다.
+
+    Args:
+        date: datetime 객체 또는 None (None이면 오늘 날짜 사용)
+
+    Returns:
+        datetime: 이전 영업일
+    """
+    if date is None:
+        date = datetime.now()
+
+    # 요일 확인 (0=월요일, 1=화요일, ..., 6=일요일)
+    weekday = date.weekday()
+
+    if weekday == 0:  # 월요일
+        # 3일 전 (금요일)
+        prev_date = date - timedelta(days=3)
+    elif weekday == 6:  # 일요일
+        # 2일 전 (금요일)
+        prev_date = date - timedelta(days=2)
+    elif weekday == 5:  # 토요일
+        # 1일 전 (금요일)
+        prev_date = date - timedelta(days=1)
+    else:  # 화요일~금요일
+        # 1일 전
+        prev_date = date - timedelta(days=1)
+
+    return prev_date

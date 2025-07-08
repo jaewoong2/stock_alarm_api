@@ -25,6 +25,7 @@ from myapi.domain.ticker.ticker_schema import (
 )
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.ticker_service import TickerService
+from myapi.utils.utils import get_prev_date
 
 router = APIRouter(
     prefix="/tickers",
@@ -306,7 +307,7 @@ def get_tickers_ordered_by(
     """
 
     target_date = validate_date(target_date) if target_date else date.today()
-    target_date_yesterday = target_date - timedelta(days=1)
+    target_date_yesterday = get_prev_date(target_date)
 
     response = ticker_service.get_ticker_orderby(
         target_date_yesterday, TickerOrderBy(field=field, direction=direction), limit
