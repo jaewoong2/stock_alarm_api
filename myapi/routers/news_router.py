@@ -96,7 +96,10 @@ def market_forecast(
     return websearch_service.get_market_forecast(forecast_date, source=source)
 
 
-@router.post("/market-forecast")
+@router.post(
+    "/market-forecast",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 def create_market_forecast(
     forecast_date: date = date.today(),
@@ -122,7 +125,10 @@ def market_analysis(
     return websearch_service.get_market_analysis(today)
 
 
-@router.post("/market-analysis")
+@router.post(
+    "/market-analysis",
+    dependencies=[Depends(verify_bearer_token)],
+)
 @inject
 def create_market_analysis(
     today: date = date.today(),
