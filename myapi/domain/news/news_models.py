@@ -42,3 +42,4 @@ class AiAnalysisModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False, unique=True)
     value = Column(JSON, nullable=False)
+    name = Column(String, nullable=False)
