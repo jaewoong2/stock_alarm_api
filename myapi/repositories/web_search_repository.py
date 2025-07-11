@@ -10,7 +10,6 @@ from myapi.domain.news.news_models import (
 )
 from myapi.domain.news.news_schema import (
     MarketForecastSchema,
-    WebSearchResultSchema,
     MarketAnalysis,
     AiAnalysisVO,
 )
@@ -191,6 +190,7 @@ class WebSearchResultRepository:
         db_obj = AiAnalysisModel(
             date=analysis_date.strftime("%Y-%m-%d"),
             value=analysis.model_dump(mode="json"),  # 이 부분은 올바릅니다
+            name="market_overview",
         )
         self.db_session.add(db_obj)
         self.db_session.commit()

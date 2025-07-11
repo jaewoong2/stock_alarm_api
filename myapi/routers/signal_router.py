@@ -545,7 +545,7 @@ async def get_weekly_action_count(
 
     reference_date = validate_date(reference_date if reference_date else date.today())
 
-    result = await db_signal_service.get_weekly_action_counts(
+    result = db_signal_service.get_weekly_action_counts(
         ticker_list, reference_date, action
     )
 

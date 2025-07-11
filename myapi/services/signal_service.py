@@ -1328,6 +1328,14 @@ class SignalService:
         │ • Use Google Search with recency around {date} to gather information.
         │ • Return "NO DATA" if nothing relevant is found.
         ╰─ END PROTOCOL
+
+        ╭─ Ecah Item EXAMPLE Will Be List
+            issued_YYYYMMDD: str (yyyymmdd)
+            headline: str
+            summary: str
+            full_description: str (With Refrerence Links)
+            recommendation: Literal["Buy", "Hold", "Sell"]
+        ╰─ END EXAMPLE
         """
         return prompt
 
