@@ -41,4 +41,5 @@ class AiAnalysisModel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False, unique=True)
+    name = Column(String, nullable=False, default="market_analysis")
     value = Column(JSON, nullable=False)

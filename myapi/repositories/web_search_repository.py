@@ -169,34 +169,78 @@ class WebSearchResultRepository:
         except (TypeError, ValueError):
             return None
 
-    def get_analysis_by_date(self, analysis_date: datetime.date) -> AiAnalysisVO | None:
+    def get_analysis_by_date(
+        self,
+        analysis_date: datetime.date,
+        name: str = "market_analysis",
+        schema: type | None = MarketAnalysis,
+    ) -> AiAnalysisVO | None:
+        """Fetch analysis data for a given date and type.
+
+        Parameters
+        ----------
+        analysis_date: datetime.date
+            Date of the analysis to retrieve.
+        name: str
+            Identifier of the analysis type. Defaults to ``"market_analysis"``.
+        schema: Optional[type]
+            Pydantic schema used to validate the stored value. If ``None`` the
+            raw JSON value is returned.
+        """
+
         result = (
             self.db_session.query(AiAnalysisModel)
-            .filter(AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"))
+            .filter(
+                AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                AiAnalysisModel.name == name,
+            )
             .first()
         )
 
         if not result:
             return None
 
+        value = result.value
+        if schema is not None:
+            try:
+                value = schema.model_validate(value)
+            except Exception:
+                # Fall back to raw value if validation fails
+                value = result.value
+
         return AiAnalysisVO(
             id=self.safe_convert(result.id),
             date=str(result.date),
-            value=MarketAnalysis.model_validate(
-                result.value
-            ),  # model_validate_json 대신 model_validate 사용
+            name=result.name,
+            value=value,
         )
 
-    def create_analysis(self, analysis_date: datetime.date, analysis: MarketAnalysis):
+    def create_analysis(
+        self,
+        analysis_date: datetime.date,
+        analysis: Any,
+        name: str = "market_analysis",
+    ) -> AiAnalysisVO:
+        """Store analysis data for a given date and type."""
+
+        value = (
+            analysis.model_dump(mode="json")
+            if hasattr(analysis, "model_dump")
+            else analysis
+        )
+
         db_obj = AiAnalysisModel(
             date=analysis_date.strftime("%Y-%m-%d"),
-            value=analysis.model_dump(mode="json"),  # 이 부분은 올바릅니다
+            name=name,
+            value=value,
         )
         self.db_session.add(db_obj)
         self.db_session.commit()
         self.db_session.refresh(db_obj)
+
         return AiAnalysisVO(
             id=self.safe_convert(db_obj.id),
             date=str(db_obj.date),
-            value=analysis,  # 이미 MarketAnalysis 객체이므로 변환 필요 없음
+            name=db_obj.name,
+            value=analysis,
         )

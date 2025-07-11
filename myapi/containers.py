@@ -11,6 +11,7 @@ from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
 from myapi.services.ticker_service import TickerService
 from myapi.services.web_search_service import WebSearchService
+from myapi.services.translate_service import TranslateService
 from myapi.utils.config import Settings
 
 
@@ -61,6 +62,12 @@ class ServiceModule(containers.DeclarativeContainer):
         websearch_repository=repositories.web_search_repository,
         ai_service=ai_service,
     )
+    translate_service = providers.Factory(
+        TranslateService,
+        signals_repository=repositories.signals_repository,
+        analysis_repository=repositories.web_search_repository,
+        ai_service=ai_service,
+    )
 
 
 class Container(containers.DeclarativeContainer):
@@ -72,6 +79,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.ticker_router",
             "myapi.routers.news_router",
             "myapi.routers.auth_router",
+            "myapi.routers.translate_router",
         ]
     )
 

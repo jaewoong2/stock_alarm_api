@@ -8,7 +8,13 @@ from starlette.middleware.cors import CORSMiddleware
 
 from myapi import containers
 from myapi.exceptions.index import ServiceException
-from myapi.routers import auth_router, news_router, signal_router, ticker_router
+from myapi.routers import (
+    auth_router,
+    news_router,
+    signal_router,
+    ticker_router,
+    translate_router,
+)
 from myapi.utils.config import init_logging
 
 
@@ -97,4 +103,5 @@ app.include_router(signal_router.router)
 app.include_router(ticker_router.router)
 app.include_router(news_router.router)
 app.include_router(auth_router.router)
+app.include_router(translate_router.router)
 handler = Mangum(app)
