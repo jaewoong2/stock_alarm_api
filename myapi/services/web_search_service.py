@@ -163,7 +163,7 @@ class WebSearchService:
 
     def get_market_analysis(self, today: date):
         """Return cached market analysis if available."""
-        cached = self.websearch_repository.get_analysis_by_date(today)
+        cached = self.websearch_repository.get_analysis_by_date(today, name="market_analysis")
         if cached:
             return MarketAnalysis.model_validate(cached.value)
 
@@ -185,5 +185,5 @@ class WebSearchService:
             raise ValueError("Invalid response format from AI service")
 
         analysis = response.analysis
-        self.websearch_repository.create_analysis(today, analysis)
+        self.websearch_repository.create_analysis(today, analysis, name="market_analysis")
         return analysis

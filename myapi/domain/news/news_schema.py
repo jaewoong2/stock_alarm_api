@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -132,4 +132,5 @@ class MarketAnalysisResponse(BaseModel):
 class AiAnalysisVO(BaseModel):
     id: Optional[int]
     date: str  # ISO format string for date
-    value: MarketAnalysis  # JSON object containing the analysis data
+    name: str
+    value: Any  # JSON object containing the analysis data

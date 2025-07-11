@@ -521,7 +521,7 @@ class SignalsRepository:
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
 
-    def count_signals_by_action(
+    async def count_signals_by_action(
         self,
         tickers: Optional[List[str]],
         start_date: datetime,

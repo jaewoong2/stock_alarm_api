@@ -410,7 +410,7 @@ class DBSignalService:
             )
             return []
 
-    async def get_weekly_action_counts(
+    def get_weekly_action_counts(
         self,
         tickers: Optional[List[str]],
         reference_date: date,
@@ -427,9 +427,11 @@ class DBSignalService:
             end_dt = datetime.combine(reference_date, datetime.max.time())
             start_dt = end_dt - timedelta(days=6)
 
-            return self.repository.count_signals_by_action(
+            result = self.repository.count_signals_by_action(
                 tickers, start_dt, end_dt, action
             )
+
+            return result
         except HTTPException as e:
             raise e
         except Exception as e:
