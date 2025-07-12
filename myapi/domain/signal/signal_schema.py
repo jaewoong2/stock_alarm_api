@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from datetime import date, datetime
 from typing import List, Dict, Literal, Optional
 
+
 Strategy = Literal[
     "PULLBACK",
     "OVERSOLD",
@@ -298,6 +299,12 @@ class SignalBase(BaseModel):
     result_description: Optional[str] = None
     report_summary: Optional[str] = None
     strategy: Optional[str] = None
+    close_price: Optional[float] = None  # 거래 종료 가격
+    ai_model: Optional[str] = "OPENAI"  # AI 모델 이름
+    senario: Optional[str] = None  # 시나리오 설명 250606 추가
+    good_things: Optional[str] = None  # 좋은 점 250606 추가
+    bad_things: Optional[str] = None  # 나쁜 점 250606 추가
+    chart_pattern: Optional[ChartPattern] = None  # 차트 패턴 정보
 
 
 class SignalVO(SignalBase):
@@ -387,9 +394,7 @@ class GenerateSignalResultRequest(BaseModel):
     Response schema for the generate signal result endpoint.
     """
 
-    ai: Literal["OPENAI", "GOOGLE"] = (
-        "OPENAI"  # Store the AI model used for the signal
-    )
+    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
     data: SignalPromptData
     summary: str
     prompt: str

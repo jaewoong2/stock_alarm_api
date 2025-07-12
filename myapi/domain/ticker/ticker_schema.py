@@ -1,4 +1,4 @@
-import datetime
+from datetime import date as date_, datetime
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
@@ -14,9 +14,9 @@ class TickerVO(BaseModel):
     low_price: Optional[float] = None
     close_price: Optional[float] = None
     volume: Optional[int] = None
-    date: Optional[datetime.date] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    date: Optional[date_] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -34,7 +34,7 @@ class TickerCreate(TickerBase):
     low_price: Optional[float] = None
     close_price: Optional[float] = None
     volume: Optional[int] = None
-    date: Optional[datetime.date] = None
+    date: Optional[date_] = None
 
 
 class TickerUpdate(BaseModel):
@@ -45,7 +45,7 @@ class TickerUpdate(BaseModel):
     low_price: Optional[float] = None
     close_price: Optional[float] = None
     volume: Optional[int] = None
-    date: Optional[datetime.date] = None
+    date: Optional[date_] = None
 
 
 class TickerResponse(BaseModel):
@@ -58,9 +58,9 @@ class TickerResponse(BaseModel):
     low_price: Optional[float] = None
     close_price: Optional[float] = None
     volume: Optional[int] = None
-    date: Optional[datetime.date] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    date: Optional[date_] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -69,18 +69,18 @@ class TickerResponse(BaseModel):
 # 날짜 기반 요청을 위한 스키마
 class TickerDateQuery(BaseModel):
     symbol: str
-    date: datetime.date
+    date: date_
 
 
 # 다중 날짜 비교 요청을 위한 스키마
 class TickerMultiDateQuery(BaseModel):
     symbol: str
-    dates: List[datetime.date]
+    dates: List[date_]
 
 
 # 날짜별 변화율 응답을 위한 스키마
 class TickerChangeResponse(BaseModel):
-    date: datetime.date
+    date: date_
     symbol: str
     open_price: Optional[float] = None
     high_price: Optional[float] = None
@@ -104,8 +104,8 @@ class SignalAccuracyResponse(BaseModel):
     ticker: str
     action: Optional[str] = None  # buy, sell, hold
     entry_price: float = 0
-    prediction_date: Optional[datetime.date] = None
-    check_date: Optional[datetime.date] = None
+    prediction_date: Optional[date_] = None
+    check_date: Optional[date_] = None
     initial_price: Optional[float] = None
     final_price: Optional[float] = None
     actual_result: Optional[str] = None  # 상승, 하락, 유지
@@ -115,7 +115,7 @@ class SignalAccuracyResponse(BaseModel):
 
 class TickerLatestWithChangeResponse(BaseModel):
     symbol: str
-    date: Optional[datetime.date]
+    date: Optional[date_]
     open_price: Optional[float] = None
     high_price: Optional[float] = None
     low_price: Optional[float] = None

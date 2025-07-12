@@ -106,7 +106,7 @@ class WebSearchResultRepository:
             up_percentage=up_percentage,
         )
 
-    def get_by_date(
+    async def get_by_date(
         self,
         start_date_yyyymmdd: str,
         end_date_yyyymmdd: str,

@@ -1,12 +1,9 @@
-import datetime
 from typing import Dict, List, Optional
-from datetime import date, timedelta
+from datetime import date
 
-from numpy import rec, record
 from pandas import Timestamp
 
 from myapi.domain.ticker.ticker_schema import (
-    SignalAccuracyResponse,
     TickerCreate,
     TickerLatestWithChangeResponse,
     TickerOrderBy,

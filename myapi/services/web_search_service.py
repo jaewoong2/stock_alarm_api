@@ -52,7 +52,7 @@ class WebSearchService:
         \n
         """
 
-    def get_market_forecast(
+    async def get_market_forecast(
         self, today: date, source: Literal["Major", "Minor"] = "Major"
     ):
         """Return cached market forecast if available."""
@@ -60,7 +60,7 @@ class WebSearchService:
         start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
         end_date = today.strftime("%Y-%m-%d")
 
-        cached = self.websearch_repository.get_by_date(
+        cached = await self.websearch_repository.get_by_date(
             start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
         )
 
@@ -163,7 +163,9 @@ class WebSearchService:
 
     def get_market_analysis(self, today: date):
         """Return cached market analysis if available."""
-        cached = self.websearch_repository.get_analysis_by_date(today, name="market_analysis")
+        cached = self.websearch_repository.get_analysis_by_date(
+            today, name="market_analysis"
+        )
         if cached:
             return MarketAnalysis.model_validate(cached.value)
 
@@ -185,5 +187,7 @@ class WebSearchService:
             raise ValueError("Invalid response format from AI service")
 
         analysis = response.analysis
-        self.websearch_repository.create_analysis(today, analysis, name="market_analysis")
+        self.websearch_repository.create_analysis(
+            today, analysis, name="market_analysis"
+        )
         return analysis

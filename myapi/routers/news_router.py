@@ -84,7 +84,7 @@ def news_summary(
 
 @router.get("/market-forecast")
 @inject
-def market_forecast(
+async def market_forecast(
     forecast_date: date = date.today(),
     source: Literal["Major", "Minor"] = "Major",
     websearch_service: WebSearchService = Depends(
@@ -93,7 +93,7 @@ def market_forecast(
 ):
     forecast_date = validate_date(forecast_date)
 
-    return websearch_service.get_market_forecast(forecast_date, source=source)
+    return await websearch_service.get_market_forecast(forecast_date, source=source)
 
 
 @router.post(

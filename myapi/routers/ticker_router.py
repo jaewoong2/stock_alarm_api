@@ -1,10 +1,9 @@
-import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from yfinance import Ticker
+
 
 from myapi.utils.auth import verify_bearer_token
 from typing import List, Literal, Optional
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from myapi.utils.date_utils import validate_date
 
@@ -74,11 +73,11 @@ def delete_ticker(
 @inject
 def get_ticker_by_date(
     symbol: str = Query(..., description="티커 심볼"),
-    date: date = Query(..., description="조회할 날짜"),
+    request_date: date = Query(..., alias="date", description="조회할 날짜"),
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
-    validate_date(date)
-    ticker = ticker_service.get_ticker_by_date(symbol, date)
+    validate_date(request_date)
+    ticker = ticker_service.get_ticker_by_date(symbol, request_date)
     if ticker is None:
         raise HTTPException(
             status_code=404, detail="해당 날짜의 티커 정보를 찾을 수 없습니다"
@@ -194,11 +193,11 @@ def update_ticker_informations(
 
         if request.start_date and request.end_date:
             start_date, end_date = (
-                datetime.datetime.strptime(request.start_date, "%Y-%m-%d"),
-                datetime.datetime.strptime(request.end_date, "%Y-%m-%d"),
+                datetime.strptime(request.start_date, "%Y-%m-%d"),
+                datetime.strptime(request.end_date, "%Y-%m-%d"),
             )
         else:
-            end_date = datetime.datetime.now()
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=7)
 
         tickers = ticker_service.get_all_ticker_name()
