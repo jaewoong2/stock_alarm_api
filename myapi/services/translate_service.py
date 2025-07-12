@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import datetime
 import json
 from typing import List
@@ -45,47 +43,56 @@ class TranslateService:
 
     def _translate_signal(self, signal: SignalBaseResponse) -> SignalBaseResponse:
         prompt = (
-            "Translate the following JSON to Korean. Keep the JSON format and do not change keys.\n"\
-            + json.dumps(signal.model_dump(), ensure_ascii=False)
+            "Translate the following JSON to Korean. Keep the JSON format and do not change keys.\n"
+            + signal.model_dump_json()
         )
-        result = self.ai_service.nova_lite_completion(prompt=prompt, schema=SignalBaseResponse)
+        result = self.ai_service.nova_lite_completion(
+            prompt=prompt, schema=SignalBaseResponse
+        )
         return result if isinstance(result, SignalBaseResponse) else signal
 
     def translate_by_date(self, target_date: datetime.date) -> List[SignalBaseResponse]:
+        next_target_date = target_date + datetime.timedelta(days=1)
         request = GetSignalRequest(
-            tickers=None,
             start_date=target_date.strftime("%Y-%m-%d"),
-            end_date=target_date.strftime("%Y-%m-%d"),
-            actions=None,
+            end_date=next_target_date.strftime("%Y-%m-%d"),
         )
+
         signals = self.signals_repository.get_signals(request)
 
         translated: List[SignalBaseResponse] = []
+
         for s in signals:
             translated.append(self._translate_signal(s))
 
         self.analysis_repository.create_analysis(
             analysis_date=target_date,
-            analysis=[t.model_dump() for t in translated],
+            analysis=translated,
             name="signals",
         )
+
         return translated
 
-    def get_translated(self, target_date: datetime.date) -> List[SignalBaseResponse] | None:
+    def get_translated(
+        self, target_date: datetime.date
+    ) -> List[SignalBaseResponse] | None:
         result = self.analysis_repository.get_analysis_by_date(
             target_date, name="signals", schema=None
         )
+
         if not result:
             return None
+
         return [SignalBaseResponse.model_validate(r) for r in result.value]
 
     def translate_and_markdown(self, target_date: datetime.date) -> dict:
         existing = self.get_translated(target_date)
-        if existing:
+
+        if existing and len(existing) > 0:
             markdown = self._to_markdown(existing)
+
             return {"signals": existing, "markdown": markdown}
 
         signals = self.translate_by_date(target_date)
         markdown = self._to_markdown(signals)
         return {"signals": signals, "markdown": markdown}
-

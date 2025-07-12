@@ -1,13 +1,12 @@
-import datetime
+import datetime as dt
 import json
 import logging
 from typing import List, Literal, Optional
-from venv import logger
 from fastapi import APIRouter, Depends
 
 from myapi.services import ai_service
 from myapi.utils.auth import verify_bearer_token
-from datetime import date, timedelta
+from datetime import timedelta
 
 from myapi.utils.config import Settings
 from myapi.utils.date_utils import validate_date
@@ -187,7 +186,7 @@ def llm_query(
     pdf_report, summary, web_search_gemini_result = None, None, None
 
     try:
-        today = date.today()
+        today = dt.date.today()
         today_YYYY_MM_DD = today.strftime("%Y-%m-%d")
         web_search_gemini_result = ai_service.gemini_search_grounding(
             prompt=signal_service.generate_web_search_prompt(
@@ -262,7 +261,7 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(google_result),
             message_group_id="google",
-            message_deduplication_id=req.ticker + "google" + str(date.today()),
+            message_deduplication_id=req.ticker + "google" + str(dt.date.today()),
         )
 
     except Exception as e:
@@ -288,7 +287,7 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(openai_result),
             message_group_id="openai",
-            message_deduplication_id=req.ticker + "openai" + str(date.today()),
+            message_deduplication_id=req.ticker + "openai" + str(dt.date.today()),
         )
 
     except Exception as e:
@@ -310,7 +309,7 @@ async def get_signals(
     settings: Settings = Depends(Provide[Container.config.config]),
 ):
     START_DAYS_BACK: int = 400
-    run_date = date.today()
+    run_date = dt.date.today()
     tickers = req.tickers or DefaultTickers
     strategies = DefaultStrategies
 
@@ -421,7 +420,9 @@ async def get_signals(
                 queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
                 message_body=json.dumps(message),
                 message_group_id="signal",
-                message_deduplication_id=report.ticker + "signal" + str(date.today()),
+                message_deduplication_id=report.ticker
+                + "signal"
+                + str(dt.date.today()),
             )
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
@@ -499,7 +500,7 @@ async def get_today_signals_by_ticker(
 @inject
 async def get_weekly_action_count(
     tickers: Optional[str] = None,
-    reference_date: Optional[date] = date.today(),
+    reference_date: Optional[dt.date] = dt.date.today(),
     action: Literal["Buy", "Sell"] = "Buy",
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
@@ -513,7 +514,9 @@ async def get_weekly_action_count(
         else DefaultTickers
     )
 
-    reference_date = validate_date(reference_date if reference_date else date.today())
+    reference_date = validate_date(
+        reference_date if reference_date else dt.date.today()
+    )
 
     result = await db_signal_service.get_weekly_action_counts(
         ticker_list, reference_date, action
@@ -544,7 +547,7 @@ async def get_signal_by_date(
     """
     symbol_list = symbols.split(",") if symbols and symbols.strip() else []
 
-    date_value = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+    date_value = dt.datetime.strptime(date, "%Y-%m-%d").date()
     validate_date(date_value)
 
     response = await db_signal_service.get_signals_result(
@@ -578,7 +581,7 @@ async def get_signals_by_only_ai(
         date_str = (
             request.date.strftime("%Y-%m-%d")
             if request.date
-            else date.today().strftime("%Y-%m-%d")
+            else dt.date.today().strftime("%Y-%m-%d")
         )
 
         logger.info(f"Generating AI signals for {len(tickers)} tickers on {date_str}")

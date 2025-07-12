@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from myapi.utils.auth import verify_bearer_token
 from typing import List, Literal, Optional
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+import datetime as dt
 
 from myapi.utils.date_utils import validate_date
 
@@ -73,7 +74,7 @@ def delete_ticker(
 @inject
 def get_ticker_by_date(
     symbol: str = Query(..., description="티커 심볼"),
-    request_date: date = Query(..., alias="date", description="조회할 날짜"),
+    request_date: dt.date = Query(..., alias="date", description="조회할 날짜"),
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
     validate_date(request_date)
@@ -264,7 +265,7 @@ def get_signal_accuracy(
 @inject
 def get_weekly_price_movement(
     tickers: Optional[str] = None,
-    reference_date: Optional[date] = date.today(),
+    reference_date: Optional[dt.date] = dt.date.today(),
     direction: Literal["up", "down"] = "up",
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
@@ -276,7 +277,7 @@ def get_weekly_price_movement(
         else DefaultTickers
     )
 
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = dt.date.today() - timedelta(days=1)
 
     end_dt = validate_date(
         reference_date - timedelta(days=1) if reference_date else yesterday
@@ -295,7 +296,7 @@ def get_weekly_price_movement(
 @router.get("/order-by/date")
 @inject
 def get_tickers_ordered_by(
-    target_date: Optional[date] = date.today(),
+    target_date: Optional[dt.date] = dt.date.today(),
     direction: Literal["asc", "desc"] = "asc",
     field: Literal["close_change", "volume_change"] = "close_change",
     limit: int = 20,
@@ -305,7 +306,7 @@ def get_tickers_ordered_by(
     티커를 심볼, 가격, 변화율에 따라 정렬하여 조회합니다.
     """
 
-    target_date = validate_date(target_date) if target_date else date.today()
+    target_date = validate_date(target_date) if target_date else dt.date.today()
     target_date_yesterday = get_prev_date(target_date)
 
     response = ticker_service.get_ticker_orderby(

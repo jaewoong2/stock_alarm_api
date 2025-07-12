@@ -1,5 +1,5 @@
-from datetime import date
 from typing import Literal, Optional
+import datetime as dt
 
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
@@ -10,9 +10,6 @@ from dependency_injector.wiring import inject, Provide
 from myapi.containers import Container
 from myapi.domain.news.news_schema import (
     WebSearchMarketResponse,
-    WebSearchResultSchema,
-    SectorMomentumResponse,
-    MarketAnalysis,
 )
 from myapi.services.signal_service import SignalService
 from myapi.services.ai_service import AIService
@@ -26,10 +23,10 @@ router = APIRouter(prefix="/news", tags=["news"])
 def get_news(
     ticker: Optional[str] = "",
     news_type: Literal["ticker", "market"] = "market",
-    news_date: Optional[date] = date.today(),
+    news_date: Optional[dt.date] = dt.date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
-    today_str = validate_date(news_date if news_date else date.today())
+    today_str = validate_date(news_date if news_date else dt.date.today())
     result = signal_service.get_web_search_summary(
         type=news_type,
         ticker=ticker,
@@ -43,11 +40,11 @@ def get_news(
 def news_recommendations(
     recommendation: Literal["Buy", "Hold", "Sell"] = "Buy",
     limit: int = 5,
-    request_date: Optional[date] = date.today(),
+    request_date: Optional[dt.date] = dt.date.today(),
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
     valid_date = validate_date(
-        request_date if request_date is not None else date.today()
+        request_date if request_date is not None else dt.date.today()
     )
     results = signal_service.get_ticker_news_by_recommendation(
         recommendation=recommendation,
@@ -66,7 +63,7 @@ def news_summary(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
 ):
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = dt.date.today().strftime("%Y-%m-%d")
     prompt = signal_service.generate_us_market_prompt(today_str)
     result = ai_service.gemini_search_grounding(
         prompt=prompt,
@@ -85,7 +82,7 @@ def news_summary(
 @router.get("/market-forecast")
 @inject
 async def market_forecast(
-    forecast_date: date = date.today(),
+    forecast_date: dt.date = dt.date.today(),
     source: Literal["Major", "Minor"] = "Major",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
@@ -102,7 +99,7 @@ async def market_forecast(
 )
 @inject
 def create_market_forecast(
-    forecast_date: date = date.today(),
+    forecast_date: dt.date = dt.date.today(),
     source: Literal["Major", "Minor"] = "Major",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
@@ -116,7 +113,7 @@ def create_market_forecast(
 @router.get("/market-analysis")
 @inject
 def market_analysis(
-    today: date = date.today(),
+    today: dt.date = dt.date.today(),
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),
@@ -131,7 +128,7 @@ def market_analysis(
 )
 @inject
 def create_market_analysis(
-    today: date = date.today(),
+    today: dt.date = dt.date.today(),
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),

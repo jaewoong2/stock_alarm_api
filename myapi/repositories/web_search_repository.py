@@ -13,6 +13,7 @@ from myapi.domain.news.news_schema import (
     MarketAnalysis,
     AiAnalysisVO,
 )
+from myapi.domain.signal.signal_schema import SignalBaseResponse
 
 
 class WebSearchResultRepository:
@@ -217,22 +218,17 @@ class WebSearchResultRepository:
     def create_analysis(
         self,
         analysis_date: datetime.date,
-        analysis: Any,
+        analysis: List[SignalBaseResponse],
         name: str = "market_analysis",
     ) -> AiAnalysisVO:
         """Store analysis data for a given date and type."""
 
-        value = (
-            analysis.model_dump(mode="json")
-            if hasattr(analysis, "model_dump")
-            else analysis
-        )
-
         db_obj = AiAnalysisModel(
             date=analysis_date.strftime("%Y-%m-%d"),
             name=name,
-            value=value,
+            value=analysis,
         )
+
         self.db_session.add(db_obj)
         self.db_session.commit()
         self.db_session.refresh(db_obj)
