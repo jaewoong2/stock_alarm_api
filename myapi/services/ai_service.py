@@ -98,6 +98,54 @@ class AIService:
 
         return completion.choices[0].message
 
+    def nova_lite(self, prompt: str):
+        """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""
+        try:
+            # Bedrock Runtime 클라이언트 생성
+            client = boto3.client(
+                service_name="bedrock-runtime",
+                region_name="ap-northeast-2",  # AWS 리전을 적절히 설정하세요
+            )
+            model_id = "apac.amazon.nova-lite-v1:0"
+
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [{"text": prompt}],
+                }
+            ]
+
+            try:
+                # Bedrock 모델 호출
+                response = client.converse(
+                    modelId=model_id,
+                    messages=conversation,
+                    inferenceConfig={"maxTokens": 8192},
+                )
+            except (ClientError, Exception) as e:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Model not found: {e}",
+                )
+
+            if not response:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No response body found from Bedrock model.",
+                )
+            # 응답 파싱
+            completion_content = response["output"]["message"]["content"][0]["text"]
+
+            if not completion_content:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No content found in the Bedrock model response.",
+                )
+
+            return completion_content
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Bedrock service error: {e}")
+
     def nova_lite_completion(self, prompt: str, schema: Type[T]):
         """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""
         try:

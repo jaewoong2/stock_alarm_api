@@ -218,7 +218,7 @@ class WebSearchResultRepository:
     def create_analysis(
         self,
         analysis_date: datetime.date,
-        analysis: List[SignalBaseResponse],
+        analysis: Any,
         name: str = "market_analysis",
     ) -> AiAnalysisVO:
         """Store analysis data for a given date and type."""

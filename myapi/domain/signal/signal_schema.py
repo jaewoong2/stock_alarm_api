@@ -1,4 +1,4 @@
-from signal import Signals
+from myapi.domain.signal.signal_models import Signals
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 from typing import List, Dict, Literal, Optional

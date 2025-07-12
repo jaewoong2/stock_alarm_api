@@ -66,6 +66,8 @@ class ServiceModule(containers.DeclarativeContainer):
         TranslateService,
         signals_repository=repositories.signals_repository,
         analysis_repository=repositories.web_search_repository,
+        ai_service=ai_service,
+        settings=config.config,
     )
 
 

@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     database_max_overflow: int = 2
 
     GEMINI_API_KEY: str = ""
+    GOOGLE_CLOUD_PROJECT_ID: str = ""
 
 
 @lru_cache
