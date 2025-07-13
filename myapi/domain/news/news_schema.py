@@ -1,5 +1,43 @@
-from typing import List, Literal, Optional, Any
 from pydantic import BaseModel, Field
+from typing import List, Literal, Optional, Any, Dict
+
+
+class MahaneySourceItem(BaseModel):
+    id: str
+    name: Optional[str] = None
+    url: Optional[str] = None
+    date: Optional[str] = None
+
+
+class MahaneyCriterionEvaluation(BaseModel):
+    pass_criterion: Optional[bool] = None
+    score: Optional[int] = None
+    metric: Optional[str] = None
+    comment: str
+    sources: List[str]
+
+
+class MahaneyStockAnalysis(BaseModel):
+    revenue_growth: MahaneyCriterionEvaluation
+    valuation: MahaneyCriterionEvaluation
+    product_innovation: MahaneyCriterionEvaluation
+    tam: MahaneyCriterionEvaluation
+    customer_value: MahaneyCriterionEvaluation
+    management_quality: MahaneyCriterionEvaluation
+    timing: MahaneyCriterionEvaluation
+    final_assessment: str
+    recommendation: Literal["Buy", "Sell", "Hold"]
+    recommendation_score: str
+
+
+class MahaneyAnalysisData(BaseModel):
+    as_of: str
+    stocks: Dict[str, MahaneyStockAnalysis]
+    sources: Optional[Dict[str, MahaneySourceItem]] = None
+
+
+class MahaneyAnalysisResponse(BaseModel):
+    response: MahaneyAnalysisData
 
 
 class WebSearchMarketItem(BaseModel):
@@ -22,13 +60,6 @@ class MarketForecastResponse(BaseModel):
 
 class MarketForecastSchema(BaseModel):
     """Table to store daily US market forecasts."""
-
-    # id = Column(Integer, primary_key=True, index=True)
-    # date_yyyymmdd = Column(String, nullable=False, index=True)
-    # outlook = Column(String, nullable=False)
-    # reason = Column(String, nullable=False)
-    # up_percentage = Column(Float, nullable=True)  # e.g., '70'
-    # created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     date_yyyymmdd: str
     outlook: Literal["UP", "DOWN"]

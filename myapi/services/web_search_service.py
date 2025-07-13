@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import (
+    MahaneyAnalysisResponse,
     MarketForecastResponse,
     MarketForecastSchema,
     MarketAnalysis,
@@ -191,3 +192,127 @@ class WebSearchService:
             today, analysis.model_dump(), name="market_analysis"
         )
         return analysis
+
+    def generate_mahaney_prompt(self, tickers: list[str], target_date: str) -> str:
+        if not isinstance(tickers, list) or not tickers:
+            raise ValueError("Tickers must be a non-empty list of stock tickers.")
+
+        if not isinstance(tickers, list) or not tickers:
+            raise ValueError("Tickers must be a non-empty list of stock tickers.")
+        tickers = sorted(
+            set([t.upper() for t in tickers])
+        )  # dedupe & sort for reproducibility
+        ticker_list = ", ".join(tickers)
+
+        prompt = f"""
+            Today is **{target_date}**.
+
+            You are **Gemini Pro Portfolio** – a finance-specialised AI with Google Search grounding.  
+            Your job is to evaluate the following U.S.-listed tech tickers:
+
+            [{ticker_list}]
+            against **Mark Mahaney’s 7-step checklist** (see below).  
+            Return **two clearly separated sections**:
+
+            1. **Reasoning (Log)** – your step-by-step thoughts *for each ticker & criterion*  
+            2. **Result (JSON)** – a machine-readable summary that downstream code can parse
+
+            ---
+
+            ### Mahaney 7-Step Checklist  *(from “Nothing But Net”)*
+
+            | # | Criterion |
+            |---|----------------------|
+            | 1 | **Revenue Growth – 20 % Rule**: YoY revenue (or core KPI) ≥ 20 % for the last 5–6 quarters |
+            | 2 | **Valuation – 2 % Rule**: PEG ≤ 1 **OR** P/E or P/S looks cheap vs growth (PEG≈1) |
+            | 3 | **Product Innovation**: faster release cadence & rising R&D intensity |
+            | 4 | **Total Addressable Market (TAM)** ≥ $1 T **OR** single-digit share with credible expansion |
+            | 5 | **Customer Value Proposition**: high NPS / retention / usage growth |
+            | 6 | **Management Quality**: visionary CEO/CFO, solid execution, material insider ownership |
+            | 7 | **Timing**: price ≥ 20 % below 52-week high **OR** PEG < 1 |
+            ---
+
+            ### Data-gathering rules (use Google Search)
+
+            * Prefer **2024–2025** company filings, earnings calls, Investor Relations decks  
+            * Cross-check with reputable aggregators (Yahoo Finance, Morningstar, FactSet)  
+            * Cite **at least 3 independent sources per ticker**; include publication date in the citation  
+            * Ignore rumours or unverified blogs
+            ---
+
+            ### Output requirements
+
+            #### 1) Reasoning (Log)
+            Write a concise chain-of-thought for every *(ticker, criterion)* pair.  
+            Prefix each ticker with `### TICKER: <symbol>` to keep logs readable.
+
+            #### 2) Result (JSON)
+            Return exactly one JSON object with this schema:
+
+            ```json
+            {{
+                "as_of": "{target_date}",
+                "stocks": {{
+                    "XYZ": {{
+                    "revenue_growth": {{
+                        "pass": true,
+                        "metric": "50,45,40,55,60",
+                        "comment": "5 straight qtrs ≥ 40 %",
+                        "sources": ["source-id-1", "source-id-2"]
+                    }},
+                    "valuation": {{ "pass": true, "peg": 0.8, "sources": [...] }},
+                    "product_innovation": {{ "score": 5, "comment": "...", "sources": [...] }},
+                    ...
+                    "timing": {{ "pass": false, "price_vs_high": "-8 %", "sources": [...] }},
+                    "final_assessment": "Watch"  // "Pass" if ≥6 YES else "Watch"
+                    "recommendation": "Buy" | "Sell" | "Hold" // "Buy", "Sell", "Hold", or "Watch"
+                    "recommendation_score": "..."  // Why this recommendation
+                    }},
+                    "...": {{}}
+                }}
+            }}
+            Use snake_case keys exactly as shown
+            For YES/NO criteria set "pass": true/false. For qualitative ones include "score": 1–5.
+            If missing data, set the value to null and explain in "comment".
+            """
+
+        return prompt
+
+    async def create_mahaney_analysis(
+        self, tickers: list[str], target_date: date = date.today()
+    ):
+        """Create Mahaney analysis for the given tickers using the AI service."""
+        if not tickers:
+            raise ValueError("Tickers list cannot be empty")
+
+        prompt = self.generate_mahaney_prompt(tickers, target_date.strftime("%Y-%m-%d"))
+
+        response = self.ai_service.gemini_search_grounding(
+            prompt=prompt,
+            schema=MahaneyAnalysisResponse,
+        )
+
+        if not isinstance(response, MahaneyAnalysisResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        self.websearch_repository.create_analysis(
+            analysis_date=target_date,
+            analysis=response.response.model_dump(),
+            name="mahaney_analysis",
+        )
+
+        return response.response
+
+    async def get_mahaney_analysis(self, target_date: date = date.today()):
+        """Fetch Mahaney analysis for the given tickers."""
+
+        response = self.websearch_repository.get_analysis_by_date(
+            analysis_date=target_date,
+            name="mahaney_analysis",
+            schema=MahaneyAnalysisResponse,
+        )
+
+        if not isinstance(response, MahaneyAnalysisResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        return response

@@ -1,6 +1,7 @@
 from typing import Literal, Optional
 import datetime as dt
 
+from myapi.domain.signal.signal_schema import DefaultTickers
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
 
@@ -9,6 +10,7 @@ from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
 from myapi.domain.news.news_schema import (
+    MahaneyAnalysisResponse,
     WebSearchMarketResponse,
 )
 from myapi.services.signal_service import SignalService
@@ -135,3 +137,34 @@ def create_market_analysis(
 ):
     today = validate_date(today)
     return websearch_service.create_market_analysis(today)
+
+
+@router.get("/tech-stock/analysis")
+@inject
+async def get_mahaney_analysis(
+    target_date: Optional[dt.date] = dt.date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.get_mahaney_analysis(target_date)
+
+
+@router.post(
+    "/tech-stock/analysis",
+    dependencies=[Depends(verify_bearer_token)],
+)
+@inject
+async def create_mahaney_analysis(
+    tickers: list[str] = DefaultTickers,
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    """
+    Mahaney 분석을 생성합니다.
+    :param tickers: 분석할 티커 목록
+    :return: Mahaney 분석 결과
+    """
+    return await websearch_service.create_mahaney_analysis(tickers)
