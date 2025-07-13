@@ -229,6 +229,7 @@ class AIService:
             raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
 
         result = ""
+
         if (
             response.candidates
             and response.candidates[0].content

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Any, Dict
+import datetime as dt
+from myapi.domain.signal.signal_schema import DefaultTickers
 
 
 class MahaneySourceItem(BaseModel):
@@ -10,11 +12,10 @@ class MahaneySourceItem(BaseModel):
 
 
 class MahaneyCriterionEvaluation(BaseModel):
-    pass_criterion: Optional[bool] = None
-    score: Optional[int] = None
-    metric: Optional[str] = None
+    pass_criterion: bool
+    score: int
+    metric: str
     comment: str
-    sources: List[str]
 
 
 class MahaneyStockAnalysis(BaseModel):
@@ -30,7 +31,7 @@ class MahaneyStockAnalysis(BaseModel):
     recommendation: Literal["Buy", "Sell", "Hold"]
     recommendation_score: str
     summary: str
-    soruces: List[MahaneySourceItem]
+    detail_summary: str
 
 
 class MahaneyAnalysisData(BaseModel):
@@ -166,3 +167,8 @@ class AiAnalysisVO(BaseModel):
     date: str  # ISO format string for date
     name: str
     value: Any  # JSON object containing the analysis data
+
+
+class MahaneyAnalysisRequest(BaseModel):
+    tickers: List[str] = DefaultTickers
+    target_date: Optional[dt.date] = dt.date.today()

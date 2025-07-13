@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
+from myapi.domain.news.news_schema import MahaneyAnalysisRequest
 from myapi.services.aws_service import AwsService
 from myapi.utils.auth import verify_bearer_token
 from myapi.utils.config import Settings
@@ -105,11 +106,11 @@ def create_mahaney_analysis_batch(
 
     # SQS FIFO 큐 URL (실제 환경에 맞게 수정 필요)
     queue_url = "https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo"
-    today_str = dt.date.today().isoformat()
+    today_str = dt.date.today().strftime("%Y%m%d")
 
     # 티커 목록을 10개씩 분할
     ticker_chunks = [
-        DefaultTickers[i : i + 5] for i in range(0, len(DefaultTickers), 5)
+        DefaultTickers[i : i + 3] for i in range(0, len(DefaultTickers), 3)
     ]
 
     responses = []
@@ -119,23 +120,20 @@ def create_mahaney_analysis_batch(
             message_body = aws_service.generate_queue_message_http(
                 path="news/tech-stock/analysis",
                 method="POST",
-                body=json.dumps(
-                    {
-                        "tickers": chunk,
-                        "target_date": dt.date.today().strftime("%Y-%m-%d"),
-                    }
-                ),
+                body=MahaneyAnalysisRequest(
+                    tickers=chunk, target_date=dt.date.today()
+                ).model_dump_json(),
                 auth_token=settings.auth_token,
             )
 
             # 고유한 중복 제거 ID 생성 (경로 + 날짜 + 청크 인덱스)
-            deduplication_id = f"news-tech-stock-analysis-{today_str}-{i}"
+            deduplication_id = f"newstechstockanalysis{today_str}{i}"
 
             # SQS FIFO 큐에 메시지 전송
             response = aws_service.send_sqs_fifo_message(
                 queue_url=queue_url,
                 message_body=json.dumps(message_body),
-                message_group_id="mahaney-analysis",
+                message_group_id="mahaneyanalysis",
                 message_deduplication_id=deduplication_id,
             )
             responses.append(
