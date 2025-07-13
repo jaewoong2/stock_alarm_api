@@ -18,6 +18,7 @@ class MahaneyCriterionEvaluation(BaseModel):
 
 
 class MahaneyStockAnalysis(BaseModel):
+    stock_name: str
     revenue_growth: MahaneyCriterionEvaluation
     valuation: MahaneyCriterionEvaluation
     product_innovation: MahaneyCriterionEvaluation
@@ -28,12 +29,12 @@ class MahaneyStockAnalysis(BaseModel):
     final_assessment: str
     recommendation: Literal["Buy", "Sell", "Hold"]
     recommendation_score: str
+    summary: str
+    soruces: List[MahaneySourceItem]
 
 
 class MahaneyAnalysisData(BaseModel):
-    as_of: str
-    stocks: Dict[str, MahaneyStockAnalysis]
-    sources: Optional[Dict[str, MahaneySourceItem]] = None
+    stocks: List[MahaneyStockAnalysis]
 
 
 class MahaneyAnalysisResponse(BaseModel):

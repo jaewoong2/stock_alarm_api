@@ -6,10 +6,9 @@ from fastapi import HTTPException
 from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisResponse,
-    MarketForecastResponse,
-    MarketForecastSchema,
     MarketAnalysis,
     MarketAnalysisResponse,
+    MarketForecastResponse,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -197,11 +196,10 @@ class WebSearchService:
         if not isinstance(tickers, list) or not tickers:
             raise ValueError("Tickers must be a non-empty list of stock tickers.")
 
-        if not isinstance(tickers, list) or not tickers:
-            raise ValueError("Tickers must be a non-empty list of stock tickers.")
         tickers = sorted(
             set([t.upper() for t in tickers])
         )  # dedupe & sort for reproducibility
+
         ticker_list = ", ".join(tickers)
 
         prompt = f"""
@@ -209,8 +207,8 @@ class WebSearchService:
 
             You are **Gemini Pro Portfolio** – a finance-specialised AI with Google Search grounding.  
             Your job is to evaluate the following U.S.-listed tech tickers:
-
             [{ticker_list}]
+
             against **Mark Mahaney’s 7-step checklist** (see below).  
             Return **two clearly separated sections**:
 
@@ -267,6 +265,7 @@ class WebSearchService:
                     "final_assessment": "Watch"  // "Pass" if ≥6 YES else "Watch"
                     "recommendation": "Buy" | "Sell" | "Hold" // "Buy", "Sell", "Hold", or "Watch"
                     "recommendation_score": "..."  // Why this recommendation
+                    "summary": "..."  // Detail summary of the analysis
                     }},
                     "...": {{}}
                 }}

@@ -158,6 +158,7 @@ async def get_mahaney_analysis(
 @inject
 async def create_mahaney_analysis(
     tickers: list[str] = DefaultTickers,
+    target_date: Optional[dt.date] = dt.date.today(),
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),
@@ -167,4 +168,6 @@ async def create_mahaney_analysis(
     :param tickers: 분석할 티커 목록
     :return: Mahaney 분석 결과
     """
-    return await websearch_service.create_mahaney_analysis(tickers)
+    target_date = validate_date(target_date if target_date else dt.date.today())
+
+    return await websearch_service.create_mahaney_analysis(tickers, target_date)
