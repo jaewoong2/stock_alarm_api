@@ -205,7 +205,7 @@ class WebSearchService:
         prompt = f"""
             Today is **{target_date}**.
 
-            You are **Gemini Pro Portfolio** – a finance-specialised AI with Google Search grounding.  
+            You are a finance-specialised AI with Google Search grounding.  
             Your job is to evaluate the following U.S.-listed tech tickers:
             [{ticker_list}]
 
@@ -236,6 +236,8 @@ class WebSearchService:
             * Cross-check with reputable aggregators (Yahoo Finance, Morningstar, FactSet)  
             * Cite **at least 3 independent sources per ticker**; include publication date in the citation  
             * Ignore rumours or unverified blogs
+            * Forecast **short-term price targets** based on the Analysis
+            * And Then, Find The Social Media Sentiment (X, Reddit, etc.) for each ticker
             ---
 
             ### Output requirements
