@@ -98,7 +98,7 @@ async def market_forecast(
     dependencies=[Depends(verify_bearer_token)],
 )
 @inject
-def create_market_forecast(
+async def create_market_forecast(
     forecast_date: dt.date = dt.date.today(),
     source: Literal["Major", "Minor"] = "Major",
     websearch_service: WebSearchService = Depends(
@@ -107,7 +107,7 @@ def create_market_forecast(
 ):
     forecast_date = validate_date(forecast_date)
 
-    return websearch_service.create_market_forecast(forecast_date, source=source)
+    return await websearch_service.create_market_forecast(forecast_date, source=source)
 
 
 @router.get("/market-analysis")

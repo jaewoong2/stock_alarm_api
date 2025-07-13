@@ -90,7 +90,7 @@ class WebSearchResultRepository:
 
         return query.all()
 
-    def create(self, forecast: MarketForecast):
+    async def create(self, forecast: MarketForecast):
         self.db_session.add(forecast)
         self.db_session.commit()
         self.db_session.refresh(forecast)

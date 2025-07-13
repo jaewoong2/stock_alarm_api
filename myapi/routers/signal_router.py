@@ -4,7 +4,6 @@ import logging
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends
 
-from myapi.services import ai_service
 from myapi.utils.auth import verify_bearer_token
 from datetime import timedelta
 

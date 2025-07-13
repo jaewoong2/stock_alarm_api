@@ -7,7 +7,7 @@ from myapi.containers import Container
 from myapi.services.translate_service import TranslateService
 from myapi.utils.auth import verify_bearer_token
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+router = APIRouter(prefix="/translate", tags=["translate"])
 
 
 @router.get("/signals", dependencies=[Depends(verify_bearer_token)])

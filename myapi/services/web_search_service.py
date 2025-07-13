@@ -69,7 +69,7 @@ class WebSearchService:
 
         raise HTTPException(status_code=404, detail="Forecast not found")
 
-    def create_market_forecast(
+    async def create_market_forecast(
         self, today: date, source: Literal["Major", "Minor"] = "Major"
     ):
         """Create a new market forecast using the AI service."""
@@ -87,7 +87,7 @@ class WebSearchService:
         if not isinstance(response, MarketForecastResponse):
             raise ValueError("Invalid response format from AI service")
 
-        self.websearch_repository.create(
+        await self.websearch_repository.create(
             MarketForecast(
                 date_yyyymmdd=end_date,
                 outlook=response.outlook,
@@ -97,7 +97,7 @@ class WebSearchService:
             )
         )
 
-        cached = self.websearch_repository.get_by_date(
+        cached = await self.websearch_repository.get_by_date(
             start_date_yyyymmdd=start_date,
             end_date_yyyymmdd=end_date,
             source=source,
@@ -188,6 +188,6 @@ class WebSearchService:
 
         analysis = response.analysis
         self.websearch_repository.create_analysis(
-            today, analysis, name="market_analysis"
+            today, analysis.model_dump(), name="market_analysis"
         )
         return analysis
