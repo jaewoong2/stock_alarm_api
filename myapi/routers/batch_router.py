@@ -119,7 +119,12 @@ def create_mahaney_analysis_batch(
             message_body = aws_service.generate_queue_message_http(
                 path="news/tech-stock/analysis",
                 method="POST",
-                body=json.dumps({"tickers": chunk}),
+                body=json.dumps(
+                    {
+                        "tickers": chunk,
+                        "target_date": dt.date.today().strftime("%Y-%m-%d"),
+                    }
+                ),
                 auth_token=settings.auth_token,
             )
 
