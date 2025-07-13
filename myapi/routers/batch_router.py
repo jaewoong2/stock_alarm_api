@@ -109,7 +109,7 @@ def create_mahaney_analysis_batch(
 
     # 티커 목록을 10개씩 분할
     ticker_chunks = [
-        DefaultTickers[i : i + 10] for i in range(0, len(DefaultTickers), 10)
+        DefaultTickers[i : i + 5] for i in range(0, len(DefaultTickers), 5)
     ]
 
     responses = []
