@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisResponse,
+    MahaneyStockAnalysis,
     MarketAnalysis,
     MarketAnalysisResponse,
     MarketForecastResponse,
@@ -296,24 +297,29 @@ class WebSearchService:
         if not isinstance(response, MahaneyAnalysisResponse):
             raise ValueError("Invalid response format from AI service")
 
-        self.websearch_repository.create_analysis(
-            analysis_date=target_date,
-            analysis=response.response.model_dump(),
-            name="mahaney_analysis",
-        )
+        for stock in response.response.stocks:
+            if not isinstance(stock, MahaneyStockAnalysis):
+                raise ValueError("Invalid stock data format in response")
+
+            self.websearch_repository.create_analysis(
+                analysis_date=target_date,
+                analysis=stock.model_dump(),
+                name="mahaney_analysis",
+            )
 
         return response.response
 
     async def get_mahaney_analysis(self, target_date: date = date.today()):
         """Fetch Mahaney analysis for the given tickers."""
 
-        response = self.websearch_repository.get_analysis_by_date(
-            analysis_date=target_date,
+        responses = self.websearch_repository.get_all_analyses(
+            target_date=target_date,
             name="mahaney_analysis",
-            schema=MahaneyAnalysisResponse,
+            schema=MahaneyStockAnalysis,
         )
 
-        if not isinstance(response, MahaneyAnalysisResponse):
-            raise ValueError("Invalid response format from AI service")
+        for response in responses:
+            if not isinstance(response.value, MahaneyStockAnalysis):
+                raise ValueError("Invalid stock data format in response")
 
-        return response
+        return responses

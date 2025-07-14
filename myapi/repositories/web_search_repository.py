@@ -13,7 +13,6 @@ from myapi.domain.news.news_schema import (
     MarketAnalysis,
     AiAnalysisVO,
 )
-from myapi.domain.signal.signal_schema import SignalBaseResponse
 
 
 class WebSearchResultRepository:
@@ -168,6 +167,57 @@ class WebSearchResultRepository:
             return target_type(value)
         except (TypeError, ValueError):
             return None
+
+    def get_all_analyses(
+        self,
+        name: str = "market_analysis",
+        schema: type | None = MarketAnalysis,
+        target_date: datetime.date = datetime.date.today(),
+    ) -> List[AiAnalysisVO]:
+        """Fetch all analysis data of a given type.
+
+        Parameters
+        ----------
+        name: str
+            Identifier of the analysis type. Defaults to ``"market_analysis"``.
+        schema: Optional[type]
+            Pydantic schema used to validate the stored value. If ``None`` the
+            raw JSON value is returned.
+        target_date: Optional[datetime.date]
+            If provided, only analyses for this date will be returned.
+        """
+
+        query = self.db_session.query(AiAnalysisModel).filter(
+            AiAnalysisModel.name == name
+        )
+
+        if target_date:
+            query = query.filter(
+                AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+            )
+
+        results = query.all()
+
+        analyses = []
+        for result in results:
+            value = result.value
+            if schema is not None:
+                try:
+                    value = schema.model_validate(value)
+                except Exception:
+                    # Fall back to raw value if validation fails
+                    value = result.value
+
+            analyses.append(
+                AiAnalysisVO(
+                    id=self.safe_convert(result.id),
+                    date=str(result.date),
+                    name=str(result.name),
+                    value=value,
+                )
+            )
+
+        return analyses
 
     def get_analysis_by_date(
         self,

@@ -1,6 +1,6 @@
 from myapi.domain.signal.signal_models import Signals
 from pydantic import BaseModel, Field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Dict, Literal, Optional
 
 
@@ -318,7 +318,7 @@ class SignalBase(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     action: str  # "buy" or "sell" or "hold"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     probability: Optional[str] = None
     result_description: Optional[str] = None
     report_summary: Optional[str] = None
@@ -368,7 +368,7 @@ class SignalUpdate(BaseModel):
 
 
 # models.py
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal, List
 from pydantic import BaseModel, Field
 
@@ -433,6 +433,51 @@ class DiscordMessageRequest(BaseModel):
     embed: Optional[List] = None  # Optional embed data for rich content
 
 
+class PaginationRequest(BaseModel):
+    """
+    Pagination parameters for API requests.
+    """
+    
+    page: int = Field(default=1, ge=1, description="Page number (starting from 1)")
+    page_size: int = Field(default=20, ge=1, le=100, description="Number of items per page (1-100)")
+    
+    @property
+    def offset(self) -> int:
+        """Calculate offset for database queries."""
+        return (self.page - 1) * self.page_size
+    
+    @property
+    def limit(self) -> int:
+        """Get limit for database queries."""
+        return self.page_size
+
+
+class PaginationResponse(BaseModel):
+    """
+    Pagination metadata for API responses.
+    """
+    
+    page: int = Field(description="Current page number")
+    page_size: int = Field(description="Number of items per page")
+    total_items: int = Field(description="Total number of items")
+    total_pages: int = Field(description="Total number of pages")
+    has_next: bool = Field(description="Whether there is a next page")
+    has_previous: bool = Field(description="Whether there is a previous page")
+    
+    @classmethod
+    def create(cls, page: int, page_size: int, total_items: int) -> "PaginationResponse":
+        """Create pagination response from parameters."""
+        total_pages = (total_items + page_size - 1) // page_size  # Ceiling division
+        return cls(
+            page=page,
+            page_size=page_size,
+            total_items=total_items,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_previous=page > 1
+        )
+
+
 class GetSignalRequest(BaseModel):
     """
     Request schema for getting signals.
@@ -444,6 +489,7 @@ class GetSignalRequest(BaseModel):
     actions: List[Literal["Buy", "Sell", "Hold"]] | None = (
         None  # Optional action filter
     )
+    pagination: PaginationRequest = Field(default_factory=PaginationRequest)
 
 
 class SignalWithTicker(BaseModel):
@@ -514,6 +560,24 @@ class SignalJoinTickerResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PaginatedSignalsResponse(BaseModel):
+    """
+    Paginated response for signals with metadata.
+    """
+    
+    data: List[SignalBaseResponse] = Field(description="List of signals for the current page")
+    pagination: PaginationResponse = Field(description="Pagination metadata")
+
+
+class PaginatedSignalJoinTickerResponse(BaseModel):
+    """
+    Paginated response for signals with ticker information.
+    """
+    
+    data: List[SignalJoinTickerResponse] = Field(description="List of signals with ticker info for the current page")
+    pagination: PaginationResponse = Field(description="Pagination metadata")
+
+
 class GetSignalByOnlyAIRequest(BaseModel):
     """
     Request schema for getting signals by AI model.
@@ -557,7 +621,7 @@ class SignalValueObject(BaseModel):
     take_profit: Optional[float] = None
     close_price: Optional[float] = None
     action: Literal["buy", "sell", "hold"]
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     probability: Optional[str] = None
     result_description: Optional[str] = None
     report_summary: Optional[str] = None

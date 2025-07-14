@@ -39,10 +39,10 @@ def execute_batch_jobs(
             "group_id": "signals",
         },
         {
-            "path": "analysis/signals",
+            "path": "translate/signals",
             "method": "GET",
             "body": {},
-            "group_id": "analysis",
+            "group_id": "translate",
         },
         {
             "path": "news/market-analysis",

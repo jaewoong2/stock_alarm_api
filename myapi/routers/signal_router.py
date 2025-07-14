@@ -23,6 +23,9 @@ from myapi.domain.signal.signal_schema import (
     GetSignalByOnlyAIPromptSchema,
     GetSignalByOnlyAIRequest,
     GetSignalRequest,
+    PaginatedSignalsResponse,
+    PaginatedSignalJoinTickerResponse,
+    PaginationRequest,
     SignalBaseResponse,
     SignalPromptData,
     SignalPromptResponse,
@@ -443,7 +446,7 @@ async def naver_today_news(
     return await signal_service.get_today_items()
 
 
-@router.post("/get-signals", response_model=List[SignalBaseResponse])
+@router.post("/get-signals", response_model=PaginatedSignalsResponse)
 @inject
 async def get_all_signals(
     request: GetSignalRequest,
@@ -452,7 +455,7 @@ async def get_all_signals(
     ),
 ):
     """
-    모든 시그널을 조회합니다.
+    모든 시그널을 조회합니다 (페이지네이션 적용).
     """
     return await db_signal_service.get_all_signals(request=request)
 
@@ -526,37 +529,48 @@ async def get_weekly_action_count(
     }
 
 
-@router.get("/date")
+@router.get("/date", response_model=PaginatedSignalJoinTickerResponse)
 @inject
 async def get_signal_by_date(
     date: str,
     symbols: str = "",
     strategy_type: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
-    특정 날짜에 생성된 시그널을 조회합니다.
+    특정 날짜에 생성된 시그널을 조회합니다 (페이지네이션 적용).
 
     Args:
         date: 조회할 날짜 (YYYY-MM-DD 형식)
         symbols: 쉼표로 구분된 티커 심볼 목록
         strategy_type: 조회할 전략 유형 ('AI_GENERATED', 'NOT_AI_GENERATED', None=모든 전략)
+        page: 페이지 번호 (기본값: 1)
+        page_size: 페이지 크기 (기본값: 20, 최대: 100)
     """
     symbol_list = symbols.split(",") if symbols and symbols.strip() else []
 
     date_value = dt.datetime.strptime(date, "%Y-%m-%d").date()
     validate_date(date_value)
 
+    # 페이지네이션 파라미터 검증
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+
     response = await db_signal_service.get_signals_result(
-        date=date_value, symbols=symbol_list, strategy_type=strategy_type
+        date=date_value,
+        symbols=symbol_list,
+        strategy_type=strategy_type,
+        page=page,
+        page_size=page_size,
     )
 
-    return {
-        "date": date_value,
-        "signals": response,
-    }
+    return response
 
 
 @router.post(

@@ -5,7 +5,11 @@ import boto3
 from botocore.exceptions import ClientError
 import logging
 
-from myapi.domain.signal.signal_schema import GetSignalRequest, SignalBaseResponse
+from myapi.domain.signal.signal_schema import (
+    GetSignalRequest,
+    PaginationRequest,
+    SignalBaseResponse,
+)
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -228,6 +232,7 @@ class TranslateService:
         request = GetSignalRequest(
             start_date=target_date.strftime("%Y-%m-%d"),
             end_date=next_target_date.strftime("%Y-%m-%d"),
+            pagination=PaginationRequest(page=1, page_size=200),
         )
 
         try:
