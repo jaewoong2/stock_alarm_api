@@ -54,9 +54,7 @@ class ServiceModule(containers.DeclarativeContainer):
         signals_repository=repositories.signals_repository,
         signals_service=signal_service,
     )
-    db_signal_service = providers.Factory(
-        DBSignalService, repository=repositories.signals_repository
-    )
+
     websearch_service = providers.Factory(
         WebSearchService,
         websearch_repository=repositories.web_search_repository,
@@ -68,6 +66,12 @@ class ServiceModule(containers.DeclarativeContainer):
         analysis_repository=repositories.web_search_repository,
         ai_service=ai_service,
         settings=config.config,
+    )
+
+    db_signal_service = providers.Factory(
+        DBSignalService,
+        repository=repositories.signals_repository,
+        translate_service=translate_service,
     )
 
 

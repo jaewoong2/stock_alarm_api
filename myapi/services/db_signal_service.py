@@ -15,12 +15,16 @@ from myapi.domain.signal.signal_schema import (
     SignalJoinTickerResponse,
     SignalUpdate,
 )
+from myapi.services.translate_service import TranslateService
 
 
 class DBSignalService:
-    def __init__(self, repository: SignalsRepository):
+    def __init__(
+        self, repository: SignalsRepository, translate_service: TranslateService
+    ):
         self.repository = repository
         self.logger = logging.getLogger(__name__)
+        self.translate_service = translate_service
 
     async def create_signal(self, signal_data: SignalCreate) -> SignalBaseResponse:
         """
@@ -55,18 +59,15 @@ class DBSignalService:
             # 신호 데이터와 총 개수 조회
             signals = self.repository.get_signals(request=request)
             total_count = self.repository.get_signals_count(request=request)
-            
+
             # 페이지네이션 메타데이터 생성
             pagination = PaginationResponse.create(
                 page=request.pagination.page,
                 page_size=request.pagination.page_size,
-                total_items=total_count
+                total_items=total_count,
             )
-            
-            return PaginatedSignalsResponse(
-                data=signals,
-                pagination=pagination
-            )
+
+            return PaginatedSignalsResponse(data=signals, pagination=pagination)
         except Exception as e:
             self.logger.error(f"Error fetching all signals: {str(e)}")
             raise HTTPException(
@@ -92,10 +93,23 @@ class DBSignalService:
         try:
             # 통합된 리포지토리 메서드 사용 (페이지네이션 적용)
             signals = self.repository.get_signals_with_ticker(
-                date_value=date, symbols=symbols, strategy_filter=strategy_type,
-                page=page, page_size=page_size
+                date_value=date,
+                symbols=symbols,
+                strategy_filter=strategy_type,
+                page=page,
+                page_size=page_size,
             )
-            
+
+            # 번역된 신호가 있다면 결과에 추가
+            for signal in signals:
+                translated_signal = self.translate_service.get_translated_by_ticker(
+                    target_date=date, ticker=signal.signal.ticker
+                )
+                if translated_signal:
+                    signal.signal = SignalJoinTickerResponse.Signal.model_validate(
+                        translated_signal.model_dump()
+                    )
+
             # 총 개수 조회
             total_count = self.repository.get_signals_with_ticker_count(
                 date_value=date, symbols=symbols, strategy_filter=strategy_type
@@ -157,14 +171,11 @@ class DBSignalService:
 
             # 페이지네이션 메타데이터 생성
             pagination = PaginationResponse.create(
-                page=page,
-                page_size=page_size,
-                total_items=total_count
+                page=page, page_size=page_size, total_items=total_count
             )
 
             return PaginatedSignalJoinTickerResponse(
-                data=signals,
-                pagination=pagination
+                data=signals, pagination=pagination
             )
 
         except HTTPException as e:
