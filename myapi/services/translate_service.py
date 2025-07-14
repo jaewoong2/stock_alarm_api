@@ -263,16 +263,22 @@ class TranslateService:
     def translate_by_date(self, target_date: datetime.date) -> List[SignalBaseResponse]:
         """
         특정 날짜의 모든 시그널을 번역하여 반환합니다.
-        페이지네이션을 통해 모든 시그널을 가져오고, 배치 단위로 DB에 저장합니다.
-        최대 300개의 시그널을 효율적으로 처리합니다.
+        이미 번역된 시그널이 있으면 건너뛰고, 새로운 시그널만 번역합니다.
         """
+        logger.info(f"{target_date} 날짜의 시그널 번역 시작")
+        
+        # 1. 먼저 이미 번역된 시그널들이 있는지 확인
+        existing_translated = self.get_translated(target_date)
+        if existing_translated:
+            logger.info(f"이미 번역된 시그널 {len(existing_translated)}개 발견")
+            return existing_translated
+
+        # 2. 원본 시그널들을 페이지네이션으로 조회
         next_target_date = target_date + datetime.timedelta(days=1)
         page = 1
-        page_size = 50  # 페이지당 50개로 증가하여 효율성 향상
-        batch_size = 5  # 번역 후 저장할 배치 크기
-        translated_batch: List[SignalBaseResponse] = []
-
-        logger.info(f"{target_date} 날짜의 시그널 번역 시작")
+        page_size = 50
+        all_translated_signals: List[SignalBaseResponse] = []
+        processed_tickers = set()  # 중복 처리 방지
 
         while True:
             request = GetSignalRequest(
@@ -283,37 +289,52 @@ class TranslateService:
 
             try:
                 signals = self.signals_repository.get_signals(request)
-                logger.info(f"페이지 {page}: {len(signals)}개 시그널 조회됨")
+                logger.info(f"페이지 {page}: {len(signals)}개 원본 시그널 조회됨")
 
                 if not signals:
                     logger.info(f"페이지 {page}에서 시그널이 없어 종료")
                     break
 
-                # 현재 페이지의 시그널들을 번역
+                # 3. 각 시그널에 대해 번역 처리
                 for s in signals:
+                    # 이미 처리한 티커는 건너뛰기
+                    if s.ticker in processed_tickers:
+                        logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
+                        continue
+                    
+                    processed_tickers.add(s.ticker)
+                    
+                    # 개별 티커의 번역된 시그널이 이미 있는지 확인
+                    existing_ticker_signal = self.get_translated_by_ticker(target_date, s.ticker)
+                    if existing_ticker_signal:
+                        logger.debug(f"티커 {s.ticker}의 번역된 시그널이 이미 존재함")
+                        all_translated_signals.append(existing_ticker_signal)
+                        continue
+
+                    # 4. 번역 수행
                     try:
+                        logger.debug(f"티커 {s.ticker} 번역 시작")
                         translated_signal = self._translate_signal(s)
-                        translated_batch.append(translated_signal)
-                        logger.debug(f"시그널 번역 완료: {s.ticker}")
-                    except Exception as e:
-                        logger.error(
-                            f"시그널 번역 중 오류 발생 (ticker: {s.ticker}): {e}"
-                        )
-                        # 번역 실패 시 원본 시그널 추가
-                        translated_batch.append(s)
-
-                    # 배치 크기에 도달하면 저장
-                    if len(translated_batch) >= batch_size:
+                        all_translated_signals.append(translated_signal)
+                        
+                        # 5. 개별 저장 (즉시 저장으로 중복 방지)
                         try:
-                            self._save_translated_signals(translated_batch, target_date)
-                            logger.info(
-                                f"{len(translated_batch)}개 시그널 개별 저장 완료"
-                            )
-                            translated_batch = []  # 배치 초기화
-                        except Exception as e:
-                            logger.error(f"개별 저장 중 오류 발생: {e}")
+                            self._save_translated_signals([translated_signal], target_date)
+                            logger.debug(f"티커 {s.ticker} 번역 및 저장 완료")
+                        except Exception as save_error:
+                            logger.error(f"티커 {s.ticker} 저장 중 오류: {save_error}")
+                            
+                    except Exception as translate_error:
+                        logger.error(f"티커 {s.ticker} 번역 중 오류: {translate_error}")
+                        # 번역 실패 시 원본 시그널을 그대로 저장
+                        all_translated_signals.append(s)
+                        try:
+                            self._save_translated_signals([s], target_date)
+                            logger.debug(f"티커 {s.ticker} 원본 시그널 저장 완료")
+                        except Exception as save_error:
+                            logger.error(f"티커 {s.ticker} 원본 저장 중 오류: {save_error}")
 
-                # 페이지 크기보다 적게 반환되면 마지막 페이지
+                # 6. 페이지네이션 종료 조건
                 if len(signals) < page_size:
                     logger.info(f"마지막 페이지 {page} 처리 완료")
                     break
@@ -321,66 +342,161 @@ class TranslateService:
                 page += 1
 
             except Exception as e:
-                logger.error(f"페이지 {page} 시그널 조회 중 오류 발생: {e}")
+                logger.error(f"페이지 {page} 처리 중 오류 발생: {e}")
                 break
 
-        # 남은 시그널들 저장 (배치 크기 미만이더라도)
-        if translated_batch:
-            try:
-                self._save_translated_signals(translated_batch, target_date)
-                logger.info(f"남은 {len(translated_batch)}개 시그널 최종 저장 완료")
-            except Exception as e:
-                logger.error(f"최종 개별 저장 중 오류 발생: {e}")
+        # 7. 최종 결과 반환
+        logger.info(f"{target_date} 날짜 번역 완료: 총 {len(all_translated_signals)}개 시그널 처리됨")
+        return all_translated_signals
 
-        # 전체 번역된 시그널 반환을 위해 signals 테이블에서 조회
+    def get_translated(self, target_date: datetime.date) -> List[SignalBaseResponse]:
         try:
-            next_target_date = target_date + datetime.timedelta(days=1)
-            request = GetSignalRequest(
-                start_date=target_date.strftime("%Y-%m-%d"),
-                end_date=next_target_date.strftime("%Y-%m-%d"),
-                pagination=PaginationRequest(page=1, page_size=300),  # 최대 300개
+            response = self.analysis_repository.get_all_analyses(
+                target_date=target_date,
+                name="signals",
+                item_schema=SignalBaseResponse,
             )
 
-            final_result = self.signals_repository.get_signals(request)
-            if final_result:
-                logger.info(
-                    f"{target_date} 날짜 번역 완료: 총 {len(final_result)}개 시그널"
-                )
-                return final_result
-            else:
-                logger.warning(f"{target_date} 날짜의 번역된 시그널을 찾을 수 없음")
-                return []
+            results = []
+            for r in response:
+                if r.value:
+                    try:
+                        # r.value가 이미 SignalBaseResponse 인스턴스인지 확인
+                        if isinstance(r.value, SignalBaseResponse):
+                            results.append(r.value)
+                        else:
+                            # dict 형태라면 기본값으로 보완한 후 model_validate로 변환
+                            signal_data = r.value if isinstance(r.value, dict) else {}
+
+                            # 필수 필드들의 기본값 설정
+                            defaults = {
+                                "id": signal_data.get("id", 0),
+                                "ticker": signal_data.get("ticker", ""),
+                                "entry_price": signal_data.get("entry_price", 0.0),
+                                "action": signal_data.get("action", "hold"),
+                                "timestamp": signal_data.get(
+                                    "timestamp",
+                                    datetime.datetime.now(datetime.timezone.utc),
+                                ),
+                                "stop_loss": signal_data.get("stop_loss"),
+                                "take_profit": signal_data.get("take_profit"),
+                                "probability": signal_data.get("probability"),
+                                "result_description": signal_data.get(
+                                    "result_description"
+                                ),
+                                "report_summary": signal_data.get("report_summary"),
+                                "strategy": signal_data.get("strategy"),
+                                "close_price": signal_data.get("close_price"),
+                                "ai_model": signal_data.get("ai_model", "OPENAI"),
+                                "senario": signal_data.get("senario"),
+                                "good_things": signal_data.get("good_things"),
+                                "bad_things": signal_data.get("bad_things"),
+                                "chart_pattern": signal_data.get("chart_pattern"),
+                            }
+
+                            signal = SignalBaseResponse.model_validate(defaults)
+                            results.append(signal)
+                    except Exception as validation_error:
+                        logger.warning(
+                            f"시그널 데이터 변환 실패: {validation_error}, 기본값으로 빈 시그널 생성"
+                        )
+                        # 최소한의 기본값으로 시그널 생성
+                        try:
+                            fallback_signal = SignalBaseResponse(
+                                id=0,
+                                ticker="UNKNOWN",
+                                entry_price=0.0,
+                                action="hold",
+                                timestamp=datetime.datetime.now(datetime.timezone.utc),
+                            )
+                            results.append(fallback_signal)
+                        except Exception:
+                            # 완전히 실패한 경우에만 건너뛰기
+                            continue
+
+            return results
         except Exception as e:
             logger.error(f"번역된 시그널 조회 중 오류 발생: {e}")
             return []
 
-    def get_translated(
-        self, target_date: datetime.date
-    ) -> List[SignalBaseResponse] | None:
-        try:
-            result = self.analysis_repository.get_analysis_by_date(
-                target_date, name="signals", schema=None
-            )
+    def get_translated_by_ticker(
+        self, target_date: datetime.date, ticker: str
+    ) -> SignalBaseResponse:
+        """
+        특정 날짜와 티커의 번역된 시그널을 가져옵니다.
 
-            if not result or not result.value:
-                return None
+        Args:
+            target_date: 조회할 날짜
+            ticker: 조회할 티커 심볼
 
-            return [SignalBaseResponse.model_validate(r) for r in result.value]
-        except Exception as e:
-            logger.error(f"번역된 시그널 조회 중 오류 발생: {e}")
-            return None
+        Returns:
+            해당 티커의 번역된 시그널 리스트
+        """
+        response = self.analysis_repository.get_analyses_by_ticker(
+            ticker=ticker,
+            target_date=target_date,
+            name="signals",
+            item_schema=SignalBaseResponse,
+        )
+
+        value = response.value if response else None
+        # r.value가 이미 SignalBaseResponse 인스턴스인지 확인
+        if isinstance(value, SignalBaseResponse):
+            return value  # 이미 변환된 인스턴스라면 리스트로 감싸서 반환
+        else:
+            # dict 형태라면 기본값으로 보완한 후 model_validate로 변환
+            signal_data = value if isinstance(value, dict) else {}
+
+            # 필수 필드들의 기본값 설정
+            defaults = {
+                "id": signal_data.get("id", 0),
+                "ticker": signal_data.get(
+                    "ticker", ticker
+                ),  # 파라미터로 받은 티커 사용
+                "entry_price": signal_data.get("entry_price", 0.0),
+                "action": signal_data.get("action", "hold"),
+                "timestamp": signal_data.get(
+                    "timestamp", datetime.datetime.now(datetime.timezone.utc)
+                ),
+                "stop_loss": signal_data.get("stop_loss"),
+                "take_profit": signal_data.get("take_profit"),
+                "probability": signal_data.get("probability"),
+                "result_description": signal_data.get("result_description"),
+                "report_summary": signal_data.get("report_summary"),
+                "strategy": signal_data.get("strategy"),
+                "close_price": signal_data.get("close_price"),
+                "ai_model": signal_data.get("ai_model", "OPENAI"),
+                "senario": signal_data.get("senario"),
+                "good_things": signal_data.get("good_things"),
+                "bad_things": signal_data.get("bad_things"),
+                "chart_pattern": signal_data.get("chart_pattern"),
+            }
+
+            signal = SignalBaseResponse.model_validate(defaults)
+            return signal  # 변환된 인스턴스 반환
+
+    def get_translated_signals(self, target_date: datetime.date) -> dict:
+        """
+        특정 날짜의 번역된 시그널을 가져와 마크다운 형식으로 변환합니다.
+        """
+        existing = self.get_translated(target_date)
+
+        if existing and len(existing) > 0:
+            return {"signals": existing}
+
+        # 번역된 시그널이 없으면 빈 결과 반환
+        logger.info(f"{target_date} 날짜의 번역된 시그널이 없습니다.")
+        return {"signals": []}
 
     def translate_and_markdown(self, target_date: datetime.date) -> dict:
         existing = self.get_translated(target_date)
 
         if existing and len(existing) > 0:
-            markdown = self._to_markdown(existing)
-            return {"signals": existing, "markdown": markdown}
+            return {"signals": existing}
 
         signals = self.translate_by_date(target_date)
 
-        markdown = self._to_markdown(signals)
-        return {"signals": signals, "markdown": markdown}
+        return {"signals": signals}
 
     def translate_text(self, text: str) -> str:
         """

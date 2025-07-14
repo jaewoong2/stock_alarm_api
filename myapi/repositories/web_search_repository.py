@@ -171,7 +171,7 @@ class WebSearchResultRepository:
     def get_all_analyses(
         self,
         name: str = "market_analysis",
-        schema: type | None = MarketAnalysis,
+        item_schema: type | None = MarketAnalysis,
         target_date: datetime.date = datetime.date.today(),
     ) -> List[AiAnalysisVO]:
         """Fetch all analysis data of a given type.
@@ -201,9 +201,9 @@ class WebSearchResultRepository:
         analyses = []
         for result in results:
             value = result.value
-            if schema is not None:
+            if item_schema is not None:
                 try:
-                    value = schema.model_validate(value)
+                    value = item_schema.model_validate(value)
                 except Exception:
                     # Fall back to raw value if validation fails
                     value = result.value
@@ -218,6 +218,62 @@ class WebSearchResultRepository:
             )
 
         return analyses
+
+    def get_analyses_by_ticker(
+        self,
+        ticker: str,
+        name: str = "signals",
+        item_schema: type | None = None,
+        target_date: datetime.date = datetime.date.today(),
+    ) -> AiAnalysisVO | None:
+        """Fetch analysis data for a given ticker and type.
+        Parameters
+        ----------
+        ticker: str
+
+            Ticker symbol to filter the analysis.
+        name: str
+            Identifier of the analysis type. Defaults to ``"signals"``.
+        item_schema: Optional[type]
+            Pydantic schema used to validate the stored value. If ``None`` the
+            raw JSON value is returned.
+        target_date: Optional[datetime.date]
+            If provided, only analyses for this date will be returned.
+        """
+        from sqlalchemy import text
+
+        query = self.db_session.query(AiAnalysisModel).filter(
+            AiAnalysisModel.name == name
+        )
+
+        if target_date:
+            query = query.filter(
+                AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+            )
+
+        # JSON 필드에서 ticker로 필터링 (PostgreSQL의 경우)
+        query = query.filter(text("value->>'ticker' = :ticker")).params(
+            ticker=ticker
+        )
+
+        result = query.first()
+
+        if not result:
+            return None
+
+        value = result.value
+        if item_schema is not None:
+            try:
+                result.value = item_schema.model_validate(value)
+            except Exception:
+                result.value = value
+
+        return AiAnalysisVO(
+            id=self.safe_convert(result.id),
+            date=str(result.date),
+            name=str(result.name),
+            value=value,
+        )
 
     def get_analysis_by_date(
         self,

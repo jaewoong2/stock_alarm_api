@@ -315,7 +315,7 @@ class WebSearchService:
         responses = self.websearch_repository.get_all_analyses(
             target_date=target_date,
             name="mahaney_analysis",
-            schema=MahaneyStockAnalysis,
+            item_schema=MahaneyStockAnalysis,
         )
 
         for response in responses:
