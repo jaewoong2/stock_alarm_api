@@ -1,4 +1,5 @@
 import datetime
+import json
 import re
 from typing import List, Any
 import boto3
@@ -9,6 +10,7 @@ from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     PaginationRequest,
     SignalBaseResponse,
+    SignalValueObject,
 )
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
@@ -227,43 +229,130 @@ class TranslateService:
         else:
             return data
 
+    def _save_translated_signals(
+        self,
+        translated_signals: List[SignalBaseResponse],
+        target_date: datetime.date,
+    ) -> None:
+        """
+        번역된 시그널들을 signals 테이블에 개별적으로 저장합니다.
+        기존에 동일한 ticker + timestamp 조합이 있으면 덮어쓰기합니다.
+
+        Args:
+            translated_signals: 번역된 시그널 리스트
+        """
+        try:
+            # SignalBaseResponse를 SignalValueObject로 변환
+            for signal in translated_signals:
+                # datetime 객체를 문자열로 변환하여 JSON 직렬화 가능하게 만듦
+                signal_str = signal.model_dump_json(exclude={"id"})
+                signal_dict = json.loads(signal_str)
+
+                self.analysis_repository.create_analysis(
+                    name="signals",
+                    analysis=signal_dict,
+                    analysis_date=target_date,
+                )
+
+            logger.info(f"번역된 시그널 {len(translated_signals)}개 개별 저장 완료")
+
+        except Exception as e:
+            logger.error(f"번역된 시그널 개별 저장 중 오류 발생: {e}")
+            raise
+
     def translate_by_date(self, target_date: datetime.date) -> List[SignalBaseResponse]:
+        """
+        특정 날짜의 모든 시그널을 번역하여 반환합니다.
+        페이지네이션을 통해 모든 시그널을 가져오고, 배치 단위로 DB에 저장합니다.
+        최대 300개의 시그널을 효율적으로 처리합니다.
+        """
         next_target_date = target_date + datetime.timedelta(days=1)
-        request = GetSignalRequest(
-            start_date=target_date.strftime("%Y-%m-%d"),
-            end_date=next_target_date.strftime("%Y-%m-%d"),
-            pagination=PaginationRequest(page=1, page_size=200),
-        )
+        page = 1
+        page_size = 50  # 페이지당 50개로 증가하여 효율성 향상
+        batch_size = 5  # 번역 후 저장할 배치 크기
+        translated_batch: List[SignalBaseResponse] = []
 
-        try:
-            signals = self.signals_repository.get_signals(request)
-        except Exception as e:
-            logger.error(f"시그널 조회 중 오류 발생: {e}")
-            return []
+        logger.info(f"{target_date} 날짜의 시그널 번역 시작")
 
-        translated: List[SignalBaseResponse] = []
-
-        for s in signals:
-            try:
-                translated.append(self._translate_signal(s))
-            except Exception as e:
-                logger.error(f"시그널 번역 중 오류 발생 (ticker: {s.ticker}): {e}")
-                # 번역 실패 시 원본 시그널 추가
-                translated.append(s)
-
-        try:
-            # SignalBaseResponse 객체들을 딕셔너리로 변환하여 JSON 직렬화 가능하게 만듦
-            translated_dicts = [signal.model_dump(mode="json") for signal in translated]
-
-            self.analysis_repository.create_analysis(
-                analysis_date=target_date,
-                analysis=translated_dicts,
-                name="signals",
+        while True:
+            request = GetSignalRequest(
+                start_date=target_date.strftime("%Y-%m-%d"),
+                end_date=next_target_date.strftime("%Y-%m-%d"),
+                pagination=PaginationRequest(page=page, page_size=page_size),
             )
-        except Exception as e:
-            logger.error(f"분석 결과 저장 중 오류 발생: {e}")
 
-        return translated
+            try:
+                signals = self.signals_repository.get_signals(request)
+                logger.info(f"페이지 {page}: {len(signals)}개 시그널 조회됨")
+
+                if not signals:
+                    logger.info(f"페이지 {page}에서 시그널이 없어 종료")
+                    break
+
+                # 현재 페이지의 시그널들을 번역
+                for s in signals:
+                    try:
+                        translated_signal = self._translate_signal(s)
+                        translated_batch.append(translated_signal)
+                        logger.debug(f"시그널 번역 완료: {s.ticker}")
+                    except Exception as e:
+                        logger.error(
+                            f"시그널 번역 중 오류 발생 (ticker: {s.ticker}): {e}"
+                        )
+                        # 번역 실패 시 원본 시그널 추가
+                        translated_batch.append(s)
+
+                    # 배치 크기에 도달하면 저장
+                    if len(translated_batch) >= batch_size:
+                        try:
+                            self._save_translated_signals(translated_batch, target_date)
+                            logger.info(
+                                f"{len(translated_batch)}개 시그널 개별 저장 완료"
+                            )
+                            translated_batch = []  # 배치 초기화
+                        except Exception as e:
+                            logger.error(f"개별 저장 중 오류 발생: {e}")
+
+                # 페이지 크기보다 적게 반환되면 마지막 페이지
+                if len(signals) < page_size:
+                    logger.info(f"마지막 페이지 {page} 처리 완료")
+                    break
+
+                page += 1
+
+            except Exception as e:
+                logger.error(f"페이지 {page} 시그널 조회 중 오류 발생: {e}")
+                break
+
+        # 남은 시그널들 저장 (배치 크기 미만이더라도)
+        if translated_batch:
+            try:
+                self._save_translated_signals(translated_batch, target_date)
+                logger.info(f"남은 {len(translated_batch)}개 시그널 최종 저장 완료")
+            except Exception as e:
+                logger.error(f"최종 개별 저장 중 오류 발생: {e}")
+
+        # 전체 번역된 시그널 반환을 위해 signals 테이블에서 조회
+        try:
+            next_target_date = target_date + datetime.timedelta(days=1)
+            request = GetSignalRequest(
+                start_date=target_date.strftime("%Y-%m-%d"),
+                end_date=next_target_date.strftime("%Y-%m-%d"),
+                pagination=PaginationRequest(page=1, page_size=300),  # 최대 300개
+            )
+
+            final_result = self.signals_repository.get_signals(request)
+            if final_result:
+                logger.info(
+                    f"{target_date} 날짜 번역 완료: 총 {len(final_result)}개 시그널"
+                )
+                return final_result
+            else:
+                logger.warning(f"{target_date} 날짜의 번역된 시그널을 찾을 수 없음")
+                return []
+        except Exception as e:
+            logger.error(f"번역된 시그널 조회 중 오류 발생: {e}")
+            return []
 
     def get_translated(
         self, target_date: datetime.date

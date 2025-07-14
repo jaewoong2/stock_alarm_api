@@ -437,15 +437,17 @@ class PaginationRequest(BaseModel):
     """
     Pagination parameters for API requests.
     """
-    
+
     page: int = Field(default=1, ge=1, description="Page number (starting from 1)")
-    page_size: int = Field(default=20, ge=1, le=100, description="Number of items per page (1-100)")
-    
+    page_size: int = Field(
+        default=20, ge=1, le=200, description="Number of items per page (1-200)"
+    )
+
     @property
     def offset(self) -> int:
         """Calculate offset for database queries."""
         return (self.page - 1) * self.page_size
-    
+
     @property
     def limit(self) -> int:
         """Get limit for database queries."""
@@ -456,16 +458,18 @@ class PaginationResponse(BaseModel):
     """
     Pagination metadata for API responses.
     """
-    
+
     page: int = Field(description="Current page number")
     page_size: int = Field(description="Number of items per page")
     total_items: int = Field(description="Total number of items")
     total_pages: int = Field(description="Total number of pages")
     has_next: bool = Field(description="Whether there is a next page")
     has_previous: bool = Field(description="Whether there is a previous page")
-    
+
     @classmethod
-    def create(cls, page: int, page_size: int, total_items: int) -> "PaginationResponse":
+    def create(
+        cls, page: int, page_size: int, total_items: int
+    ) -> "PaginationResponse":
         """Create pagination response from parameters."""
         total_pages = (total_items + page_size - 1) // page_size  # Ceiling division
         return cls(
@@ -474,7 +478,7 @@ class PaginationResponse(BaseModel):
             total_items=total_items,
             total_pages=total_pages,
             has_next=page < total_pages,
-            has_previous=page > 1
+            has_previous=page > 1,
         )
 
 
@@ -564,8 +568,10 @@ class PaginatedSignalsResponse(BaseModel):
     """
     Paginated response for signals with metadata.
     """
-    
-    data: List[SignalBaseResponse] = Field(description="List of signals for the current page")
+
+    data: List[SignalBaseResponse] = Field(
+        description="List of signals for the current page"
+    )
     pagination: PaginationResponse = Field(description="Pagination metadata")
 
 
@@ -573,8 +579,10 @@ class PaginatedSignalJoinTickerResponse(BaseModel):
     """
     Paginated response for signals with ticker information.
     """
-    
-    data: List[SignalJoinTickerResponse] = Field(description="List of signals with ticker info for the current page")
+
+    data: List[SignalJoinTickerResponse] = Field(
+        description="List of signals with ticker info for the current page"
+    )
     pagination: PaginationResponse = Field(description="Pagination metadata")
 
 
@@ -629,7 +637,7 @@ class SignalValueObject(BaseModel):
     senario: Optional[str] = None
     good_things: Optional[str] = None
     bad_things: Optional[str] = None
-    chart_pattern: Optional[Dict] = None
+    chart_pattern: Optional[ChartPattern] = None  # 차트 패턴 정보
 
     class Config:
         from_attributes = True

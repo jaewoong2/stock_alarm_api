@@ -59,7 +59,29 @@ class SignalsRepository:
             signals_models = []
             for signal_vo in signals_vo_list:
                 # SignalValueObject를 Signals 모델로 변환
-                signal_model = signal_vo.to_orm(Signals)
+                signal_model = Signals(
+                    ticker=signal_vo.ticker,
+                    strategy=signal_vo.strategy,
+                    entry_price=signal_vo.entry_price,
+                    stop_loss=signal_vo.stop_loss,
+                    take_profit=signal_vo.take_profit,
+                    close_price=signal_vo.close_price,
+                    action=signal_vo.action,
+                    timestamp=signal_vo.timestamp or datetime.utcnow(),
+                    probability=signal_vo.probability,
+                    result_description=signal_vo.result_description,
+                    report_summary=signal_vo.report_summary,
+                    ai_model=signal_vo.ai_model or "OPENAI_O4MINI",
+                    senario=signal_vo.senario,
+                    good_things=signal_vo.good_things,
+                    bad_things=signal_vo.bad_things,
+                    chart_pattern=(
+                        signal_vo.chart_pattern.model_dump()
+                        if signal_vo.chart_pattern
+                        else None
+                    ),  # 차트 패턴 정보 추가
+                )
+
                 signals_models.append(signal_model)
 
             # DB에 한 번에 저장
