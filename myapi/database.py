@@ -1,4 +1,5 @@
 import contextlib
+import logging
 from dotenv import load_dotenv
 
 
@@ -11,6 +12,7 @@ from myapi.utils.config import get_settings
 
 
 load_dotenv(dotenv_path="myapi/.env")  # Load variables from .env
+logger = logging.getLogger(__name__)
 
 
 settings = get_settings()
@@ -34,6 +36,10 @@ engine = create_engine(
     max_overflow=settings.database_max_overflow,
     pool_pre_ping=True,
     pool_recycle=1800,
+    # 추가적인 연결 안정성을 위한 설정
+    echo=False,
+    pool_timeout=30,
+    connect_args={"connect_timeout": 60, "application_name": "tqqq_api"},
 )
 
 SessionLocal = sessionmaker(
@@ -47,11 +53,16 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
-    except Exception:
+    except Exception as e:
         db.rollback()
-        raise
+        raise e
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            logger.warning("Failed to close database session gracefully.")
+            # 연결 종료 시 예외가 발생해도 무시
+            pass
 
 
 @contextlib.contextmanager
@@ -59,5 +70,13 @@ def get_db_contextlib():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        db.rollback()
+        raise e
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            logger.warning("Failed to close database session gracefully.")
+            # 연결 종료 시 예외가 발생해도 무시
+            pass

@@ -10,7 +10,6 @@ from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     PaginationRequest,
     SignalBaseResponse,
-    SignalValueObject,
 )
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
@@ -266,7 +265,7 @@ class TranslateService:
         이미 번역된 시그널이 있으면 건너뛰고, 새로운 시그널만 번역합니다.
         """
         logger.info(f"{target_date} 날짜의 시그널 번역 시작")
-        
+
         # 1. 먼저 이미 번역된 시그널들이 있는지 확인
         existing_translated = self.get_translated(target_date)
         if existing_translated:
@@ -301,11 +300,13 @@ class TranslateService:
                     if s.ticker in processed_tickers:
                         logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
                         continue
-                    
+
                     processed_tickers.add(s.ticker)
-                    
+
                     # 개별 티커의 번역된 시그널이 이미 있는지 확인
-                    existing_ticker_signal = self.get_translated_by_ticker(target_date, s.ticker)
+                    existing_ticker_signal = self.get_translated_by_ticker(
+                        target_date, s.ticker
+                    )
                     if existing_ticker_signal:
                         logger.debug(f"티커 {s.ticker}의 번역된 시그널이 이미 존재함")
                         all_translated_signals.append(existing_ticker_signal)
@@ -316,14 +317,16 @@ class TranslateService:
                         logger.debug(f"티커 {s.ticker} 번역 시작")
                         translated_signal = self._translate_signal(s)
                         all_translated_signals.append(translated_signal)
-                        
+
                         # 5. 개별 저장 (즉시 저장으로 중복 방지)
                         try:
-                            self._save_translated_signals([translated_signal], target_date)
+                            self._save_translated_signals(
+                                [translated_signal], target_date
+                            )
                             logger.debug(f"티커 {s.ticker} 번역 및 저장 완료")
                         except Exception as save_error:
                             logger.error(f"티커 {s.ticker} 저장 중 오류: {save_error}")
-                            
+
                     except Exception as translate_error:
                         logger.error(f"티커 {s.ticker} 번역 중 오류: {translate_error}")
                         # 번역 실패 시 원본 시그널을 그대로 저장
@@ -332,7 +335,9 @@ class TranslateService:
                             self._save_translated_signals([s], target_date)
                             logger.debug(f"티커 {s.ticker} 원본 시그널 저장 완료")
                         except Exception as save_error:
-                            logger.error(f"티커 {s.ticker} 원본 저장 중 오류: {save_error}")
+                            logger.error(
+                                f"티커 {s.ticker} 원본 저장 중 오류: {save_error}"
+                            )
 
                 # 6. 페이지네이션 종료 조건
                 if len(signals) < page_size:
@@ -346,7 +351,9 @@ class TranslateService:
                 break
 
         # 7. 최종 결과 반환
-        logger.info(f"{target_date} 날짜 번역 완료: 총 {len(all_translated_signals)}개 시그널 처리됨")
+        logger.info(
+            f"{target_date} 날짜 번역 완료: 총 {len(all_translated_signals)}개 시그널 처리됨"
+        )
         return all_translated_signals
 
     def get_translated(self, target_date: datetime.date) -> List[SignalBaseResponse]:

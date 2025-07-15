@@ -585,6 +585,8 @@ class SignalsRepository:
         start_date: datetime,
         end_date: datetime,
         action: Literal["Buy", "Sell", "Hold"],
+        order_by: Optional[Literal["counts"]] = None,
+        limit: int = 10,
     ):
         """
         주어진 기간 동안 티커별로 날짜별 액션 시그널 개수 배열을 반환합니다.
@@ -603,52 +605,135 @@ class SignalsRepository:
         # 날짜 컬럼 추출 (시간 부분 제외)
         date_column = func.date(Signals.timestamp)
 
-        # 주말을 제외한 쿼리 작성
-        query = self.db_session.query(
+        # 단일 쿼리로 티커별 총 시그널 개수와 날짜별 개수를 함께 계산
+        base_query = self.db_session.query(
             Signals.ticker,
             date_column.label("date"),
-            func.count(Signals.id).label("count"),
+            func.count(Signals.id).label("daily_count"),
         ).filter(
             Signals.timestamp >= start_date,
             Signals.timestamp <= end_date,
             Signals.action == action.lower(),
-            # 주말 제외 필터 추가 (0=월요일, 6=일요일)
+            # 주말 제외 필터 추가
             func.extract("dow", Signals.timestamp).notin_([0, 6]),
         )
 
         if tickers:
-            query = query.filter(Signals.ticker.in_(tickers))
+            base_query = base_query.filter(Signals.ticker.in_(tickers))
 
-        results = query.group_by(Signals.ticker, date_column).all()
+        # 티커별 집계
+        base_query = base_query.group_by(Signals.ticker, date_column)
 
-        # 결과를 티커별로 그룹화 (딕셔너리 컴프리헨션 사용)
-        count_by_ticker_date = {}
-        for ticker, date, count in results:
-            if ticker not in count_by_ticker_date:
-                count_by_ticker_date[ticker] = {}
-            count_by_ticker_date[ticker][date] = count
-
-        # 요청된 티커와 결과에서 얻은 티커를 모두 포함
-        all_tickers = set(ticker for ticker, _, _ in results) if results else set()
-        if tickers:
-            all_tickers = all_tickers.union(set(tickers))
-
-        # 결과 생성 - 각 티커별로 날짜 범위에 대한 시그널 개수 배열 생성
-        final_results = []
-        formatted_dates = [d.strftime("%Y-%m-%d") for d in date_range]
-
-        for ticker in all_tickers:
-            ticker_counts = [
-                count_by_ticker_date.get(ticker, {}).get(d, 0) for d in date_range
-            ]
-
-            final_results.append(
-                {
-                    "ticker": ticker,
-                    "count": ticker_counts,
-                    "date": formatted_dates,
-                }
+        # 필요한 경우 서브쿼리를 사용하여 상위 N개의 티커만 선별
+        if order_by == "counts" and limit:
+            # 티커별 총 개수를 계산하는 서브쿼리
+            subquery = self.db_session.query(
+                Signals.ticker, func.count(Signals.id).label("total_count")
+            ).filter(
+                Signals.timestamp >= start_date,
+                Signals.timestamp <= end_date,
+                Signals.action == action.lower(),
+                func.extract("dow", Signals.timestamp).notin_([0, 6]),
             )
+
+            if tickers:
+                subquery = subquery.filter(Signals.ticker.in_(tickers))
+
+            # 총 개수로 그룹화하고 정렬
+            subquery = (
+                subquery.group_by(Signals.ticker)
+                .order_by(desc("total_count"))
+                .limit(limit)
+                .subquery()
+            )
+
+            # 서브쿼리 결과와 조인하여 선택된 티커의 데이터만 가져오기
+            base_subquery = base_query.subquery()
+            results = (
+                self.db_session.query(base_subquery, subquery.c.total_count)
+                .join(subquery, base_subquery.c.ticker == subquery.c.ticker)
+                .order_by(desc(subquery.c.total_count))
+                .all()
+            )
+
+            # 결과 파싱
+            ticker_totals = {}
+            ticker_dates = {}
+
+            for row in results:
+                ticker = row[0]
+                date = row[1]
+                daily_count = row[2]
+                total_count = row[3]
+
+                if ticker not in ticker_dates:
+                    ticker_dates[ticker] = {}
+                    ticker_totals[ticker] = total_count
+
+                ticker_dates[ticker][date] = daily_count
+
+            # 결과 구성
+            final_results = []
+            formatted_dates = [d.strftime("%Y-%m-%d") for d in date_range]
+
+            for ticker, total in sorted(
+                ticker_totals.items(), key=lambda x: x[1], reverse=True
+            ):
+                ticker_counts = [
+                    ticker_dates.get(ticker, {}).get(d, 0) for d in date_range
+                ]
+
+                final_results.append(
+                    {
+                        "ticker": ticker,
+                        "count": ticker_counts,
+                        "date": formatted_dates,
+                    }
+                )
+
+        else:
+            # order_by가 없는 경우 또는 tickers가 이미 제한된 경우의 일반 로직
+            results = base_query.all()
+
+            count_by_ticker_date = {}
+            all_tickers = set()
+
+            for ticker, date, count in results:
+                if ticker not in count_by_ticker_date:
+                    count_by_ticker_date[ticker] = {}
+                    all_tickers.add(ticker)
+
+                count_by_ticker_date[ticker][date] = count
+
+            # limit 적용을 위해 총 개수로 정렬
+            if limit and len(all_tickers) > limit:
+                ticker_totals = {}
+                for ticker in all_tickers:
+                    ticker_totals[ticker] = sum(
+                        count_by_ticker_date.get(ticker, {}).values()
+                    )
+
+                # 총 개수로 정렬하여 상위 limit개만 선택
+                sorted_tickers = sorted(
+                    ticker_totals.items(), key=lambda x: x[1], reverse=True
+                )[:limit]
+                all_tickers = [ticker for ticker, _ in sorted_tickers]
+
+            final_results = []
+            formatted_dates = [d.strftime("%Y-%m-%d") for d in date_range]
+
+            for ticker in all_tickers:
+                ticker_counts = [
+                    count_by_ticker_date.get(ticker, {}).get(d, 0) for d in date_range
+                ]
+
+                final_results.append(
+                    {
+                        "ticker": ticker,
+                        "count": ticker_counts,
+                        "date": formatted_dates,
+                    }
+                )
 
         return final_results
 

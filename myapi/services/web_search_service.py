@@ -10,6 +10,7 @@ from myapi.domain.news.news_schema import (
     MarketAnalysis,
     MarketAnalysisResponse,
     MarketForecastResponse,
+    MarketOverview,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -58,45 +59,63 @@ class WebSearchService:
     ):
         """Return cached market forecast if available."""
 
-        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-        end_date = today.strftime("%Y-%m-%d")
+        try:
+            start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+            end_date = today.strftime("%Y-%m-%d")
 
-        cached = await self.websearch_repository.get_by_date(
-            start_date_yyyymmdd=start_date, end_date_yyyymmdd=end_date, source=source
-        )
+            cached = await self.websearch_repository.get_by_date(
+                start_date_yyyymmdd=start_date,
+                end_date_yyyymmdd=end_date,
+                source=source,
+            )
 
-        if cached:
-            return cached
+            if cached:
+                return cached
 
-        raise HTTPException(status_code=404, detail="Forecast not found")
+            raise HTTPException(status_code=404, detail="Forecast not found")
+        except HTTPException:
+            # HTTPException은 다시 raise
+            raise
+        except Exception as e:
+            # 다른 모든 예외는 500 에러로 변환
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal server error while fetching market forecast: {str(e)}",
+            )
 
     async def create_market_forecast(
         self, today: date, source: Literal["Major", "Minor"] = "Major"
     ):
         """Create a new market forecast using the AI service."""
 
-        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-        end_date = today.strftime("%Y-%m-%d")
+        try:
+            start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+            end_date = today.strftime("%Y-%m-%d")
 
-        prompt = self._build_prompt(end_date, source)
+            prompt = self._build_prompt(end_date, source)
 
-        response = self.ai_service.perplexity_completion(
-            prompt=prompt,
-            schema=MarketForecastResponse,
-        )
-
-        if not isinstance(response, MarketForecastResponse):
-            raise ValueError("Invalid response format from AI service")
-
-        await self.websearch_repository.create(
-            MarketForecast(
-                date_yyyymmdd=end_date,
-                outlook=response.outlook,
-                reason=response.reason,
-                up_percentage=response.up_percentage,
-                source=source,
+            response = self.ai_service.perplexity_completion(
+                prompt=prompt,
+                schema=MarketForecastResponse,
             )
-        )
+
+            if not isinstance(response, MarketForecastResponse):
+                raise ValueError("Invalid response format from AI service")
+
+            await self.websearch_repository.create(
+                MarketForecast(
+                    date_yyyymmdd=end_date,
+                    outlook=response.outlook,
+                    reason=response.reason,
+                    up_percentage=response.up_percentage,
+                    source=source,
+                )
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal server error while creating market forecast: {str(e)}",
+            )
 
         cached = await self.websearch_repository.get_by_date(
             start_date_yyyymmdd=start_date,
@@ -170,7 +189,14 @@ class WebSearchService:
         if cached:
             return MarketAnalysis.model_validate(cached.value)
 
-        raise HTTPException(status_code=404, detail="Analysis not found")
+        return MarketAnalysis(
+            analysis_date_est=today.strftime("%Y-%m-%d"),
+            market_overview=MarketOverview(
+                summary="",
+                major_catalysts=[],
+            ),
+            top_momentum_sectors=[],
+        )
 
     def create_market_analysis(self, today: date):
         """Generate and store market analysis using the AI service."""

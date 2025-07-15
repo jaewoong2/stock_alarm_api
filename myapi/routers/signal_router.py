@@ -504,6 +504,8 @@ async def get_weekly_action_count(
     tickers: Optional[str] = None,
     reference_date: Optional[dt.date] = dt.date.today(),
     action: Literal["Buy", "Sell"] = "Buy",
+    order_by: Optional[Literal["counts"]] = None,
+    limit: int = 10,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
@@ -521,7 +523,7 @@ async def get_weekly_action_count(
     )
 
     result = await db_signal_service.get_weekly_action_counts(
-        ticker_list, reference_date, action
+        ticker_list, reference_date, action, order_by, limit
     )
 
     return {
@@ -559,7 +561,7 @@ async def get_signal_by_date(
     # 페이지네이션 파라미터 검증
     if page < 1:
         page = 1
-    if page_size < 1 or page_size > 100:
+    if page_size < 1 or page_size > 200:
         page_size = 20
 
     response = await db_signal_service.get_signals_result(

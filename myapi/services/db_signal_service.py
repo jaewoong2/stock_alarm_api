@@ -456,6 +456,8 @@ class DBSignalService:
         tickers: Optional[List[str]],
         reference_date: date,
         action: Literal["Buy", "Sell"] = "Buy",
+        order_by: Optional[Literal["counts"]] = None,
+        limit: int = 10,
     ):
         """지정한 날짜를 기준으로 일주일간 액션별 시그널 개수를 조회합니다."""
 
@@ -469,7 +471,7 @@ class DBSignalService:
             start_dt = end_dt - timedelta(days=6)
 
             result = await self.repository.count_signals_by_action(
-                tickers, start_dt, end_dt, action
+                tickers, start_dt, end_dt, action, order_by, limit
             )
 
             return result

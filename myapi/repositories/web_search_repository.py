@@ -20,9 +20,13 @@ class WebSearchResultRepository:
         self.db_session = db_session
 
     def bulk_create(self, records: List[WebSearchResult]) -> List[WebSearchResult]:
-        self.db_session.bulk_save_objects(records)
-        self.db_session.commit()
-        return records
+        try:
+            self.db_session.bulk_save_objects(records)
+            self.db_session.commit()
+            return records
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     def get_search_results(
         self,
@@ -31,21 +35,25 @@ class WebSearchResultRepository:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> List[WebSearchResult]:
-        query = self.db_session.query(WebSearchResult).filter(
-            WebSearchResult.result_type == result_type
-        )
-        if ticker != "" and ticker is not None:
-            query = query.filter(WebSearchResult.ticker == ticker)
+        try:
+            query = self.db_session.query(WebSearchResult).filter(
+                WebSearchResult.result_type == result_type
+            )
+            if ticker != "" and ticker is not None:
+                query = query.filter(WebSearchResult.ticker == ticker)
 
-        if start_date:
-            query = query.filter(WebSearchResult.created_at >= start_date)
+            if start_date:
+                query = query.filter(WebSearchResult.created_at >= start_date)
 
-        if end_date:
-            query = query.filter(WebSearchResult.created_at < end_date)
+            if end_date:
+                query = query.filter(WebSearchResult.created_at < end_date)
 
-        query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
+            query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
 
-        return query.all()
+            return query.all()
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     def get_ticker_counts_by_recommendation(
         self, recommendation: str, limit: int, date: Optional[datetime.date]
@@ -55,56 +63,64 @@ class WebSearchResultRepository:
         - recommendation='buy': Buy +1, Sell -1, Hold 0 점으로 계산
         - recommendation='sell': Sell +1, Buy -1, Hold 0 점으로 계산
         """
-        current_date = datetime.date.today() if date is None else date
+        try:
+            current_date = datetime.date.today() if date is None else date
 
-        if recommendation.lower() == "buy":
-            score_expression = case(
-                (WebSearchResult.recommendation == "Buy", 1),
-                (WebSearchResult.recommendation == "Sell", -1),
-                else_=0,
+            if recommendation.lower() == "buy":
+                score_expression = case(
+                    (WebSearchResult.recommendation == "Buy", 1),
+                    (WebSearchResult.recommendation == "Sell", -1),
+                    else_=0,
+                )
+            elif recommendation.lower() == "sell":
+                score_expression = case(
+                    (WebSearchResult.recommendation == "Sell", 1),
+                    (WebSearchResult.recommendation == "Buy", -1),
+                    else_=0,
+                )
+            else:
+                # 'buy' 또는 'sell'이 아닌 경우 빈 리스트를 반환합니다.
+                return []
+
+            score = func.sum(score_expression).label("score")
+
+            query = (
+                self.db_session.query(
+                    WebSearchResult.ticker,
+                    score,
+                )
+                .filter(WebSearchResult.result_type == "ticker")
+                .filter(WebSearchResult.created_at >= current_date.strftime("%Y-%m-%d"))
+                .group_by(WebSearchResult.ticker)
+                .order_by(score.desc())
+                .limit(limit)
             )
-        elif recommendation.lower() == "sell":
-            score_expression = case(
-                (WebSearchResult.recommendation == "Sell", 1),
-                (WebSearchResult.recommendation == "Buy", -1),
-                else_=0,
-            )
-        else:
-            # 'buy' 또는 'sell'이 아닌 경우 빈 리스트를 반환합니다.
-            return []
 
-        score = func.sum(score_expression).label("score")
-
-        query = (
-            self.db_session.query(
-                WebSearchResult.ticker,
-                score,
-            )
-            .filter(WebSearchResult.result_type == "ticker")
-            .filter(WebSearchResult.created_at >= current_date.strftime("%Y-%m-%d"))
-            .group_by(WebSearchResult.ticker)
-            .order_by(score.desc())
-            .limit(limit)
-        )
-
-        return query.all()
+            return query.all()
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     async def create(self, forecast: MarketForecast):
-        self.db_session.add(forecast)
-        self.db_session.commit()
-        self.db_session.refresh(forecast)
+        try:
+            self.db_session.add(forecast)
+            self.db_session.commit()
+            self.db_session.refresh(forecast)
 
-        up_percentage = None
-        if forecast.up_percentage is not None:
-            up_percentage = float(str(forecast.up_percentage))
+            up_percentage = None
+            if forecast.up_percentage is not None:
+                up_percentage = float(str(forecast.up_percentage))
 
-        return MarketForecastSchema(
-            created_at=forecast.created_at.isoformat(),
-            date_yyyymmdd=str(forecast.date_yyyymmdd),
-            outlook="UP" if str(forecast.outlook) == "UP" else "DOWN",
-            reason=str(forecast.reason),
-            up_percentage=up_percentage,
-        )
+            return MarketForecastSchema(
+                created_at=forecast.created_at.isoformat(),
+                date_yyyymmdd=str(forecast.date_yyyymmdd),
+                outlook="UP" if str(forecast.outlook) == "UP" else "DOWN",
+                reason=str(forecast.reason),
+                up_percentage=up_percentage,
+            )
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     async def get_by_date(
         self,
@@ -112,42 +128,46 @@ class WebSearchResultRepository:
         end_date_yyyymmdd: str,
         source: Literal["Major", "Minor"],
     ):
-        # result = (
-        #     self.db_session.query(MarketForecast)
-        #     .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
-        #     .filter(MarketForecast.source == source)
-        #     .first()
-        # )
+        try:
+            # result = (
+            #     self.db_session.query(MarketForecast)
+            #     .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
+            #     .filter(MarketForecast.source == source)
+            #     .first()
+            # )
 
-        response = (
-            self.db_session.query(MarketForecast)
-            .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
-            .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
-            .filter(MarketForecast.source == source)
-            .order_by(MarketForecast.date_yyyymmdd.asc())
-            .all()
-        )
-
-        if not response:
-            return None
-
-        results = []
-
-        for result in response:
-            up_percentage = None
-
-            if result.up_percentage is not None:
-                up_percentage = float(str(result.up_percentage))
-
-            results.append(
-                MarketForecastSchema(
-                    created_at=result.created_at.isoformat(),
-                    date_yyyymmdd=str(result.date_yyyymmdd),
-                    outlook="UP" if str(result.outlook) == "UP" else "DOWN",
-                    reason=str(result.reason),
-                    up_percentage=up_percentage,
-                )
+            response = (
+                self.db_session.query(MarketForecast)
+                .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
+                .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
+                .filter(MarketForecast.source == source)
+                .order_by(MarketForecast.date_yyyymmdd.asc())
+                .all()
             )
+
+            if not response:
+                return None
+
+            results = []
+
+            for result in response:
+                up_percentage = None
+
+                if result.up_percentage is not None:
+                    up_percentage = float(str(result.up_percentage))
+
+                results.append(
+                    MarketForecastSchema(
+                        created_at=result.created_at.isoformat(),
+                        date_yyyymmdd=str(result.date_yyyymmdd),
+                        outlook="UP" if str(result.outlook) == "UP" else "DOWN",
+                        reason=str(result.reason),
+                        up_percentage=up_percentage,
+                    )
+                )
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
         return results
 
@@ -187,37 +207,41 @@ class WebSearchResultRepository:
             If provided, only analyses for this date will be returned.
         """
 
-        query = self.db_session.query(AiAnalysisModel).filter(
-            AiAnalysisModel.name == name
-        )
-
-        if target_date:
-            query = query.filter(
-                AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+        try:
+            query = self.db_session.query(AiAnalysisModel).filter(
+                AiAnalysisModel.name == name
             )
 
-        results = query.all()
-
-        analyses = []
-        for result in results:
-            value = result.value
-            if item_schema is not None:
-                try:
-                    value = item_schema.model_validate(value)
-                except Exception:
-                    # Fall back to raw value if validation fails
-                    value = result.value
-
-            analyses.append(
-                AiAnalysisVO(
-                    id=self.safe_convert(result.id),
-                    date=str(result.date),
-                    name=str(result.name),
-                    value=value,
+            if target_date:
+                query = query.filter(
+                    AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
                 )
-            )
 
-        return analyses
+            results = query.all()
+
+            analyses = []
+            for result in results:
+                value = result.value
+                if item_schema is not None:
+                    try:
+                        value = item_schema.model_validate(value)
+                    except Exception:
+                        # Fall back to raw value if validation fails
+                        value = result.value
+
+                analyses.append(
+                    AiAnalysisVO(
+                        id=self.safe_convert(result.id),
+                        date=str(result.date),
+                        name=str(result.name),
+                        value=value,
+                    )
+                )
+
+            return analyses
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     def get_analyses_by_ticker(
         self,
@@ -240,40 +264,44 @@ class WebSearchResultRepository:
         target_date: Optional[datetime.date]
             If provided, only analyses for this date will be returned.
         """
-        from sqlalchemy import text
+        try:
+            from sqlalchemy import text
 
-        query = self.db_session.query(AiAnalysisModel).filter(
-            AiAnalysisModel.name == name
-        )
-
-        if target_date:
-            query = query.filter(
-                AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+            query = self.db_session.query(AiAnalysisModel).filter(
+                AiAnalysisModel.name == name
             )
 
-        # JSON 필드에서 ticker로 필터링 (PostgreSQL의 경우)
-        query = query.filter(text("value->>'ticker' = :ticker")).params(
-            ticker=ticker
-        )
+            if target_date:
+                query = query.filter(
+                    AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+                )
 
-        result = query.first()
+            # JSON 필드에서 ticker로 필터링 (PostgreSQL의 경우)
+            query = query.filter(text("value->>'ticker' = :ticker")).params(
+                ticker=ticker
+            )
 
-        if not result:
-            return None
+            result = query.first()
 
-        value = result.value
-        if item_schema is not None:
-            try:
-                result.value = item_schema.model_validate(value)
-            except Exception:
-                result.value = value
+            if not result:
+                return None
 
-        return AiAnalysisVO(
-            id=self.safe_convert(result.id),
-            date=str(result.date),
-            name=str(result.name),
-            value=value,
-        )
+            value = result.value
+            if item_schema is not None:
+                try:
+                    result.value = item_schema.model_validate(value)
+                except Exception:
+                    result.value = value
+
+            return AiAnalysisVO(
+                id=self.safe_convert(result.id),
+                date=str(result.date),
+                name=str(result.name),
+                value=value,
+            )
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     def get_analysis_by_date(
         self,
@@ -294,32 +322,36 @@ class WebSearchResultRepository:
             raw JSON value is returned.
         """
 
-        result = (
-            self.db_session.query(AiAnalysisModel)
-            .filter(
-                AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
-                AiAnalysisModel.name == name,
+        try:
+            result = (
+                self.db_session.query(AiAnalysisModel)
+                .filter(
+                    AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                    AiAnalysisModel.name == name,
+                )
+                .first()
             )
-            .first()
-        )
 
-        if not result:
-            return None
+            if not result:
+                return None
 
-        value = result.value
-        if schema is not None:
-            try:
-                value = schema.model_validate(value)
-            except Exception:
-                # Fall back to raw value if validation fails
-                value = result.value
+            value = result.value
+            if schema is not None:
+                try:
+                    value = schema.model_validate(value)
+                except Exception:
+                    # Fall back to raw value if validation fails
+                    value = result.value
 
-        return AiAnalysisVO(
-            id=self.safe_convert(result.id),
-            date=str(result.date),
-            name=str(result.name),
-            value=value,
-        )
+            return AiAnalysisVO(
+                id=self.safe_convert(result.id),
+                date=str(result.date),
+                name=str(result.name),
+                value=value,
+            )
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
     def create_analysis(
         self,
@@ -329,19 +361,23 @@ class WebSearchResultRepository:
     ) -> AiAnalysisVO:
         """Store analysis data for a given date and type."""
 
-        db_obj = AiAnalysisModel(
-            date=analysis_date.strftime("%Y-%m-%d"),
-            name=name,
-            value=analysis,
-        )
+        try:
+            db_obj = AiAnalysisModel(
+                date=analysis_date.strftime("%Y-%m-%d"),
+                name=name,
+                value=analysis,
+            )
 
-        self.db_session.add(db_obj)
-        self.db_session.commit()
-        self.db_session.refresh(db_obj)
+            self.db_session.add(db_obj)
+            self.db_session.commit()
+            self.db_session.refresh(db_obj)
 
-        return AiAnalysisVO(
-            id=self.safe_convert(db_obj.id),
-            date=str(db_obj.date),
-            name=str(db_obj.name),
-            value=analysis,
-        )
+            return AiAnalysisVO(
+                id=self.safe_convert(db_obj.id),
+                date=str(db_obj.date),
+                name=str(db_obj.name),
+                value=analysis,
+            )
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
