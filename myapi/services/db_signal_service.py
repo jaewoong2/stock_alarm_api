@@ -7,9 +7,6 @@ from fastapi import HTTPException
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
-    PaginatedSignalsResponse,
-    PaginatedSignalJoinTickerResponse,
-    PaginationResponse,
     SignalBaseResponse,
     SignalCreate,
     SignalJoinTickerResponse,
@@ -51,23 +48,14 @@ class DBSignalService:
 
     async def get_all_signals(
         self, request: GetSignalRequest
-    ) -> PaginatedSignalsResponse:
+    ) -> List[SignalBaseResponse]:
         """
-        모든 신호를 조회합니다 (페이지네이션 적용).
+        모든 신호를 조회합니다.
         """
         try:
-            # 신호 데이터와 총 개수 조회
+            # 신호 데이터 조회
             signals = self.repository.get_signals(request=request)
-            total_count = self.repository.get_signals_count(request=request)
-
-            # 페이지네이션 메타데이터 생성
-            pagination = PaginationResponse.create(
-                page=request.pagination.page,
-                page_size=request.pagination.page_size,
-                total_items=total_count,
-            )
-
-            return PaginatedSignalsResponse(data=signals, pagination=pagination)
+            return signals
         except Exception as e:
             self.logger.error(f"Error fetching all signals: {str(e)}")
             raise HTTPException(
@@ -79,9 +67,7 @@ class DBSignalService:
         date: date,
         symbols: Optional[List[str]] = None,
         strategy_type: Optional[str] = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> PaginatedSignalJoinTickerResponse:
+    ) -> List[SignalJoinTickerResponse]:
         """
         특정 날짜의 시그널 결과를 조회합니다.
 
@@ -91,13 +77,11 @@ class DBSignalService:
             strategy_type: 조회할 전략 유형 ('AI_GENERATED', 'NOT_AI_GENERATED', None=모든 전략)
         """
         try:
-            # 통합된 리포지토리 메서드 사용 (페이지네이션 적용)
+            # 통합된 리포지토리 메서드 사용
             signals = self.repository.get_signals_with_ticker(
                 date_value=date,
                 symbols=symbols,
                 strategy_filter=strategy_type,
-                page=page,
-                page_size=page_size,
             )
 
             # 번역된 신호가 있다면 결과에 추가
@@ -110,10 +94,6 @@ class DBSignalService:
                         translated_signal.model_dump()
                     )
 
-            # 총 개수 조회
-            total_count = self.repository.get_signals_with_ticker_count(
-                date_value=date, symbols=symbols, strategy_filter=strategy_type
-            )
 
             # 결과 처리
             for row in signals:
@@ -169,14 +149,7 @@ class DBSignalService:
                     is_correct=is_correct,
                 )
 
-            # 페이지네이션 메타데이터 생성
-            pagination = PaginationResponse.create(
-                page=page, page_size=page_size, total_items=total_count
-            )
-
-            return PaginatedSignalJoinTickerResponse(
-                data=signals, pagination=pagination
-            )
+            return signals
 
         except HTTPException as e:
             raise e

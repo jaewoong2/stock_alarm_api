@@ -203,10 +203,8 @@ class SignalsRepository:
             start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
             signals_query = signals_query.filter(Signals.timestamp >= start_date)
 
-        # 정렬만 적용 (페이지네이션 제거)
-        signals_query = signals_query.offset(request.pagination.offset).limit(
-            request.pagination.limit
-        )
+        # 정렬만 적용
+        signals_query = signals_query.order_by(desc(Signals.timestamp))
 
         signals = signals_query.all()
         return [SignalBaseResponse.model_validate(s) for s in signals]
@@ -823,8 +821,6 @@ class SignalsRepository:
         date_value: date,
         symbols: Optional[List[str]] = None,
         strategy_filter: Optional[str] = None,
-        page: int = 1,
-        page_size: int = 20,
     ) -> List[SignalJoinTickerResponse]:
         """
         특정 날짜 및 선택적 티커와 전략에 대한 시그널과 티커 정보를 조인하여 가져옵니다.
@@ -865,10 +861,8 @@ class SignalsRepository:
             else:
                 query = query.filter(Signals.strategy != "AI_GENERATED")
 
-            # 정렬 및 페이지네이션
+            # 정렬만 적용
             query = query.order_by(Signals.timestamp.desc(), Ticker.date.asc())
-            offset = (page - 1) * page_size
-            query = query.offset(offset).limit(page_size)
 
             # 쿼리 실행
             results = query.all()
@@ -922,47 +916,3 @@ class SignalsRepository:
             logging.error(f"Error fetching signals with ticker join: {e}")
             return []
 
-    def get_signals_with_ticker_count(
-        self,
-        date_value: date,
-        symbols: Optional[List[str]] = None,
-        strategy_filter: Optional[str] = None,
-    ) -> int:
-        """
-        특정 날짜 및 선택적 티커와 전략에 대한 시그널과 티커 정보의 총 개수를 가져옵니다.
-        """
-        self._ensure_valid_session()
-        try:
-            # 기본 쿼리 설정
-            query = self.db_session.query(Signals, Ticker).outerjoin(
-                Ticker,
-                and_(
-                    Signals.ticker == Ticker.symbol,
-                    Signals.action != "hold",
-                    Ticker.date >= func.cast(Signals.timestamp, sqlalchemy.Date),
-                    Ticker.date
-                    <= func.cast(
-                        Signals.timestamp + timedelta(days=5), sqlalchemy.Date
-                    ),
-                ),
-            )
-
-            # 날짜 필터링
-            query = query.filter(func.date(Signals.timestamp) == date_value)
-
-            # 심볼 필터링
-            if symbols:
-                query = query.filter(Signals.ticker.in_(symbols))
-
-            # 전략 필터링
-            if strategy_filter == "AI_GENERATED":
-                query = query.filter(Signals.strategy == "AI_GENERATED")
-            else:
-                query = query.filter(Signals.strategy != "AI_GENERATED")
-
-            # 총 개수 반환
-            return query.count()
-
-        except Exception as e:
-            logging.error(f"Error counting signals with ticker join: {e}")
-            return 0

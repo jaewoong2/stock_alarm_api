@@ -8,7 +8,6 @@ import logging
 
 from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
-    PaginationRequest,
     SignalBaseResponse,
 )
 from myapi.repositories.signals_repository import SignalsRepository
@@ -274,81 +273,61 @@ class TranslateService:
 
         # 2. 원본 시그널들을 페이지네이션으로 조회
         next_target_date = target_date + datetime.timedelta(days=1)
-        page = 1
-        page_size = 50
         all_translated_signals: List[SignalBaseResponse] = []
         processed_tickers = set()  # 중복 처리 방지
 
-        while True:
-            request = GetSignalRequest(
-                start_date=target_date.strftime("%Y-%m-%d"),
-                end_date=next_target_date.strftime("%Y-%m-%d"),
-                pagination=PaginationRequest(page=page, page_size=page_size),
-            )
+        request = GetSignalRequest(
+            start_date=target_date.strftime("%Y-%m-%d"),
+            end_date=next_target_date.strftime("%Y-%m-%d"),
+        )
 
-            try:
-                signals = self.signals_repository.get_signals(request)
-                logger.info(f"페이지 {page}: {len(signals)}개 원본 시그널 조회됨")
+        try:
+            signals = self.signals_repository.get_signals(request)
 
-                if not signals:
-                    logger.info(f"페이지 {page}에서 시그널이 없어 종료")
-                    break
+            # 3. 각 시그널에 대해 번역 처리
+            for s in signals:
+                # 이미 처리한 티커는 건너뛰기
+                if s.ticker in processed_tickers:
+                    logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
+                    continue
 
-                # 3. 각 시그널에 대해 번역 처리
-                for s in signals:
-                    # 이미 처리한 티커는 건너뛰기
-                    if s.ticker in processed_tickers:
-                        logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
-                        continue
+                processed_tickers.add(s.ticker)
 
-                    processed_tickers.add(s.ticker)
+                # 개별 티커의 번역된 시그널이 이미 있는지 확인
+                existing_ticker_signal = self.get_translated_by_ticker(
+                    target_date, s.ticker
+                )
+                if existing_ticker_signal:
+                    logger.debug(f"티커 {s.ticker}의 번역된 시그널이 이미 존재함")
+                    all_translated_signals.append(existing_ticker_signal)
+                    continue
 
-                    # 개별 티커의 번역된 시그널이 이미 있는지 확인
-                    existing_ticker_signal = self.get_translated_by_ticker(
-                        target_date, s.ticker
-                    )
-                    if existing_ticker_signal:
-                        logger.debug(f"티커 {s.ticker}의 번역된 시그널이 이미 존재함")
-                        all_translated_signals.append(existing_ticker_signal)
-                        continue
+                # 4. 번역 수행
+                try:
+                    logger.debug(f"티커 {s.ticker} 번역 시작")
+                    translated_signal = self._translate_signal(s)
+                    all_translated_signals.append(translated_signal)
 
-                    # 4. 번역 수행
+                    # 5. 개별 저장 (즉시 저장으로 중복 방지)
                     try:
-                        logger.debug(f"티커 {s.ticker} 번역 시작")
-                        translated_signal = self._translate_signal(s)
-                        all_translated_signals.append(translated_signal)
+                        self._save_translated_signals([translated_signal], target_date)
+                        logger.debug(f"티커 {s.ticker} 번역 및 저장 완료")
+                    except Exception as save_error:
+                        logger.error(f"티커 {s.ticker} 저장 중 오류: {save_error}")
 
-                        # 5. 개별 저장 (즉시 저장으로 중복 방지)
-                        try:
-                            self._save_translated_signals(
-                                [translated_signal], target_date
-                            )
-                            logger.debug(f"티커 {s.ticker} 번역 및 저장 완료")
-                        except Exception as save_error:
-                            logger.error(f"티커 {s.ticker} 저장 중 오류: {save_error}")
+                except Exception as translate_error:
+                    logger.error(f"티커 {s.ticker} 번역 중 오류: {translate_error}")
+                    # 번역 실패 시 원본 시그널을 그대로 저장
+                    all_translated_signals.append(s)
+                    try:
+                        self._save_translated_signals([s], target_date)
+                        logger.debug(f"티커 {s.ticker} 원본 시그널 저장 완료")
+                    except Exception as save_error:
+                        logger.error(f"티커 {s.ticker} 원본 저장 중 오류: {save_error}")
 
-                    except Exception as translate_error:
-                        logger.error(f"티커 {s.ticker} 번역 중 오류: {translate_error}")
-                        # 번역 실패 시 원본 시그널을 그대로 저장
-                        all_translated_signals.append(s)
-                        try:
-                            self._save_translated_signals([s], target_date)
-                            logger.debug(f"티커 {s.ticker} 원본 시그널 저장 완료")
-                        except Exception as save_error:
-                            logger.error(
-                                f"티커 {s.ticker} 원본 저장 중 오류: {save_error}"
-                            )
-
-                # 6. 페이지네이션 종료 조건
-                if len(signals) < page_size:
-                    logger.info(f"마지막 페이지 {page} 처리 완료")
-                    break
-
-                page += 1
-
-            except Exception as e:
-                logger.error(f"페이지 {page} 처리 중 오류 발생: {e}")
-                break
+        except Exception as e:
+            logger.error(f"{target_date} 날짜 시그널 조회 중 오류 발생: {e}")
+            raise
 
         # 7. 최종 결과 반환
         logger.info(
@@ -450,7 +429,8 @@ class TranslateService:
         # r.value가 이미 SignalBaseResponse 인스턴스인지 확인
         if isinstance(value, SignalBaseResponse):
             return value  # 이미 변환된 인스턴스라면 리스트로 감싸서 반환
-        else:
+
+        if value is not None:
             # dict 형태라면 기본값으로 보완한 후 model_validate로 변환
             signal_data = value if isinstance(value, dict) else {}
 
@@ -481,6 +461,8 @@ class TranslateService:
 
             signal = SignalBaseResponse.model_validate(defaults)
             return signal  # 변환된 인스턴스 반환
+
+        return None
 
     def get_translated_signals(self, target_date: datetime.date) -> dict:
         """

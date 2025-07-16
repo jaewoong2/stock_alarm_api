@@ -53,8 +53,14 @@ def execute_batch_jobs(
         {
             "path": "news/market-forecast",
             "method": "POST",
-            "body": {},
-            "group_id": "news",
+            "body": {"source": "Major"},
+            "group_id": "news-major",
+        },
+        {
+            "path": "news/market-forecast",
+            "method": "POST",
+            "body": {"source": "Minor"},
+            "group_id": "news-minor",
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
     ]

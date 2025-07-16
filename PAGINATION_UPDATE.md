@@ -1,337 +1,656 @@
-# 페이지네이션 구현 문서
+# Pagination Migration Guide: Backend to Frontend with React Query
 
-## 개요
+## Overview
 
-`/signals/date` API와 `get-signals` API에 페이지네이션 기능을 추가했습니다. 대용량 데이터 조회 시 성능을 개선하고 클라이언트에서 더 나은 사용자 경험을 제공할 수 있습니다.
+This guide covers the migration from backend pagination to frontend pagination using React Query for better user experience and performance. The backend API endpoints have been updated to return all data without pagination, and pagination is now handled on the frontend using React Query's powerful data management capabilities.
 
-## 변경 사항
+## Changes Made
 
-### 1. 새로운 스키마 추가
+### Backend Changes
 
-#### PaginationRequest
-```python
-class PaginationRequest(BaseModel):
-    page: int = Field(default=1, ge=1, description="Page number (starting from 1)")
-    page_size: int = Field(default=20, ge=1, le=100, description="Number of items per page (1-100)")
+#### 1. Signal Router (`myapi/routers/signal_router.py`)
+- **Removed**: `PaginatedSignalsResponse`, `PaginatedSignalJoinTickerResponse`, `PaginationRequest` imports
+- **Updated**: `/get-signals` endpoint to return `List[SignalBaseResponse]` instead of `PaginatedSignalsResponse`
+- **Updated**: `/date` endpoint to return `List[SignalJoinTickerResponse]` instead of `PaginatedSignalJoinTickerResponse`
+- **Removed**: `page` and `page_size` parameters from `/date` endpoint
+
+#### 2. Signal Schema (`myapi/domain/signal/signal_schema.py`)
+- **Removed**: `PaginationRequest` class
+- **Removed**: `PaginationResponse` class
+- **Removed**: `PaginatedSignalsResponse` class
+- **Removed**: `PaginatedSignalJoinTickerResponse` class
+- **Updated**: `GetSignalRequest` to remove `pagination` field
+
+#### 3. Signals Repository (`myapi/repositories/signals_repository.py`)
+- **Updated**: `get_signals()` method to return all results with basic ordering
+- **Updated**: `get_signals_with_ticker()` method to remove pagination parameters
+- **Removed**: `get_signals_with_ticker_count()` method (no longer needed)
+
+#### 4. DB Signal Service (`myapi/services/db_signal_service.py`)
+- **Updated**: `get_all_signals()` to return `List[SignalBaseResponse]` 
+- **Updated**: `get_signals_result()` to return `List[SignalJoinTickerResponse]`
+- **Removed**: Pagination metadata generation logic
+
+## Frontend Implementation with React Query
+
+### 1. Installation
+
+```bash
+npm install @tanstack/react-query
+# or
+yarn add @tanstack/react-query
 ```
 
-#### PaginationResponse
-```python
-class PaginationResponse(BaseModel):
-    page: int = Field(description="Current page number")
-    page_size: int = Field(description="Number of items per page")
-    total_items: int = Field(description="Total number of items")
-    total_pages: int = Field(description="Total number of pages")
-    has_next: bool = Field(description="Whether there is a next page")
-    has_previous: bool = Field(description="Whether there is a previous page")
-```
+### 2. Setup Query Client
 
-#### PaginatedSignalsResponse
-```python
-class PaginatedSignalsResponse(BaseModel):
-    data: List[SignalBaseResponse] = Field(description="List of signals for the current page")
-    pagination: PaginationResponse = Field(description="Pagination metadata")
-```
+```jsx
+// src/config/queryClient.js
+import { QueryClient } from '@tanstack/react-query';
 
-#### PaginatedSignalJoinTickerResponse
-```python
-class PaginatedSignalJoinTickerResponse(BaseModel):
-    data: List[SignalJoinTickerResponse] = Field(description="List of signals with ticker info for the current page")
-    pagination: PaginationResponse = Field(description="Pagination metadata")
-```
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
-### 2. 수정된 스키마
+// src/App.jsx
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './config/queryClient';
 
-#### GetSignalRequest
-```python
-class GetSignalRequest(BaseModel):
-    tickers: List[str] | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    actions: List[Literal["Buy", "Sell", "Hold"]] | None = None
-    pagination: PaginationRequest = Field(default_factory=PaginationRequest)  # 추가됨
-```
-
-### 3. Repository 레벨 변경사항
-
-#### SignalsRepository 메서드 수정
-- `get_signals()`: 페이지네이션 적용
-- `get_signals_count()`: 총 개수 조회를 위한 새 메서드 추가
-- `get_signals_with_ticker()`: 페이지네이션 매개변수 추가
-- `get_signals_with_ticker_count()`: 총 개수 조회를 위한 새 메서드 추가
-
-### 4. Service 레벨 변경사항
-
-#### DBSignalService 메서드 수정
-- `get_all_signals()`: 반환 타입이 `PaginatedSignalsResponse`로 변경
-- `get_signals_result()`: 반환 타입이 `PaginatedSignalJoinTickerResponse`로 변경, 페이지네이션 매개변수 추가
-
-### 5. Router 레벨 변경사항
-
-#### 수정된 엔드포인트들
-
-##### POST `/signals/get-signals`
-- **응답 모델**: `List[SignalBaseResponse]` → `PaginatedSignalsResponse`
-- **요청 본문**: `GetSignalRequest`에 `pagination` 필드 추가
-
-##### GET `/signals/date`
-- **응답 모델**: 기존 구조 → `PaginatedSignalJoinTickerResponse`
-- **쿼리 매개변수**: `page`, `page_size` 추가
-
-## API 사용법
-
-### 1. POST `/signals/get-signals`
-
-#### 요청 예시
-```json
-{
-  "tickers": ["AAPL", "MSFT"],
-  "start_date": "2024-01-01",
-  "end_date": "2024-12-31",
-  "actions": ["Buy", "Sell"],
-  "pagination": {
-    "page": 1,
-    "page_size": 20
-  }
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* Your app components */}
+    </QueryClientProvider>
+  );
 }
 ```
 
-#### 응답 예시
-```json
-{
-  "data": [
-    {
-      "id": 1,
-      "ticker": "AAPL",
-      "entry_price": 150.0,
-      "action": "buy",
-      "timestamp": "2024-07-14T10:00:00Z",
-      ...
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "page_size": 20,
-    "total_items": 150,
-    "total_pages": 8,
-    "has_next": true,
-    "has_previous": false
-  }
-}
-```
+### 3. API Service Functions
 
-### 2. GET `/signals/date`
+```jsx
+// src/services/signalService.js
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
 
-#### 요청 예시
-```
-GET /signals/date?date=2024-07-14&symbols=AAPL,MSFT&strategy_type=AI_GENERATED&page=1&page_size=20
-```
-
-#### 쿼리 매개변수
-- `date`: 조회할 날짜 (YYYY-MM-DD 형식, 필수)
-- `symbols`: 쉼표로 구분된 티커 심볼 목록 (선택)
-- `strategy_type`: 전략 유형 ('AI_GENERATED', 'NOT_AI_GENERATED', 또는 생략시 모든 전략)
-- `page`: 페이지 번호 (기본값: 1, 최소: 1)
-- `page_size`: 페이지 크기 (기본값: 20, 최소: 1, 최대: 100)
-
-#### 응답 예시
-```json
-{
-  "data": [
-    {
-      "signal": {
-        "ticker": "AAPL",
-        "strategy": "AI_GENERATED",
-        "entry_price": 150.0,
-        "action": "buy",
-        ...
+export const signalService = {
+  // Get all signals
+  getAllSignals: async (filters = {}) => {
+    const response = await fetch(`${API_BASE_URL}/signals/get-signals`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
       },
-      "ticker": {
-        "symbol": "AAPL",
-        "close_price": 155.0,
-        ...
-      },
-      "result": {
-        "action": "up",
-        "is_correct": true,
-        "price_diff": 5.0
-      }
+      body: JSON.stringify(filters),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch signals');
     }
-  ],
-  "pagination": {
-    "page": 1,
-    "page_size": 20,
-    "total_items": 45,
-    "total_pages": 3,
-    "has_next": true,
-    "has_previous": false
-  }
-}
-```
+    
+    return response.json();
+  },
 
-## 기본값 및 제한사항
-
-### 페이지네이션 기본값
-- **page**: 1 (첫 번째 페이지)
-- **page_size**: 20 (페이지당 항목 수)
-
-### 제한사항
-- **page**: 최소 1
-- **page_size**: 최소 1, 최대 100
-
-### 자동 보정
-- `page < 1`인 경우 자동으로 1로 설정
-- `page_size < 1` 또는 `page_size > 100`인 경우 자동으로 20으로 설정
-
-## 마이그레이션 가이드
-
-### 기존 클라이언트 코드 수정
-
-#### Before (기존)
-```python
-# POST /signals/get-signals
-response = requests.post("/signals/get-signals", json={
-    "tickers": ["AAPL"]
-})
-signals = response.json()  # List[SignalBaseResponse]
-
-# GET /signals/date
-response = requests.get("/signals/date?date=2024-07-14")
-result = response.json()
-signals = result["signals"]  # List[SignalJoinTickerResponse]
-```
-
-#### After (수정 후)
-```python
-# POST /signals/get-signals
-response = requests.post("/signals/get-signals", json={
-    "tickers": ["AAPL"],
-    "pagination": {"page": 1, "page_size": 20}
-})
-result = response.json()
-signals = result["data"]  # List[SignalBaseResponse]
-pagination_info = result["pagination"]
-
-# GET /signals/date
-response = requests.get("/signals/date?date=2024-07-14&page=1&page_size=20")
-result = response.json()
-signals = result["data"]  # List[SignalJoinTickerResponse]
-pagination_info = result["pagination"]
-```
-
-## 호환성 참고사항
-
-### 하위 호환성
-- `GetSignalRequest`의 `pagination` 필드는 기본값을 가지므로, 기존 요청도 정상 작동합니다.
-- 기존 클라이언트가 페이지네이션을 명시하지 않으면 기본값(page=1, page_size=20)이 적용됩니다.
-
-### 주의사항
-- **응답 구조 변경**: 모든 페이지네이션이 적용된 엔드포인트의 응답 구조가 변경되었으므로, 클라이언트 코드에서 `data` 필드를 통해 실제 데이터에 접근해야 합니다.
-- **GET `/signals/date` 응답 변경**: 기존의 `{"date": "...", "signals": [...]}` 구조에서 `{"data": [...], "pagination": {...}}` 구조로 변경되었습니다.
-
-## 성능 고려사항
-
-### 데이터베이스 쿼리 최적화
-- `OFFSET`과 `LIMIT`을 사용하여 필요한 데이터만 조회합니다.
-- 총 개수 조회를 위한 별도 쿼리를 실행합니다.
-- 대용량 데이터셋에서 `OFFSET`이 큰 경우 성능이 저하될 수 있으므로, 필요시 커서 기반 페이지네이션을 고려할 수 있습니다.
-
-### 권장사항
-- 클라이언트에서는 적절한 `page_size`를 설정하여 네트워크 트래픽과 응답 시간의 균형을 맞추세요.
-- 대량의 데이터를 조회할 때는 여러 페이지로 나누어 처리하세요.
-
-## 파일 변경 목록
-
-### 수정된 파일들
-1. `myapi/domain/signal/signal_schema.py`
-   - `PaginationRequest`, `PaginationResponse` 클래스 추가
-   - `PaginatedSignalsResponse`, `PaginatedSignalJoinTickerResponse` 클래스 추가
-   - `GetSignalRequest`에 `pagination` 필드 추가
-
-2. `myapi/repositories/signals_repository.py`
-   - `get_signals()` 메서드에 페이지네이션 적용
-   - `get_signals_count()` 메서드 추가
-   - `get_signals_with_ticker()` 메서드에 페이지네이션 매개변수 추가
-   - `get_signals_with_ticker_count()` 메서드 추가
-
-3. `myapi/services/db_signal_service.py`
-   - `get_all_signals()` 메서드 반환 타입 변경
-   - `get_signals_result()` 메서드에 페이지네이션 적용
-
-4. `myapi/routers/signal_router.py`
-   - `/signals/get-signals` 엔드포인트 응답 모델 변경
-   - `/signals/date` 엔드포인트에 페이지네이션 매개변수 추가 및 응답 모델 변경
-
-## 예시 클라이언트 코드
-
-### JavaScript/TypeScript
-```typescript
-interface PaginationRequest {
-  page?: number;
-  page_size?: number;
-}
-
-interface PaginationResponse {
-  page: number;
-  page_size: number;
-  total_items: number;
-  total_pages: number;
-  has_next: boolean;
-  has_previous: boolean;
-}
-
-interface PaginatedSignalsResponse {
-  data: SignalBaseResponse[];
-  pagination: PaginationResponse;
-}
-
-// 사용 예시
-const getSignals = async (page: number = 1, pageSize: number = 20) => {
-  const response = await fetch('/signals/get-signals', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      tickers: ['AAPL', 'MSFT'],
-      pagination: { page, page_size: pageSize }
-    })
-  });
-  
-  const result: PaginatedSignalsResponse = await response.json();
-  return result;
+  // Get signals by date
+  getSignalsByDate: async (date, symbols = '', strategyType = null) => {
+    const params = new URLSearchParams({
+      date,
+      symbols,
+      ...(strategyType && { strategy_type: strategyType }),
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/signals/date?${params}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch signals by date');
+    }
+    
+    return response.json();
+  },
 };
 ```
 
-### Python
-```python
-import requests
-from typing import List, Optional
+### 4. Custom Hooks with React Query
 
-def get_signals(
-    tickers: Optional[List[str]] = None,
-    page: int = 1,
-    page_size: int = 20
-) -> dict:
-    payload = {
-        "pagination": {"page": page, "page_size": page_size}
-    }
-    if tickers:
-        payload["tickers"] = tickers
-    
-    response = requests.post("/signals/get-signals", json=payload)
-    return response.json()
+```jsx
+// src/hooks/useSignals.js
+import { useQuery } from '@tanstack/react-query';
+import { signalService } from '../services/signalService';
 
-def get_signals_by_date(
-    date: str,
-    symbols: Optional[List[str]] = None,
-    page: int = 1,
-    page_size: int = 20
-) -> dict:
-    params = {"date": date, "page": page, "page_size": page_size}
-    if symbols:
-        params["symbols"] = ",".join(symbols)
-    
-    response = requests.get("/signals/date", params=params)
-    return response.json()
+export const useSignals = (filters = {}) => {
+  return useQuery({
+    queryKey: ['signals', filters],
+    queryFn: () => signalService.getAllSignals(filters),
+    enabled: true,
+  });
+};
+
+export const useSignalsByDate = (date, symbols = '', strategyType = null) => {
+  return useQuery({
+    queryKey: ['signals', 'by-date', date, symbols, strategyType],
+    queryFn: () => signalService.getSignalsByDate(date, symbols, strategyType),
+    enabled: !!date,
+  });
+};
 ```
 
-이 페이지네이션 구현으로 대용량 시그널 데이터를 효율적으로 조회하고 클라이언트에서 더 나은 사용자 경험을 제공할 수 있습니다.
+### 5. Pagination Components
+
+```jsx
+// src/components/Pagination.jsx
+import React from 'react';
+
+const Pagination = ({ 
+  currentPage, 
+  totalItems, 
+  itemsPerPage, 
+  onPageChange 
+}) => {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  const getPaginationNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    
+    for (let i = Math.max(2, currentPage - delta); 
+         i <= Math.min(totalPages - 1, currentPage + delta); 
+         i++) {
+      range.push(i);
+    }
+    
+    if (currentPage - delta > 2) {
+      rangeWithDots.push(1, '...');
+    } else {
+      rangeWithDots.push(1);
+    }
+    
+    rangeWithDots.push(...range);
+    
+    if (currentPage + delta < totalPages - 1) {
+      rangeWithDots.push('...', totalPages);
+    } else {
+      if (totalPages > 1) {
+        rangeWithDots.push(totalPages);
+      }
+    }
+    
+    return rangeWithDots;
+  };
+
+  if (totalPages <= 1) return null;
+
+  return (
+    <nav className="flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-gray-700">
+            Showing{' '}
+            <span className="font-medium">
+              {(currentPage - 1) * itemsPerPage + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-medium">
+              {Math.min(currentPage * itemsPerPage, totalItems)}
+            </span>{' '}
+            of{' '}
+            <span className="font-medium">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm">
+            {getPaginationNumbers().map((number, index) => (
+              <button
+                key={index}
+                onClick={() => typeof number === 'number' && onPageChange(number)}
+                disabled={number === '...' || number === currentPage}
+                className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                  number === currentPage
+                    ? 'z-10 bg-blue-600 text-white'
+                    : number === '...'
+                    ? 'text-gray-700'
+                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                } ${index === 0 ? 'rounded-l-md' : ''} ${
+                  index === getPaginationNumbers().length - 1 ? 'rounded-r-md' : ''
+                }`}
+              >
+                {number}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+    </nav>
+  );
+};
+
+export default Pagination;
+```
+
+### 6. Signal List Component with Pagination
+
+```jsx
+// src/components/SignalList.jsx
+import React, { useState, useMemo } from 'react';
+import { useSignals } from '../hooks/useSignals';
+import Pagination from './Pagination';
+import LoadingSpinner from './LoadingSpinner';
+import ErrorMessage from './ErrorMessage';
+
+const SignalList = () => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(20);
+  const [filters, setFilters] = useState({});
+
+  const { data: signals = [], isLoading, error } = useSignals(filters);
+
+  // Client-side pagination
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return signals.slice(startIndex, endIndex);
+  }, [signals, currentPage, itemsPerPage]);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    // Scroll to top when page changes
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleFilterChange = (newFilters) => {
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
+  };
+
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+
+  if (error) {
+    return <ErrorMessage message={error.message} />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Controls */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        {/* Add your filter components here */}
+      </div>
+
+      {/* Signals Table */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+        <ul className="divide-y divide-gray-200">
+          {paginatedData.map((signal) => (
+            <li key={signal.id} className="px-6 py-4">
+              {/* Signal item content */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    {signal.ticker}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {signal.action} • {signal.strategy}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-semibold text-gray-900">
+                    ${signal.entry_price}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(signal.timestamp).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={currentPage}
+        totalItems={signals.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={handlePageChange}
+      />
+    </div>
+  );
+};
+
+export default SignalList;
+```
+
+### 7. Advanced Features
+
+#### Virtual Scrolling for Large Datasets
+
+```jsx
+// src/components/VirtualizedSignalList.jsx
+import React from 'react';
+import { FixedSizeList as List } from 'react-window';
+import { useSignals } from '../hooks/useSignals';
+
+const SignalItem = ({ index, style, data }) => (
+  <div style={style} className="border-b border-gray-200 px-6 py-4">
+    <div className="flex items-center justify-between">
+      <div>
+        <h3 className="text-lg font-medium text-gray-900">
+          {data[index].ticker}
+        </h3>
+        <p className="text-sm text-gray-500">
+          {data[index].action} • {data[index].strategy}
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-lg font-semibold text-gray-900">
+          ${data[index].entry_price}
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
+const VirtualizedSignalList = () => {
+  const { data: signals = [], isLoading, error } = useSignals();
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <List
+      height={600}
+      itemCount={signals.length}
+      itemSize={100}
+      itemData={signals}
+    >
+      {SignalItem}
+    </List>
+  );
+};
+
+export default VirtualizedSignalList;
+```
+
+#### Infinite Scrolling
+
+```jsx
+// src/hooks/useInfiniteSignals.js
+import { useInfiniteQuery } from '@tanstack/react-query';
+
+export const useInfiniteSignals = (filters = {}) => {
+  return useInfiniteQuery({
+    queryKey: ['signals', 'infinite', filters],
+    queryFn: ({ pageParam = 0 }) => {
+      // Simulate pagination on fetched data
+      const pageSize = 20;
+      return signalService.getAllSignals(filters).then(data => ({
+        data: data.slice(pageParam * pageSize, (pageParam + 1) * pageSize),
+        nextPage: (pageParam + 1) * pageSize < data.length ? pageParam + 1 : undefined,
+      }));
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+  });
+};
+```
+
+## Performance Optimizations
+
+### 1. Data Caching Strategy
+
+```jsx
+// src/config/queryClient.js
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes - consider data fresh
+      cacheTime: 30 * 60 * 1000, // 30 minutes - keep in cache
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+    },
+  },
+});
+```
+
+### 2. Search and Filter Debouncing
+
+```jsx
+// src/hooks/useDebounce.js
+import { useState, useEffect } from 'react';
+
+export const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
+// Usage in component
+const [searchTerm, setSearchTerm] = useState('');
+const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+const filteredSignals = useMemo(() => {
+  if (!debouncedSearchTerm) return signals;
+  return signals.filter(signal => 
+    signal.ticker.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+  );
+}, [signals, debouncedSearchTerm]);
+```
+
+### 3. Memoization for Expensive Calculations
+
+```jsx
+import React, { useMemo } from 'react';
+
+const SignalAnalytics = ({ signals }) => {
+  const analytics = useMemo(() => {
+    return {
+      totalSignals: signals.length,
+      buySignals: signals.filter(s => s.action === 'buy').length,
+      sellSignals: signals.filter(s => s.action === 'sell').length,
+      avgProbability: signals.reduce((sum, s) => sum + (s.probability || 0), 0) / signals.length,
+    };
+  }, [signals]);
+
+  return (
+    <div className="grid grid-cols-4 gap-4">
+      {/* Analytics display */}
+    </div>
+  );
+};
+```
+
+## Request/Response Patterns
+
+### Successful Response Format
+
+```json
+[
+  {
+    "id": 1,
+    "ticker": "AAPL",
+    "action": "buy",
+    "entry_price": 150.25,
+    "stop_loss": 145.00,
+    "take_profit": 160.00,
+    "timestamp": "2024-01-15T10:30:00Z",
+    "strategy": "PULLBACK",
+    "probability": "75%"
+  }
+]
+```
+
+### Error Handling
+
+```jsx
+// src/components/ErrorBoundary.jsx
+import React from 'react';
+import { QueryErrorResetBoundary } from '@tanstack/react-query';
+import { ErrorBoundary } from 'react-error-boundary';
+
+const ErrorFallback = ({ error, resetErrorBoundary }) => (
+  <div className="text-center py-12">
+    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+      Something went wrong
+    </h2>
+    <p className="text-gray-600 mb-4">{error.message}</p>
+    <button
+      onClick={resetErrorBoundary}
+      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+    >
+      Try again
+    </button>
+  </div>
+);
+
+const App = () => (
+  <QueryErrorResetBoundary>
+    {({ reset }) => (
+      <ErrorBoundary
+        FallbackComponent={ErrorFallback}
+        onReset={reset}
+      >
+        {/* Your app components */}
+      </ErrorBoundary>
+    )}
+  </QueryErrorResetBoundary>
+);
+```
+
+## Testing
+
+### 1. Unit Tests for Hooks
+
+```jsx
+// src/hooks/__tests__/useSignals.test.js
+import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useSignals } from '../useSignals';
+
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+};
+
+test('useSignals returns data successfully', async () => {
+  const { result } = renderHook(() => useSignals(), {
+    wrapper: createWrapper(),
+  });
+
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(result.current.data).toBeDefined();
+});
+```
+
+### 2. Integration Tests
+
+```jsx
+// src/components/__tests__/SignalList.test.js
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import SignalList from '../SignalList';
+
+const mockSignals = [
+  {
+    id: 1,
+    ticker: 'AAPL',
+    action: 'buy',
+    entry_price: 150.25,
+    timestamp: '2024-01-15T10:30:00Z',
+  },
+];
+
+jest.mock('../hooks/useSignals', () => ({
+  useSignals: () => ({
+    data: mockSignals,
+    isLoading: false,
+    error: null,
+  }),
+}));
+
+test('renders signal list correctly', () => {
+  const queryClient = new QueryClient();
+  
+  render(
+    <QueryClientProvider client={queryClient}>
+      <SignalList />
+    </QueryClientProvider>
+  );
+
+  expect(screen.getByText('AAPL')).toBeInTheDocument();
+  expect(screen.getByText('buy')).toBeInTheDocument();
+});
+```
+
+## Migration Checklist
+
+- [x] Remove pagination from backend API endpoints
+- [x] Update response models to return arrays instead of paginated responses
+- [x] Remove pagination parameters from API calls
+- [ ] Install React Query in frontend project
+- [ ] Set up QueryClient with appropriate configuration
+- [ ] Create API service functions
+- [ ] Implement custom hooks for data fetching
+- [ ] Create pagination components for frontend
+- [ ] Implement search and filtering
+- [ ] Add error handling and loading states
+- [ ] Write tests for new functionality
+- [ ] Update documentation
+- [ ] Performance testing with large datasets
+
+## Benefits of This Approach
+
+1. **Better User Experience**: Instant filtering and searching without API calls
+2. **Improved Performance**: Data caching reduces unnecessary API requests
+3. **Offline Capability**: Cached data available when offline
+4. **Flexible Pagination**: Easy to implement different pagination strategies
+5. **Real-time Updates**: Easy to implement with React Query's invalidation system
+
+## Next Steps
+
+1. Implement the frontend components using the examples above
+2. Test with your actual data volumes
+3. Consider implementing virtual scrolling for very large datasets
+4. Add real-time updates using WebSocket integration with React Query
+5. Implement advanced filtering and sorting capabilities
