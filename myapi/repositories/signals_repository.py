@@ -835,8 +835,59 @@ class SignalsRepository:
         """
         self._ensure_valid_session()
         try:
-            # 기본 쿼리 설정
-            query = self.db_session.query(Signals, Ticker).outerjoin(
+            # symbols 유무에 따라 선택할 필드를 결정
+            if symbols:
+                # 모든 필드 선택
+                signal_columns = [
+                    Signals.ticker,
+                    Signals.strategy,
+                    Signals.entry_price,
+                    Signals.stop_loss,
+                    Signals.take_profit,
+                    Signals.action,
+                    Signals.timestamp,
+                    Signals.probability,
+                    Signals.ai_model,
+                    Signals.close_price,
+                    Signals.result_description,
+                    Signals.report_summary,
+                    Signals.senario,
+                    Signals.good_things,
+                    Signals.bad_things,
+                    Signals.chart_pattern,
+                ]
+            else:
+                # 민감한 필드 제외
+                signal_columns = [
+                    Signals.ticker,
+                    Signals.strategy,
+                    Signals.entry_price,
+                    Signals.stop_loss,
+                    Signals.take_profit,
+                    Signals.action,
+                    Signals.timestamp,
+                    Signals.probability,
+                    Signals.ai_model,
+                    Signals.close_price,
+                ]
+
+            # Ticker 필드는 항상 동일
+            ticker_columns = [
+                Ticker.symbol,
+                Ticker.name,
+                Ticker.price,
+                Ticker.open_price,
+                Ticker.high_price,
+                Ticker.low_price,
+                Ticker.close_price,
+                Ticker.volume,
+                Ticker.date,
+                Ticker.created_at,
+                Ticker.updated_at,
+            ]
+
+            # 쿼리 구성
+            query = self.db_session.query(*signal_columns, *ticker_columns).outerjoin(
                 Ticker,
                 and_(
                     Signals.ticker == Ticker.symbol,
@@ -870,45 +921,45 @@ class SignalsRepository:
 
             # 결과를 응답 모델로 변환
             response_list = []
-            for signal, ticker in results:
-                response = {"signal": {}, "ticker": None}
+            signal_field_count = len(signal_columns)
 
-                if signal is not None:
-                    response["signal"] = {
-                        "ticker": signal.ticker,
-                        "strategy": signal.strategy,
-                        "entry_price": signal.entry_price,
-                        "stop_loss": signal.stop_loss,
-                        "take_profit": signal.take_profit,
-                        "action": signal.action,
-                        "timestamp": signal.timestamp,
-                        "probability": signal.probability,
-                        "result_description": signal.result_description,
-                        "report_summary": signal.report_summary,
-                        "ai_model": signal.ai_model,
-                        "senario": signal.senario,
-                        "good_things": signal.good_things,
-                        "bad_things": signal.bad_things,
-                        "close_price": signal.close_price,
-                        "chart_pattern": signal.chart_pattern,
-                    }
+            for row in results:
+                # Signal 데이터 매핑
+                signal_data = {}
+                for i, column in enumerate(signal_columns):
+                    field_name = column.key
+                    signal_data[field_name] = row[i]
 
-                if ticker is not None:
-                    response["ticker"] = {
-                        "symbol": ticker.symbol,
-                        "name": ticker.name,
-                        "price": ticker.price,
-                        "open_price": ticker.open_price,
-                        "high_price": ticker.high_price,
-                        "low_price": ticker.low_price,
-                        "close_price": ticker.close_price,
-                        "volume": ticker.volume,
-                        "ticker_date": ticker.date,
-                        "created_at": ticker.created_at,
-                        "updated_at": ticker.updated_at,
-                    }
+                # symbols가 없을 때 민감한 필드들을 None으로 설정
+                if not symbols:
+                    signal_data.update(
+                        {
+                            "result_description": "",
+                            "report_summary": "",
+                            "senario": "",
+                            "good_things": "",
+                            "bad_things": "",
+                            "chart_pattern": None,
+                        }
+                    )
 
-                response["result"] = None
+                # Ticker 데이터 매핑 (첫 번째 ticker 필드가 None이 아닌 경우에만)
+                ticker_data = None
+                if row[signal_field_count] is not None:  # 첫 번째 ticker 필드 확인
+                    ticker_data = {}
+                    for i, column in enumerate(ticker_columns):
+                        field_name = column.key
+                        if field_name == "date":
+                            ticker_data["ticker_date"] = row[signal_field_count + i]
+                        else:
+                            ticker_data[field_name] = row[signal_field_count + i]
+
+                response = {
+                    "signal": signal_data,
+                    "ticker": ticker_data,
+                    "result": None,
+                }
+
                 response_list.append(SignalJoinTickerResponse.model_validate(response))
 
             return response_list
