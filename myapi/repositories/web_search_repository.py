@@ -246,15 +246,20 @@ class WebSearchResultRepository:
     def get_analyses_by_ticker(
         self,
         ticker: str,
+        strategy_filter: Optional[str] = None,
         name: str = "signals",
         item_schema: type | None = None,
+        ai_model: Optional[str] = None,
         target_date: datetime.date = datetime.date.today(),
     ) -> AiAnalysisVO | None:
         """Fetch analysis data for a given ticker and type.
+
+        Note: The value field in the returned AiAnalysisVO contains JSON data that,
+        when parsed, corresponds to the SignalBase type structure.
+
         Parameters
         ----------
         ticker: str
-
             Ticker symbol to filter the analysis.
         name: str
             Identifier of the analysis type. Defaults to ``"signals"``.
@@ -281,7 +286,22 @@ class WebSearchResultRepository:
                 ticker=ticker
             )
 
-            result = query.all()
+            if ai_model:
+                # value ai_model 필드로 필터링
+                query = query.filter(text("value->>'ai_model' = :ai_model")).params(
+                    ai_model=ai_model
+                )
+
+            if strategy_filter == "AI_GENERATED":
+                query = query.filter(text("value->>'strategy' = :strategy")).params(
+                    strategy="AI_GENERATED"
+                )
+            elif strategy_filter is not None:
+                query = query.filter(text("value->>'strategy' != :strategy")).params(
+                    strategy="AI_GENERATED"
+                )
+
+            result = query.first()
 
             if not result:
                 return None

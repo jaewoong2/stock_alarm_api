@@ -11,6 +11,7 @@ from myapi.domain.signal.signal_schema import (
     SignalCreate,
     SignalJoinTickerResponse,
     SignalUpdate,
+    SignalValueObject,
 )
 from myapi.services.translate_service import TranslateService
 
@@ -48,7 +49,7 @@ class DBSignalService:
 
     async def get_all_signals(
         self, request: GetSignalRequest
-    ) -> List[SignalBaseResponse]:
+    ) -> List[SignalValueObject]:
         """
         모든 신호를 조회합니다.
         """
@@ -91,8 +92,12 @@ class DBSignalService:
             for row in signals:
 
                 translated_signal = self.translate_service.get_translated_by_ticker(
-                    target_date=date, ticker=row.signal.ticker
+                    target_date=date,
+                    ticker=row.signal.ticker,
+                    strategy_filter=strategy_type or "ALL",
+                    ai_model=row.signal.ai_model or "OPENAI",
                 )
+
                 if translated_signal:
                     row.signal = SignalJoinTickerResponse.Signal.model_validate(
                         translated_signal.model_dump()

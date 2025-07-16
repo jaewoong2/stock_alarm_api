@@ -207,7 +207,7 @@ class SignalsRepository:
         signals_query = signals_query.order_by(desc(Signals.timestamp))
 
         signals = signals_query.all()
-        return [SignalBaseResponse.model_validate(s) for s in signals]
+        return [SignalValueObject.model_validate(s) for s in signals]
 
     def get_signals_count(self, request: GetSignalRequest) -> int:
         """

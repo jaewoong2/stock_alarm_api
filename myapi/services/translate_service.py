@@ -9,6 +9,7 @@ import logging
 from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     SignalBaseResponse,
+    SignalValueObject,
 )
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
@@ -179,7 +180,7 @@ class TranslateService:
             logger.error(f"텍스트 번역 중 오류 발생: {e}")
             return text
 
-    def _translate_signal(self, signal: SignalBaseResponse) -> SignalBaseResponse:
+    def _translate_signal(self, signal: SignalValueObject) -> SignalValueObject:
         translated_signal = signal.model_copy(deep=True)
 
         if translated_signal.result_description:
@@ -215,7 +216,9 @@ class TranslateService:
                     )
                 )
 
-        return translated_signal
+        return SignalValueObject(
+            **translated_signal.model_dump(exclude_unset=True),
+        )
 
     def _translate_json_recursive(self, data: Any) -> Any:
         if isinstance(data, dict):
@@ -229,7 +232,7 @@ class TranslateService:
 
     def _save_translated_signals(
         self,
-        translated_signals: List[SignalBaseResponse],
+        translated_signals: List[SignalValueObject],
         target_date: datetime.date,
     ) -> None:
         """
@@ -258,7 +261,7 @@ class TranslateService:
             logger.error(f"번역된 시그널 개별 저장 중 오류 발생: {e}")
             raise
 
-    def translate_by_date(self, target_date: datetime.date) -> List[SignalBaseResponse]:
+    def translate_by_date(self, target_date: datetime.date) -> List[SignalValueObject]:
         """
         특정 날짜의 모든 시그널을 번역하여 반환합니다.
         이미 번역된 시그널이 있으면 건너뛰고, 새로운 시그널만 번역합니다.
@@ -273,7 +276,7 @@ class TranslateService:
 
         # 2. 원본 시그널들을 페이지네이션으로 조회
         next_target_date = target_date + datetime.timedelta(days=1)
-        all_translated_signals: List[SignalBaseResponse] = []
+        all_translated_signals: List[SignalValueObject] = []
         processed_tickers = set()  # 중복 처리 방지
 
         request = GetSignalRequest(
@@ -317,10 +320,11 @@ class TranslateService:
 
                 except Exception as translate_error:
                     logger.error(f"티커 {s.ticker} 번역 중 오류: {translate_error}")
-                    # 번역 실패 시 원본 시그널을 그대로 저장
-                    all_translated_signals.append(s)
+                    # 번역 실패 시 원본 시그널을 SignalValueObject로 변환하여 저장
+                    signal_vo = SignalValueObject(**s.model_dump(exclude_unset=True))
+                    all_translated_signals.append(signal_vo)
                     try:
-                        self._save_translated_signals([s], target_date)
+                        self._save_translated_signals([signal_vo], target_date)
                         logger.debug(f"티커 {s.ticker} 원본 시그널 저장 완료")
                     except Exception as save_error:
                         logger.error(f"티커 {s.ticker} 원본 저장 중 오류: {save_error}")
@@ -335,12 +339,12 @@ class TranslateService:
         )
         return all_translated_signals
 
-    def get_translated(self, target_date: datetime.date) -> List[SignalBaseResponse]:
+    def get_translated(self, target_date: datetime.date) -> List[SignalValueObject]:
         try:
             response = self.analysis_repository.get_all_analyses(
                 target_date=target_date,
                 name="signals",
-                item_schema=SignalBaseResponse,
+                item_schema=SignalValueObject,
             )
 
             results = []
@@ -348,7 +352,7 @@ class TranslateService:
                 if r.value:
                     try:
                         # r.value가 이미 SignalBaseResponse 인스턴스인지 확인
-                        if isinstance(r.value, SignalBaseResponse):
+                        if isinstance(r.value, SignalValueObject):
                             results.append(r.value)
                         else:
                             # dict 형태라면 기본값으로 보완한 후 model_validate로 변환
@@ -406,8 +410,12 @@ class TranslateService:
             return []
 
     def get_translated_by_ticker(
-        self, target_date: datetime.date, ticker: str
-    ) -> SignalBaseResponse | None:
+        self,
+        target_date: datetime.date,
+        ticker: str,
+        strategy_filter: str = "ALL",
+        ai_model: str = "OPENAI",
+    ) -> SignalValueObject | None:
         """
         특정 날짜와 티커의 번역된 시그널을 가져옵니다.
 
@@ -422,12 +430,14 @@ class TranslateService:
             ticker=ticker,
             target_date=target_date,
             name="signals",
-            item_schema=SignalBaseResponse,
+            item_schema=SignalValueObject,
+            strategy_filter=strategy_filter,
+            ai_model=ai_model,
         )
 
         value = response.value if response else None
         # r.value가 이미 SignalBaseResponse 인스턴스인지 확인
-        if isinstance(value, SignalBaseResponse):
+        if isinstance(value, SignalValueObject):
             return value  # 이미 변환된 인스턴스라면 리스트로 감싸서 반환
 
         if value is not None:
@@ -459,7 +469,7 @@ class TranslateService:
                 "chart_pattern": signal_data.get("chart_pattern"),
             }
 
-            signal = SignalBaseResponse.model_validate(defaults)
+            signal = SignalValueObject.model_validate(defaults)
             return signal  # 변환된 인스턴스 반환
 
         return None
