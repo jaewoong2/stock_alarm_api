@@ -407,7 +407,7 @@ class TranslateService:
 
     def get_translated_by_ticker(
         self, target_date: datetime.date, ticker: str
-    ) -> SignalBaseResponse:
+    ) -> SignalBaseResponse | None:
         """
         특정 날짜와 티커의 번역된 시그널을 가져옵니다.
 

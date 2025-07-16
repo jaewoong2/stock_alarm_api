@@ -281,7 +281,7 @@ class WebSearchResultRepository:
                 ticker=ticker
             )
 
-            result = query.first()
+            result = query.all()
 
             if not result:
                 return None

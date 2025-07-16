@@ -40,7 +40,7 @@ def execute_batch_jobs(
         },
         {
             "path": "translate/signals",
-            "method": "GET",
+            "method": "POST",
             "body": {},
             "group_id": "translate",
         },

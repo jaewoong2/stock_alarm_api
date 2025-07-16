@@ -824,6 +824,7 @@ class SignalsRepository:
     ) -> List[SignalJoinTickerResponse]:
         """
         특정 날짜 및 선택적 티커와 전략에 대한 시그널과 티커 정보를 조인하여 가져옵니다.
+
         Args:
             date_value: 조회할 날짜(시그널 날짜 기준)
             symbols: 조회할 티커 심볼 목록 (None일 경우 모든 심볼)
@@ -861,7 +862,7 @@ class SignalsRepository:
             else:
                 query = query.filter(Signals.strategy != "AI_GENERATED")
 
-            # 정렬만 적용
+            # 정렬
             query = query.order_by(Signals.timestamp.desc(), Ticker.date.asc())
 
             # 쿼리 실행
@@ -915,4 +916,3 @@ class SignalsRepository:
         except Exception as e:
             logging.error(f"Error fetching signals with ticker join: {e}")
             return []
-

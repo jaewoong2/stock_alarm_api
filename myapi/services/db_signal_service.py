@@ -79,24 +79,25 @@ class DBSignalService:
         try:
             # 통합된 리포지토리 메서드 사용
             signals = self.repository.get_signals_with_ticker(
-                date_value=date,
-                symbols=symbols,
-                strategy_filter=strategy_type,
+                date_value=date, symbols=symbols, strategy_filter=strategy_type
             )
 
-            # 번역된 신호가 있다면 결과에 추가
-            for signal in signals:
-                translated_signal = self.translate_service.get_translated_by_ticker(
-                    target_date=date, ticker=signal.signal.ticker
+            if not signals or len(signals) == 0:
+                raise HTTPException(
+                    status_code=404, detail=f"No signals found for date {date}"
                 )
-                if translated_signal:
-                    signal.signal = SignalJoinTickerResponse.Signal.model_validate(
-                        translated_signal.model_dump()
-                    )
-
 
             # 결과 처리
             for row in signals:
+
+                translated_signal = self.translate_service.get_translated_by_ticker(
+                    target_date=date, ticker=row.signal.ticker
+                )
+                if translated_signal:
+                    row.signal = SignalJoinTickerResponse.Signal.model_validate(
+                        translated_signal.model_dump()
+                    )
+
                 signal, ticker = row.signal, row.ticker
 
                 if not signal or not ticker:
