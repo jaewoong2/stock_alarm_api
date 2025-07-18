@@ -193,6 +193,7 @@ class WebSearchResultRepository:
         name: str = "market_analysis",
         item_schema: type | None = MarketAnalysis,
         target_date: datetime.date = datetime.date.today(),
+        tickers: Optional[List[str]] = None,
     ) -> List[AiAnalysisVO]:
         """Fetch all analysis data of a given type.
 
@@ -205,9 +206,13 @@ class WebSearchResultRepository:
             raw JSON value is returned.
         target_date: Optional[datetime.date]
             If provided, only analyses for this date will be returned.
+        tickers: Optional[List[str]]
+            If provided, only analyses for these tickers will be returned.
         """
 
         try:
+            from sqlalchemy import text, or_
+            
             query = self.db_session.query(AiAnalysisModel).filter(
                 AiAnalysisModel.name == name
             )
@@ -216,6 +221,14 @@ class WebSearchResultRepository:
                 query = query.filter(
                     AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
                 )
+
+            # tickers 파라미터가 있으면 JSON 필드에서 ticker로 필터링
+            if tickers:
+                ticker_filters = [
+                    text("value->>'ticker' = :ticker").params(ticker=ticker)
+                    for ticker in tickers
+                ]
+                query = query.filter(or_(*ticker_filters))
 
             results = query.all()
 

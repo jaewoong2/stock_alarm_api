@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from typing import Literal
+from typing import Literal, Optional
 from fastapi import HTTPException
 
 
@@ -335,13 +335,14 @@ class WebSearchService:
 
         return response.response
 
-    async def get_mahaney_analysis(self, target_date: date = date.today()):
+    async def get_mahaney_analysis(self, target_date: date = date.today(), tickers: Optional[list[str]] = None):
         """Fetch Mahaney analysis for the given tickers."""
 
         responses = self.websearch_repository.get_all_analyses(
             target_date=target_date,
             name="mahaney_analysis",
             item_schema=MahaneyStockAnalysis,
+            tickers=tickers,
         )
 
         for response in responses:
