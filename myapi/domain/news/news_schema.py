@@ -172,3 +172,21 @@ class AiAnalysisVO(BaseModel):
 class MahaneyAnalysisRequest(BaseModel):
     tickers: List[str] = DefaultTickers
     target_date: Optional[dt.date] = dt.date.today()
+
+
+class MahaneyAnalysisGetRequest(BaseModel):
+    target_date: Optional[dt.date] = dt.date.today()
+    tickers: Optional[List[str]] = None
+    recommendation: Optional[Literal["Buy", "Sell", "Hold"]] = None
+    limit: Optional[int] = None
+    sort_by: Optional[Literal["recommendation_score", "final_assessment", "stock_name"]] = "stock_name"
+    sort_order: Optional[Literal["asc", "desc"]] = "asc"
+
+
+class MahaneyAnalysisGetResponse(BaseModel):
+    stocks: List[MahaneyStockAnalysis]
+    total_count: int
+    filtered_count: int
+    actual_date: Optional[dt.date] = None  # 실제 사용된 데이터의 날짜
+    is_exact_date_match: bool = True  # 요청한 날짜와 정확히 일치하는지
+    request_params: MahaneyAnalysisGetRequest

@@ -12,6 +12,8 @@ from myapi.containers import Container
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisRequest,
     MahaneyAnalysisResponse,
+    MahaneyAnalysisGetRequest,
+    MahaneyAnalysisGetResponse,
     WebSearchMarketResponse,
 )
 from myapi.services.signal_service import SignalService
@@ -140,16 +142,46 @@ def create_market_analysis(
     return websearch_service.create_market_analysis(today)
 
 
-@router.get("/tech-stock/analysis")
+@router.get("/tech-stock/analysis", response_model=MahaneyAnalysisGetResponse)
 @inject
 async def get_mahaney_analysis(
     target_date: Optional[dt.date] = dt.date.today(),
+    tickers: Optional[str] = None,
+    recommendation: Optional[Literal["Buy", "Sell", "Hold"]] = None,
+    limit: Optional[int] = None,
+    sort_by: Optional[Literal["recommendation_score", "final_assessment", "stock_name"]] = "stock_name",
+    sort_order: Optional[Literal["asc", "desc"]] = "asc",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),
 ):
+    """
+    Mahaney 분석 결과를 조회합니다.
+    :param target_date: 조회할 날짜
+    :param tickers: 필터할 티커 목록 (쉼표로 구분)
+    :param recommendation: 추천 등급으로 필터
+    :param limit: 결과 제한
+    :param sort_by: 정렬 기준
+    :param sort_order: 정렬 순서
+    :return: Mahaney 분석 결과
+    """
     target_date = validate_date(target_date if target_date else dt.date.today())
-    return await websearch_service.get_mahaney_analysis(target_date)
+    
+    # 쉼표로 구분된 티커 문자열을 리스트로 변환
+    ticker_list = None
+    if tickers:
+        ticker_list = [ticker.strip().upper() for ticker in tickers.split(",")]
+    
+    request_params = MahaneyAnalysisGetRequest(
+        target_date=target_date,
+        tickers=ticker_list,
+        recommendation=recommendation,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    
+    return await websearch_service.get_mahaney_analysis_with_filters(request_params)
 
 
 @router.post(
