@@ -39,12 +39,6 @@ def execute_batch_jobs(
             "group_id": "signals",
         },
         {
-            "path": "translate/signals",
-            "method": "POST",
-            "body": {},
-            "group_id": "translate",
-        },
-        {
             "path": "news/market-analysis",
             "method": "POST",
             "body": {},
@@ -57,13 +51,26 @@ def execute_batch_jobs(
             "group_id": "news-major",
         },
         {
-            "path": "news/market-forecast",
+            "path": "news/market-forecast?source=Minor",
             "method": "POST",
-            "body": {"source": "Minor"},
+            "body": {},
             "group_id": "news-minor",
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
     ]
+
+    # 티커를 5개씩 분할하여 translate/signals 작업 추가
+    ticker_chunks = [
+        DefaultTickers[i : i + 5] for i in range(0, len(DefaultTickers), 5)
+    ]
+    
+    for i, chunk in enumerate(ticker_chunks):
+        jobs.append({
+            "path": "translate/signals",
+            "method": "POST",
+            "body": {"tickers": chunk},
+            "group_id": f"translate-{i}",
+        })
 
     responses = []
     for job in jobs:

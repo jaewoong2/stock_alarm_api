@@ -1,7 +1,7 @@
 import datetime
 import json
 import re
-from typing import List, Any
+from typing import List, Any, Optional
 import boto3
 from botocore.exceptions import ClientError
 import logging
@@ -261,15 +261,15 @@ class TranslateService:
             logger.error(f"번역된 시그널 개별 저장 중 오류 발생: {e}")
             raise
 
-    def translate_by_date(self, target_date: datetime.date) -> List[SignalValueObject]:
+    def translate_by_date(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> List[SignalValueObject]:
         """
         특정 날짜의 모든 시그널을 번역하여 반환합니다.
         이미 번역된 시그널이 있으면 건너뛰고, 새로운 시그널만 번역합니다.
         """
-        logger.info(f"{target_date} 날짜의 시그널 번역 시작")
+        logger.info(f"{target_date} 날짜의 시그널 번역 시작 (티커: {tickers})")
 
         # 1. 먼저 이미 번역된 시그널들이 있는지 확인
-        existing_translated = self.get_translated(target_date)
+        existing_translated = self.get_translated(target_date, tickers)
         if existing_translated:
             logger.info(f"이미 번역된 시그널 {len(existing_translated)}개 발견")
             return existing_translated
@@ -289,6 +289,11 @@ class TranslateService:
 
             # 3. 각 시그널에 대해 번역 처리
             for s in signals:
+                # 특정 티커만 처리하도록 필터링
+                if tickers and s.ticker not in tickers:
+                    logger.debug(f"티커 {s.ticker} 필터링됨, 건너뛰기")
+                    continue
+                
                 # 이미 처리한 티커는 건너뛰기
                 if s.ticker in processed_tickers:
                     logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
@@ -339,12 +344,13 @@ class TranslateService:
         )
         return all_translated_signals
 
-    def get_translated(self, target_date: datetime.date) -> List[SignalValueObject]:
+    def get_translated(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> List[SignalValueObject]:
         try:
             response = self.analysis_repository.get_all_analyses(
                 target_date=target_date,
                 name="signals",
                 item_schema=SignalValueObject,
+                tickers=tickers,
             )
 
             results = []
@@ -403,6 +409,10 @@ class TranslateService:
                         except Exception:
                             # 완전히 실패한 경우에만 건너뛰기
                             continue
+
+            # 특정 티커만 필터링
+            if tickers:
+                results = [r for r in results if r.ticker in tickers]
 
             return results
         except Exception as e:
@@ -474,11 +484,11 @@ class TranslateService:
 
         return None
 
-    def get_translated_signals(self, target_date: datetime.date) -> dict:
+    def get_translated_signals(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> dict:
         """
         특정 날짜의 번역된 시그널을 가져와 마크다운 형식으로 변환합니다.
         """
-        existing = self.get_translated(target_date)
+        existing = self.get_translated(target_date, tickers)
 
         if existing and len(existing) > 0:
             return {"signals": existing}
@@ -487,13 +497,13 @@ class TranslateService:
         logger.info(f"{target_date} 날짜의 번역된 시그널이 없습니다.")
         return {"signals": []}
 
-    def translate_and_markdown(self, target_date: datetime.date) -> dict:
-        existing = self.get_translated(target_date)
+    def translate_and_markdown(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> dict:
+        existing = self.get_translated(target_date, tickers)
 
         if existing and len(existing) > 0:
             return {"signals": existing}
 
-        signals = self.translate_by_date(target_date)
+        signals = self.translate_by_date(target_date, tickers)
 
         return {"signals": signals}
 

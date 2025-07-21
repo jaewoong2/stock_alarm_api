@@ -1,11 +1,13 @@
 from datetime import date, timedelta
-from typing import Literal
+from typing import Literal, Optional
 from fastapi import HTTPException
 
 
 from myapi.domain.news.news_models import MarketForecast
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisResponse,
+    MahaneyAnalysisGetRequest,
+    MahaneyAnalysisGetResponse,
     MahaneyStockAnalysis,
     MarketAnalysis,
     MarketAnalysisResponse,
@@ -248,7 +250,7 @@ class WebSearchService:
 
             | # | Criterion |
             |---|----------------------|
-            | 1 | **Revenue Growth – 20 % Rule**: YoY revenue (or core KPI) ≥ 20 % for the last 5–6 quarters |
+            | 1 | **Revenue Growth – 20 % Rule**: YoY revenue (or core KPI) ≥ 20 % for the last 4 quarters |
             | 2 | **Valuation – 2 % Rule**: PEG ≤ 1 **OR** P/E or P/S looks cheap vs growth (PEG≈1) |
             | 3 | **Product Innovation**: faster release cadence & rising R&D intensity |
             | 4 | **Total Addressable Market (TAM)** ≥ $1 T **OR** single-digit share with credible expansion |
@@ -265,6 +267,7 @@ class WebSearchService:
             * Ignore rumours or unverified blogs
             * Forecast **short-term price targets** based on the Analysis
             * And Then, Find The Social Media Sentiment (X, Reddit, etc.) for each ticker
+            * Today is {target_date} search and think ALL Recent of {target_date}ㅑ
             ---
 
             ### Output requirements
@@ -274,11 +277,12 @@ class WebSearchService:
             Prefix each ticker with `### TICKER: <symbol>` to keep logs readable.
 
             #### 2) Result (JSON)
+            * score is 1-5 for qualitative criteria, true/false for YES/NO
             Return exactly one JSON object with this schema:
 
             ```json
             {{
-                "as_of": "{target_date}",
+                "as_of": " Today is {target_date}",
                 "stocks": {{
                     "XYZ": {{
                     "revenue_growth": {{
@@ -335,13 +339,16 @@ class WebSearchService:
 
         return response.response
 
-    async def get_mahaney_analysis(self, target_date: date = date.today()):
+    async def get_mahaney_analysis(
+        self, target_date: date = date.today(), tickers: Optional[list[str]] = None
+    ):
         """Fetch Mahaney analysis for the given tickers."""
 
         responses = self.websearch_repository.get_all_analyses(
             target_date=target_date,
             name="mahaney_analysis",
             item_schema=MahaneyStockAnalysis,
+            tickers=tickers,
         )
 
         for response in responses:
@@ -349,3 +356,46 @@ class WebSearchService:
                 raise ValueError("Invalid stock data format in response")
 
         return responses
+
+    async def get_mahaney_analysis_with_filters(
+        self, request: MahaneyAnalysisGetRequest
+    ) -> MahaneyAnalysisGetResponse:
+        """Fetch Mahaney analysis with filtering, sorting, and pagination."""
+
+        # Ensure target_date is not None
+        target_date = request.target_date if request.target_date else date.today()
+
+        # Use the specialized repository method for Mahaney analysis
+        stocks, actual_date, is_exact_match = (
+            self.websearch_repository.get_mahaney_analyses(
+                target_date=target_date,
+                tickers=request.tickers,
+                recommendation=request.recommendation,
+            )
+        )
+
+        total_count = len(stocks)
+        filtered_count = total_count  # Already filtered in repository
+
+        # Apply sorting
+        if request.sort_by:
+            reverse = request.sort_order == "desc"
+            if request.sort_by == "stock_name":
+                stocks.sort(key=lambda x: x.stock_name, reverse=reverse)
+            elif request.sort_by == "recommendation_score":
+                stocks.sort(key=lambda x: x.recommendation_score, reverse=reverse)
+            elif request.sort_by == "final_assessment":
+                stocks.sort(key=lambda x: x.final_assessment, reverse=reverse)
+
+        # Apply limit
+        if request.limit and request.limit > 0:
+            stocks = stocks[: request.limit]
+
+        return MahaneyAnalysisGetResponse(
+            stocks=stocks,
+            total_count=total_count,
+            filtered_count=filtered_count,
+            actual_date=actual_date,
+            is_exact_date_match=is_exact_match,
+            request_params=request,
+        )

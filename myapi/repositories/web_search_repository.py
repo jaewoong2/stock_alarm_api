@@ -9,6 +9,7 @@ from myapi.domain.news.news_models import (
     AiAnalysisModel,
 )
 from myapi.domain.news.news_schema import (
+    MahaneyStockAnalysis,
     MarketForecastSchema,
     MarketAnalysis,
     AiAnalysisVO,
@@ -193,6 +194,7 @@ class WebSearchResultRepository:
         name: str = "market_analysis",
         item_schema: type | None = MarketAnalysis,
         target_date: datetime.date = datetime.date.today(),
+        tickers: Optional[List[str]] = None,
     ) -> List[AiAnalysisVO]:
         """Fetch all analysis data of a given type.
 
@@ -205,9 +207,13 @@ class WebSearchResultRepository:
             raw JSON value is returned.
         target_date: Optional[datetime.date]
             If provided, only analyses for this date will be returned.
+        tickers: Optional[List[str]]
+            If provided, only analyses for these tickers will be returned.
         """
 
         try:
+            from sqlalchemy import text, or_
+
             query = self.db_session.query(AiAnalysisModel).filter(
                 AiAnalysisModel.name == name
             )
@@ -216,6 +222,14 @@ class WebSearchResultRepository:
                 query = query.filter(
                     AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
                 )
+
+            # tickers 파라미터가 있으면 JSON 필드에서 ticker로 필터링
+            if tickers and len(tickers) > 0:
+                ticker_filters = [
+                    text("value->>'ticker' = :ticker").params(ticker=ticker)
+                    for ticker in tickers
+                ]
+                query = query.filter(or_(*ticker_filters))
 
             results = query.all()
 
@@ -239,6 +253,140 @@ class WebSearchResultRepository:
                 )
 
             return analyses
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
+
+    def get_mahaney_analyses(
+        self,
+        target_date: datetime.date = datetime.date.today(),
+        tickers: Optional[List[str]] = None,
+        recommendation: Optional[str] = None,
+    ) -> tuple[List[MahaneyStockAnalysis], datetime.date, bool]:
+        """Fetch Mahaney analysis data with filtering options.
+
+        If no exact match for target_date is found, returns data from the closest available date.
+
+        Parameters
+        ----------
+        target_date: datetime.date
+            Target date for analysis. Defaults to today.
+        tickers: Optional[List[str]]
+            If provided, only analyses for these tickers will be returned.
+        recommendation: Optional[str]
+            If provided, only analyses with this recommendation will be returned.
+
+        Returns
+        -------
+        tuple[List[MahaneyStockAnalysis], datetime.date, bool]
+            Tuple containing:
+            - List of Mahaney stock analyses
+            - Actual date used for the data
+            - Whether the date is an exact match
+        """
+        from myapi.domain.news.news_schema import MahaneyStockAnalysis
+
+        try:
+            from sqlalchemy import text, or_, and_
+
+            # First, try to find exact date match
+            base_query = self.db_session.query(AiAnalysisModel).filter(
+                AiAnalysisModel.name == "mahaney_analysis"
+            )
+
+            exact_date_query = base_query.filter(
+                AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+            )
+
+            # Check if exact date exists
+            exact_date_exists = exact_date_query.first() is not None
+
+            if not exact_date_exists:
+                # Find the closest date using a simpler approach
+                # Get all available dates and find the closest one in Python
+                available_dates = (
+                    self.db_session.query(AiAnalysisModel.date)
+                    .filter(AiAnalysisModel.name == "mahaney_analysis")
+                    .distinct()
+                    .all()
+                )
+
+                if available_dates:
+                    # Convert to date objects and find the closest one
+                    target_date_obj = target_date
+                    closest_date_str = None
+                    min_diff = float("inf")
+
+                    for date_tuple in available_dates:
+                        date_str = date_tuple[0]
+                        try:
+                            date_obj = datetime.datetime.strptime(
+                                date_str.strftime("%Y-%m-%d"), "%Y-%m-%d"
+                            ).date()
+                            diff = abs((date_obj - target_date_obj).days)
+                            if diff < min_diff:
+                                min_diff = diff
+                                closest_date_str = date_str
+                        except ValueError:
+                            continue
+
+                    if closest_date_str:
+                        actual_date = datetime.datetime.strptime(
+                            closest_date_str.strftime("%Y-%m-%d"), "%Y-%m-%d"
+                        ).date()
+                        is_exact_match = False
+                        query = base_query.filter(
+                            AiAnalysisModel.date == closest_date_str
+                        )
+                    else:
+                        # No valid data available
+                        return [], target_date, False
+                else:
+                    # No data available at all
+                    return [], target_date, False
+            else:
+                # Use exact date
+                actual_date = target_date
+                is_exact_match = True
+                query = exact_date_query
+
+            # Build filter conditions for tickers and recommendations
+            filters = []
+
+            # Filter by tickers if provided
+            if tickers and len(tickers) > 0:
+                ticker_filters = [
+                    text("value->>'stock_name' = :ticker").params(ticker=ticker)
+                    for ticker in tickers
+                ]
+                filters.append(or_(*ticker_filters))
+
+            # Filter by recommendation if provided
+            if recommendation:
+                filters.append(
+                    text("value->>'recommendation' = :recommendation").params(
+                        recommendation=recommendation
+                    )
+                )
+
+            # Apply filters if any
+            if filters:
+                query = query.filter(and_(*filters))
+
+            results = query.all()
+
+            analyses = []
+            for result in results:
+                try:
+                    stock_analysis = MahaneyStockAnalysis.model_validate(result.value)
+                    analyses.append(stock_analysis)
+                except Exception as e:
+                    # Skip invalid data
+                    print(f"Failed to validate Mahaney analysis: {e}")
+                    continue
+
+            return analyses, actual_date, is_exact_match
+
         except Exception as e:
             self.db_session.rollback()
             raise e
