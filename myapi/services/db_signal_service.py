@@ -84,9 +84,7 @@ class DBSignalService:
             )
 
             if not signals or len(signals) == 0:
-                raise HTTPException(
-                    status_code=404, detail=f"No signals found for date {date}"
-                )
+                return []
 
             # 결과 처리
             for row in signals:
