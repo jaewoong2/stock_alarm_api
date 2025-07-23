@@ -14,6 +14,7 @@ router = APIRouter(prefix="/translate", tags=["translate"])
 class TranslateSignalsRequest(BaseModel):
     tickers: Optional[List[str]] = None
     target_date: Optional[dt.date] = None
+    model: Optional[str] = "OPENAI"
 
 
 @router.post("/signals", dependencies=[Depends(verify_bearer_token)])
@@ -28,7 +29,7 @@ def translate_signals(
     target_date = request.target_date if request.target_date else dt.date.today()
     tickers = request.tickers
 
-    result = service.translate_and_markdown(target_date, tickers)
+    result = service.translate_and_markdown(target_date, tickers, request.model)
     return result
 
 

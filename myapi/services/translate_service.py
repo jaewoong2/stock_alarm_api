@@ -261,7 +261,9 @@ class TranslateService:
             logger.error(f"번역된 시그널 개별 저장 중 오류 발생: {e}")
             raise
 
-    def translate_by_date(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> List[SignalValueObject]:
+    def translate_by_date(
+        self, target_date: datetime.date, tickers: Optional[List[str]] = None
+    ) -> List[SignalValueObject]:
         """
         특정 날짜의 모든 시그널을 번역하여 반환합니다.
         이미 번역된 시그널이 있으면 건너뛰고, 새로운 시그널만 번역합니다.
@@ -293,7 +295,7 @@ class TranslateService:
                 if tickers and s.ticker not in tickers:
                     logger.debug(f"티커 {s.ticker} 필터링됨, 건너뛰기")
                     continue
-                
+
                 # 이미 처리한 티커는 건너뛰기
                 if s.ticker in processed_tickers:
                     logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
@@ -344,13 +346,19 @@ class TranslateService:
         )
         return all_translated_signals
 
-    def get_translated(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> List[SignalValueObject]:
+    def get_translated(
+        self,
+        target_date: datetime.date,
+        tickers: Optional[List[str]] = None,
+        models: Optional[str] = None,
+    ) -> List[SignalValueObject]:
         try:
             response = self.analysis_repository.get_all_analyses(
                 target_date=target_date,
                 name="signals",
                 item_schema=SignalValueObject,
                 tickers=tickers,
+                models=models,
             )
 
             results = []
@@ -484,7 +492,9 @@ class TranslateService:
 
         return None
 
-    def get_translated_signals(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> dict:
+    def get_translated_signals(
+        self, target_date: datetime.date, tickers: Optional[List[str]] = None
+    ) -> dict:
         """
         특정 날짜의 번역된 시그널을 가져와 마크다운 형식으로 변환합니다.
         """
@@ -497,8 +507,13 @@ class TranslateService:
         logger.info(f"{target_date} 날짜의 번역된 시그널이 없습니다.")
         return {"signals": []}
 
-    def translate_and_markdown(self, target_date: datetime.date, tickers: Optional[List[str]] = None) -> dict:
-        existing = self.get_translated(target_date, tickers)
+    def translate_and_markdown(
+        self,
+        target_date: datetime.date,
+        tickers: Optional[List[str]] = None,
+        models: Optional[str] = None,
+    ) -> dict:
+        existing = self.get_translated(target_date, tickers, models=models)
 
         if existing and len(existing) > 0:
             return {"signals": existing}

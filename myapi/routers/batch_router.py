@@ -45,7 +45,7 @@ def execute_batch_jobs(
             "group_id": "news",
         },
         {
-            "path": "news/market-forecast",
+            "path": "news/market-forecast?source=Major",
             "method": "POST",
             "body": {"source": "Major"},
             "group_id": "news-major",
@@ -63,14 +63,25 @@ def execute_batch_jobs(
     ticker_chunks = [
         DefaultTickers[i : i + 5] for i in range(0, len(DefaultTickers), 5)
     ]
-    
+
     for i, chunk in enumerate(ticker_chunks):
-        jobs.append({
-            "path": "translate/signals",
-            "method": "POST",
-            "body": {"tickers": chunk},
-            "group_id": f"translate-{i}",
-        })
+        jobs.append(
+            {
+                "path": "translate/signals",
+                "method": "POST",
+                "body": {"tickers": chunk, "model": "OPENAI"},
+                "group_id": f"translate-{i}-OPENAI",
+            }
+        )
+
+        jobs.append(
+            {
+                "path": "translate/signals",
+                "method": "POST",
+                "body": {"tickers": chunk, "model": "GOOGLE"},
+                "group_id": f"translate-{i}-GOOGLE",
+            }
+        )
 
     responses = []
     for job in jobs:

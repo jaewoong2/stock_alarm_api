@@ -195,6 +195,7 @@ class WebSearchResultRepository:
         item_schema: type | None = MarketAnalysis,
         target_date: datetime.date = datetime.date.today(),
         tickers: Optional[List[str]] = None,
+        models: Optional[str] = None,
     ) -> List[AiAnalysisVO]:
         """Fetch all analysis data of a given type.
 
@@ -230,6 +231,11 @@ class WebSearchResultRepository:
                     for ticker in tickers
                 ]
                 query = query.filter(or_(*ticker_filters))
+
+            if models:
+                query = query.filter(
+                    text("value->>'ai_model' = :ai_model").params(ai_model=models)
+                )
 
             results = query.all()
 
