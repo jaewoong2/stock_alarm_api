@@ -166,12 +166,18 @@ async def get_latest_tickers_with_changes(
                 continue
 
             yesterday = ticker.date - timedelta(days=1)
-            signals = await db_signal_service.get_signals_by_date_and_ticker(
-                ticker.symbol, yesterday
-            )
-            if signals and len(signals) > 0:
-                # 시그널이 존재하면 첫 번째 시그널 정보만 사용
-                ticker.signal = signals[0].model_dump()
+            try:
+                signals = await db_signal_service.get_signals_by_date_and_ticker(
+                    ticker.symbol, yesterday
+                )
+                # 시그널이 존재하고 리스트 형태인지 확인
+                if signals and isinstance(signals, list) and len(signals) > 0:
+                    # 시그널이 존재하면 첫 번째 시그널 정보만 사용
+                    ticker.signal = signals[0].model_dump()
+            except Exception as e:
+                # 시그널 조회 실패 시 로그만 출력하고 계속 진행
+                print(f"시그널 조회 실패 for {ticker.symbol}: {str(e)}")
+                continue
 
         return tickers
     except Exception as e:
@@ -314,3 +320,124 @@ def get_tickers_ordered_by(
     )
 
     return response
+
+
+# 비동기 최적화된 엔드포인트들 추가
+
+
+@router.get("/async/symbol/{symbol}", response_model=List[TickerResponse])
+@inject
+async def get_ticker_by_symbol_async(
+    symbol: str,
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """비동기 심볼로 티커 조회 - 성능 최적화"""
+    ticker = await ticker_service.get_ticker_by_symbol_async(symbol)
+    if ticker is None:
+        raise HTTPException(status_code=404, detail="Ticker not found")
+    return ticker
+
+
+@router.get("/async/latest", response_model=List[TickerLatestWithChangeResponse])
+@inject
+async def get_latest_tickers_with_changes_async(
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 모든 티커의 최신 데이터와 변화율을 계산 - 배치 처리로 성능 최적화
+    N+1 쿼리 문제 해결
+    """
+    try:
+        # 비동기 배치 처리로 성능 최적화
+        tickers = await ticker_service.get_latest_tickers_with_changes_async()
+
+        if not tickers:
+            return []
+
+        # 병렬로 시그널 정보 조회 (배치 처리)
+        signal_tasks = []
+        for ticker in tickers:
+            if ticker.date:
+                yesterday = ticker.date - timedelta(days=1)
+                signal_tasks.append(
+                    db_signal_service.get_signals_by_date_and_ticker(
+                        ticker.symbol, yesterday
+                    )
+                )
+
+        # 모든 시그널 조회를 병렬 실행
+        import asyncio
+
+        if signal_tasks:
+            signal_results = await asyncio.gather(*signal_tasks, return_exceptions=True)
+
+            # 시그널 정보를 티커에 매핑
+            for i, ticker in enumerate(tickers):
+                if i < len(signal_results) and not isinstance(
+                    signal_results[i], Exception
+                ):
+                    signals = signal_results[i]
+                    # 시그널이 존재하고 리스트 형태이며 비어있지 않은지 확인
+                    if signals and isinstance(signals, list) and len(signals) > 0:
+                        ticker.signal = signals[0].model_dump()
+
+        return tickers
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"티커 데이터 조회 중 오류 발생: {str(e)}"
+        )
+
+
+@router.post("/async/changes", response_model=List[TickerChangeResponse])
+@inject
+async def get_ticker_changes_async(
+    query: TickerMultiDateQuery,
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """비동기로 날짜별 변화율 조회 - 배치 쿼리로 성능 최적화"""
+    # 심볼 존재 확인 (비동기)
+    ticker = await ticker_service.get_ticker_by_symbol_async(query.symbol)
+    if not ticker:
+        raise HTTPException(
+            status_code=404, detail="해당 심볼의 티커를 찾을 수 없습니다"
+        )
+
+    # 배치로 변화율 계산 (N+1 쿼리 방지)
+    changes = await ticker_service.get_ticker_changes_async(query.symbol, query.dates)
+    if not changes:
+        raise HTTPException(
+            status_code=404, detail="요청한 날짜에 대한 데이터를 찾을 수 없습니다"
+        )
+
+    return changes
+
+
+@router.get("/async/{ticker_id}", response_model=TickerResponse)
+@inject
+async def get_ticker_async(
+    ticker_id: int,
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """비동기 티커 ID로 조회"""
+    ticker = await ticker_service.get_ticker_async(ticker_id)
+    if ticker is None:
+        raise HTTPException(status_code=404, detail="Ticker not found")
+    return ticker
+
+
+@router.post("/async/", response_model=TickerResponse)
+@inject
+async def create_ticker_async(
+    ticker: TickerCreate,
+    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+):
+    """비동기 티커 생성"""
+    # 기존 심볼 확인 (비동기)
+    existing = await ticker_service.get_ticker_by_symbol_async(ticker.symbol)
+    if existing:
+        raise HTTPException(status_code=400, detail="Symbol already registered")
+
+    return await ticker_service.create_ticker_async(ticker)

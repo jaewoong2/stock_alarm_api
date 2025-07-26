@@ -36,7 +36,13 @@ class TickerService:
         return TickerResponse.model_validate(ticker) if ticker else None
 
     def get_ticker_by_symbol(self, symbol: str) -> Optional[List[TickerResponse]]:
-        ticker = self.ticker_repository.get_by_symbol(symbol).all()
+        query_result = self.ticker_repository.get_by_symbol(symbol)
+        if isinstance(query_result, list):
+            # AsyncSession 모드에서는 빈 리스트가 반환됨
+            ticker = query_result
+        else:
+            # 동기 Session 모드에서는 Query 객체가 반환됨
+            ticker = query_result.all()
         return [TickerResponse.model_validate(t) for t in ticker] if ticker else None
 
     def get_all_tickers(self) -> List[TickerResponse]:
@@ -449,3 +455,225 @@ class TickerService:
         tickers = self.ticker_repository.get_ticker_order_by(date, order_by, limit)
 
         return tickers
+
+    async def create_ticker_async(self, data: TickerCreate) -> TickerResponse:
+        """비동기 티커 생성"""
+        ticker = await self.ticker_repository.create_async(data)
+        return TickerResponse.model_validate(ticker)
+
+    async def get_ticker_async(self, ticker_id: int) -> Optional[TickerResponse]:
+        """비동기 티커 조회"""
+        ticker = await self.ticker_repository.get_async(ticker_id)
+        return TickerResponse.model_validate(ticker) if ticker else None
+
+    async def get_ticker_by_symbol_async(
+        self, symbol: str
+    ) -> Optional[List[TickerResponse]]:
+        """비동기 심볼로 티커 조회"""
+        tickers = await self.ticker_repository.get_by_symbol_async(symbol)
+        return [TickerResponse.model_validate(t) for t in tickers] if tickers else None
+
+    async def get_latest_tickers_with_changes_async(
+        self,
+    ) -> List[TickerLatestWithChangeResponse]:
+        """
+        비동기로 모든 티커의 최신 데이터와 변화율을 계산하여 반환
+        배치 처리로 성능 최적화
+        """
+        try:
+            # 배치로 최신 티커 데이터 가져오기
+            latest_tickers = (
+                await self.ticker_repository.get_latest_for_all_symbols_async()
+            )
+
+            if not latest_tickers:
+                return []
+
+            # date가 None이 아닌 티커만 필터링
+            valid_tickers = [
+                ticker for ticker in latest_tickers if ticker.date is not None
+            ]
+
+            if not valid_tickers:
+                return []
+
+            # 심볼 리스트 추출
+            symbols = [ticker.symbol for ticker in valid_tickers]
+
+            # 배치로 이전 날짜 데이터 조회 (N+1 쿼리 방지)
+            # ticker.date는 위에서 None이 아닌 것만 필터링했으므로 안전
+            dates = [ticker.date for ticker in valid_tickers if ticker.date is not None]
+            prev_tickers_map = (
+                await self.ticker_repository.get_previous_day_tickers_batch_async(
+                    symbols, dates
+                )
+            )
+
+            results = []
+            for ticker in valid_tickers:
+                try:
+                    # ticker.date가 None이 아님을 이미 확인했지만, 타입 체크를 위해 다시 확인
+                    if ticker.date is None:
+                        continue
+
+                    response = TickerLatestWithChangeResponse(
+                        symbol=ticker.symbol,
+                        date=ticker.date,
+                        open_price=(
+                            float(ticker.open_price)
+                            if ticker.open_price is not None
+                            else None
+                        ),
+                        high_price=(
+                            float(ticker.high_price)
+                            if ticker.high_price is not None
+                            else None
+                        ),
+                        low_price=(
+                            float(ticker.low_price)
+                            if ticker.low_price is not None
+                            else None
+                        ),
+                        close_price=(
+                            float(ticker.close_price)
+                            if ticker.close_price is not None
+                            else None
+                        ),
+                        volume=(
+                            int(ticker.volume) if ticker.volume is not None else None
+                        ),
+                        name=(
+                            str(ticker.name)
+                            if hasattr(ticker, "name") and ticker.name is not None
+                            else None
+                        ),
+                        close_change=None,
+                        volume_change=None,
+                        signal=None,
+                    )
+
+                    # 배치로 조회한 이전 데이터에서 해당 티커 찾기
+                    prev_ticker = prev_tickers_map.get(ticker.symbol)
+
+                    if prev_ticker:
+                        # 종가 변화율 계산
+                        if (
+                            ticker.close_price is not None
+                            and prev_ticker.close_price is not None
+                            and prev_ticker.close_price != 0
+                        ):  # 0으로 나누기 방지
+                            current_close = float(ticker.close_price)
+                            prev_close = float(prev_ticker.close_price)
+                            response.close_change = (
+                                (current_close - prev_close) / prev_close * 100
+                            )
+
+                        # 거래량 변화율 계산
+                        if (
+                            ticker.volume is not None
+                            and prev_ticker.volume is not None
+                            and prev_ticker.volume != 0
+                        ):  # 0으로 나누기 방지
+                            current_volume = int(ticker.volume)
+                            prev_volume = int(prev_ticker.volume)
+                            response.volume_change = (
+                                (current_volume - prev_volume) / prev_volume * 100
+                            )
+
+                    results.append(response)
+                except Exception as e:
+                    print(f"티커 {ticker.symbol} 처리 중 오류 발생: {str(e)}")
+                    continue
+
+            return results
+        except Exception as e:
+            print(f"티커 데이터 조회 중 오류 발생: {str(e)}")
+            return []
+
+    async def get_ticker_changes_async(
+        self, symbol: str, dates: List[date]
+    ) -> List[TickerChangeResponse]:
+        """
+        비동기로 여러 날짜의 티커 변화율 계산
+        배치 쿼리로 성능 최적화
+        """
+        if not dates:
+            return []
+
+        # 배치로 현재 날짜들의 데이터 조회
+        current_tickers = await self.ticker_repository.get_by_symbol_and_dates_async(
+            symbol, dates
+        )
+
+        # 배치로 이전 날짜들의 데이터 조회
+        prev_tickers_map = (
+            await self.ticker_repository.get_previous_day_tickers_for_dates_async(
+                symbol, dates
+            )
+        )
+
+        results = []
+        for ticker in current_tickers:
+            if not ticker or ticker.date is None:
+                continue
+
+            prev_ticker = prev_tickers_map.get(ticker.date)
+
+            change_response = TickerChangeResponse(
+                date=ticker.date,
+                symbol=symbol,
+                open_price=(
+                    float(ticker.open_price) if ticker.open_price is not None else None
+                ),
+                high_price=(
+                    float(ticker.high_price) if ticker.high_price is not None else None
+                ),
+                low_price=(
+                    float(ticker.low_price) if ticker.low_price is not None else None
+                ),
+                close_price=(
+                    float(ticker.close_price)
+                    if ticker.close_price is not None
+                    else None
+                ),
+                volume=int(ticker.volume) if ticker.volume is not None else None,
+            )
+
+            if prev_ticker:
+                # 변화율 계산 로직
+                if (
+                    prev_ticker.open_price is not None
+                    and ticker.open_price is not None
+                    and prev_ticker.open_price != 0
+                ):
+                    change_response.open_change = (
+                        (float(ticker.open_price) - float(prev_ticker.open_price))
+                        / float(prev_ticker.open_price)
+                        * 100
+                    )
+
+                if (
+                    prev_ticker.close_price is not None
+                    and ticker.close_price is not None
+                    and prev_ticker.close_price != 0
+                ):
+                    change_response.close_change = (
+                        (float(ticker.close_price) - float(prev_ticker.close_price))
+                        / float(prev_ticker.close_price)
+                        * 100
+                    )
+
+                if (
+                    prev_ticker.volume is not None
+                    and ticker.volume is not None
+                    and prev_ticker.volume != 0
+                ):
+                    change_response.volume_change = (
+                        (int(ticker.volume) - int(prev_ticker.volume))
+                        / int(prev_ticker.volume)
+                        * 100
+                    )
+
+            results.append(change_response)
+
+        return results

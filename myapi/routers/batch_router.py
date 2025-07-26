@@ -45,16 +45,18 @@ def execute_batch_jobs(
             "group_id": "news",
         },
         {
-            "path": "news/market-forecast?source=Major",
+            "path": "news/market-forecast",
             "method": "POST",
-            "body": {"source": "Major"},
+            "body": {},
             "group_id": "news-major",
+            "query_string_parameters": {"source": "Major"},
         },
         {
-            "path": "news/market-forecast?source=Minor",
+            "path": "news/market-forecast",
             "method": "POST",
             "body": {},
             "group_id": "news-minor",
+            "query_string_parameters": {"source": "Minor"},
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
     ]
@@ -92,6 +94,11 @@ def execute_batch_jobs(
                 method=job["method"],
                 body=json.dumps(job["body"]),
                 auth_token=settings.auth_token,
+                query_string_parameters=(
+                    job["query_string_parameters"]
+                    if "query_string_parameters" in job
+                    else None
+                ),
             )
 
             # 고유한 중복 제거 ID 생성 (경로 + 날짜)

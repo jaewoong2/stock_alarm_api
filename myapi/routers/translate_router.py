@@ -29,7 +29,11 @@ def translate_signals(
     target_date = request.target_date if request.target_date else dt.date.today()
     tickers = request.tickers
 
-    result = service.translate_and_markdown(target_date, tickers, request.model)
+    result = service.translate_and_markdown(
+        target_date=target_date,
+        tickers=tickers,
+        models=request.model if request.model else "OPENAI",
+    )
     return result
 
 

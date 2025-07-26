@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Literal, Optional, TypeVar, Any
+from typing import List, Literal, Optional, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
@@ -196,6 +196,7 @@ class WebSearchResultRepository:
         target_date: datetime.date = datetime.date.today(),
         tickers: Optional[List[str]] = None,
         models: Optional[str] = None,
+        strategy_filter: Optional[str] = None,
     ) -> List[AiAnalysisVO]:
         """Fetch all analysis data of a given type.
 
@@ -235,6 +236,15 @@ class WebSearchResultRepository:
             if models:
                 query = query.filter(
                     text("value->>'ai_model' = :ai_model").params(ai_model=models)
+                )
+
+            if strategy_filter == "AI_GENERATED":
+                query = query.filter(text("value->>'strategy' = :strategy")).params(
+                    strategy="AI_GENERATED"
+                )
+            elif strategy_filter != "AI_GENERATED":
+                query = query.filter(text("value->>'strategy' != :strategy")).params(
+                    strategy="AI_GENERATED"
                 )
 
             results = query.all()

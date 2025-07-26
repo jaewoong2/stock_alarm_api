@@ -762,3 +762,105 @@ def send_discord_message(
             content="Error sending Discord message: " + str(e), embeds=None
         )
         logger.error(f"Error sending Discord message: {e}")
+
+
+# 비동기 최적화된 Signal 엔드포인트들 추가
+
+
+@router.get("/async/today", response_model=List[SignalBaseResponse])
+@inject
+async def get_today_signals_async(
+    action: Literal["buy", "sell", "hold", "all"] = "buy",
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 오늘 생성된 모든 시그널을 조회 - 성능 최적화
+    """
+    return await db_signal_service.get_today_signals(action=action)
+
+
+@router.get("/async/ticker/{ticker}", response_model=List[SignalBaseResponse])
+@inject
+async def get_signals_by_ticker_async(
+    ticker: str,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 특정 티커의 모든 시그널을 조회 - 성능 최적화
+    """
+    return await db_signal_service.get_signals_by_ticker(ticker)
+
+
+@router.get("/async/recent", response_model=List[SignalBaseResponse])
+@inject
+async def get_recent_signals_async(
+    limit: int = 10,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 최근 시그널들을 조회 - 성능 최적화
+    캐싱 가능한 엔드포인트
+    """
+    return await db_signal_service.get_recent_signals(limit=limit)
+
+
+@router.get("/async/high-probability", response_model=List[SignalBaseResponse])
+@inject
+async def get_high_probability_signals_async(
+    threshold: float = 70.0,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 높은 확률의 시그널들을 조회 - 성능 최적화
+    """
+    return await db_signal_service.get_high_probability_signals(threshold=threshold)
+
+
+@router.get("/async/date/{date}")
+@inject
+async def get_signals_by_date_async(
+    date: str,
+    symbols: str = "",
+    strategy_type: Optional[str] = None,
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 특정 날짜의 시그널들을 조회 - 배치 처리로 성능 최적화
+    """
+    symbol_list = symbols.split(",") if symbols and symbols.strip() else []
+    date_value = dt.datetime.strptime(date, "%Y-%m-%d").date()
+    validate_date(date_value)
+
+    # 배치 처리를 통한 성능 최적화
+    response = await db_signal_service.get_signals_result(
+        date=date_value,
+        symbols=symbol_list,
+        strategy_type=strategy_type,
+    )
+
+    return {"signals": response}
+
+
+@router.get("/async/stats/{by_type}")
+@inject
+async def get_signals_stats_async(
+    by_type: Literal["ticker", "strategy"] = "ticker",
+    db_signal_service: DBSignalService = Depends(
+        Provide[Container.services.db_signal_service]
+    ),
+):
+    """
+    비동기로 시그널 통계를 조회 - 성능 최적화
+    캐싱 권장 엔드포인트
+    """
+    return await db_signal_service.get_signals_stats(by_type=by_type)

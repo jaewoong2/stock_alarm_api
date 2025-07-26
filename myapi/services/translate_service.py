@@ -138,15 +138,15 @@ class TranslateService:
             # 더 구체적이고 명확한 번역 프롬프트
             prompt = f"""
             ╭─ TRANSLATION TASK
-            │ • Translate the following English text to natural Korean
+            │ • Translate the following English text to ㅜatural Korean
             │ • Context: Financial/Investment analysis content
-            │ • Target audience: Korean investors and traders
+            │ • Target audience: investors and traders
             │ • Maintain professional tone and accuracy
             ╰─ END TASK
 
             ╭─ TRANSLATION RULES
             │ • Keep financial terms and ticker symbols unchanged (e.g., S&P 500, NASDAQ, USD)
-            │ • Use formal Korean language (존댓말)
+            │ • Use formal Korean language
             │ • Preserve numbers, percentages, and dates exactly as written
             │ • Do NOT add explanations, comments, or additional context
             │ • Do NOT include phrases like "번역:", "한국어:", "Korean translation:"
@@ -262,7 +262,10 @@ class TranslateService:
             raise
 
     def translate_by_date(
-        self, target_date: datetime.date, tickers: Optional[List[str]] = None
+        self,
+        target_date: datetime.date,
+        tickers: Optional[List[str]] = None,
+        models: str = "OPENAI",
     ) -> List[SignalValueObject]:
         """
         특정 날짜의 모든 시그널을 번역하여 반환합니다.
@@ -271,7 +274,12 @@ class TranslateService:
         logger.info(f"{target_date} 날짜의 시그널 번역 시작 (티커: {tickers})")
 
         # 1. 먼저 이미 번역된 시그널들이 있는지 확인
-        existing_translated = self.get_translated(target_date, tickers)
+        existing_translated = self.get_translated(
+            target_date=target_date,
+            tickers=tickers,
+            models=models,
+            strategy_filter=None,
+        )
         if existing_translated:
             logger.info(f"이미 번역된 시그널 {len(existing_translated)}개 발견")
             return existing_translated
@@ -279,9 +287,9 @@ class TranslateService:
         # 2. 원본 시그널들을 페이지네이션으로 조회
         next_target_date = target_date + datetime.timedelta(days=1)
         all_translated_signals: List[SignalValueObject] = []
-        processed_tickers = set()  # 중복 처리 방지
 
         request = GetSignalRequest(
+            tickers=tickers,
             start_date=target_date.strftime("%Y-%m-%d"),
             end_date=next_target_date.strftime("%Y-%m-%d"),
         )
@@ -296,17 +304,17 @@ class TranslateService:
                     logger.debug(f"티커 {s.ticker} 필터링됨, 건너뛰기")
                     continue
 
-                # 이미 처리한 티커는 건너뛰기
-                if s.ticker in processed_tickers:
-                    logger.debug(f"티커 {s.ticker} 이미 처리됨, 건너뛰기")
-                    continue
-
-                processed_tickers.add(s.ticker)
-
                 # 개별 티커의 번역된 시그널이 이미 있는지 확인
                 existing_ticker_signal = self.get_translated_by_ticker(
-                    target_date, s.ticker
+                    target_date, s.ticker, ai_model=models
                 )
+
+                if s.ai_model != models:
+                    logger.debug(
+                        f"티커 {s.ticker}의 AI 모델이 {models}가 아님, 번역 수행"
+                    )
+                    continue
+
                 if existing_ticker_signal:
                     logger.debug(f"티커 {s.ticker}의 번역된 시그널이 이미 존재함")
                     all_translated_signals.append(existing_ticker_signal)
@@ -351,6 +359,7 @@ class TranslateService:
         target_date: datetime.date,
         tickers: Optional[List[str]] = None,
         models: Optional[str] = None,
+        strategy_filter: Optional[str] = None,
     ) -> List[SignalValueObject]:
         try:
             response = self.analysis_repository.get_all_analyses(
@@ -359,6 +368,7 @@ class TranslateService:
                 item_schema=SignalValueObject,
                 tickers=tickers,
                 models=models,
+                strategy_filter=strategy_filter,
             )
 
             results = []
@@ -511,14 +521,16 @@ class TranslateService:
         self,
         target_date: datetime.date,
         tickers: Optional[List[str]] = None,
-        models: Optional[str] = None,
+        models: str = "OPENAI",
     ) -> dict:
         existing = self.get_translated(target_date, tickers, models=models)
 
         if existing and len(existing) > 0:
             return {"signals": existing}
 
-        signals = self.translate_by_date(target_date, tickers)
+        signals = self.translate_by_date(
+            target_date=target_date, tickers=tickers, models=models
+        )
 
         return {"signals": signals}
 
