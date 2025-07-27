@@ -20,6 +20,7 @@ from pandas_datareader import data as pdr
 
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
+from myapi.services.translate_service import TranslateService
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     Article,
@@ -92,12 +93,14 @@ class SignalService:
         settings: Settings,
         signals_repository: SignalsRepository,
         web_search_repository: WebSearchResultRepository,
+        translate_service: TranslateService,
     ):
         self.settings = settings
         self.DEFAULT_UNIVERSE: str = "SPY,QQQ,AAPL,MSFT,TSLA"
         self.START_DAYS_BACK: int = 365
         self.signals_repository = signals_repository
         self.web_search_repository = web_search_repository
+        self.translate_service = translate_service
         # self.sia = SentimentIntensityAnalyzer()
 
     def save_web_search_results(
@@ -1057,7 +1060,7 @@ class SignalService:
             r.raise_for_status()
             articles = r.json().get("articles", [])
 
-            return [
+            headlines = [
                 NewsHeadline(
                     title=a["title"],
                     url=a["url"],
@@ -1065,6 +1068,19 @@ class SignalService:
                 )
                 for a in articles
             ]
+
+            # Translate headlines if translate_service is available
+            translated_headlines = []
+            for headline in headlines:
+                try:
+                    translated = self.translate_service.translate_schema(headline)
+                    translated_headlines.append(translated)
+                except Exception as e:
+                    logger.warning(f"Failed to translate headline: {e}")
+                    translated_headlines.append(headline)
+            return translated_headlines
+
+            return headlines
         except ImportError:
             logger.warning("News API not available.")
             return []
@@ -1254,7 +1270,7 @@ class SignalService:
         ).astimezone().date() - timedelta(days=3)
         today = datetime.datetime.now(timezone.utc).astimezone().date()
 
-        return [
+        articles = [
             Article(
                 id=it["link"],
                 title=html.unescape(re.sub(r"<\/?b>", "", it["title"])),
@@ -1269,6 +1285,19 @@ class SignalService:
                 and parsedate_to_datetime(it["pubDate"]).date() <= today
             )
         ]
+
+        # Translate articles if translate_service is available
+        translated_articles = []
+
+        for article in articles:
+            try:
+                translated = self.translate_service.translate_schema(article)
+                translated_articles.append(translated)
+            except Exception as e:
+                logger.warning(f"Failed to translate article: {e}")
+                translated_articles.append(article)
+
+        return translated_articles
 
     def generate_web_search_prompt(
         self,

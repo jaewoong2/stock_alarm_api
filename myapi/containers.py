@@ -42,11 +42,20 @@ class ServiceModule(containers.DeclarativeContainer):
     ai_service = providers.Factory(AIService, settings=config.config)
     discord_service = providers.Factory(DiscordService, settings=config.config)
 
+    translate_service = providers.Factory(
+        TranslateService,
+        signals_repository=repositories.signals_repository,
+        analysis_repository=repositories.web_search_repository,
+        ai_service=ai_service,
+        settings=config.config,
+    )
+    
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,
         web_search_repository=repositories.web_search_repository,
         settings=config.config,
+        translate_service=translate_service,
     )
     ticker_service = providers.Factory(
         TickerService,
@@ -59,15 +68,8 @@ class ServiceModule(containers.DeclarativeContainer):
         WebSearchService,
         websearch_repository=repositories.web_search_repository,
         ai_service=ai_service,
+        translate_service=translate_service,
     )
-    translate_service = providers.Factory(
-        TranslateService,
-        signals_repository=repositories.signals_repository,
-        analysis_repository=repositories.web_search_repository,
-        ai_service=ai_service,
-        settings=config.config,
-    )
-
     db_signal_service = providers.Factory(
         DBSignalService,
         repository=repositories.signals_repository,

@@ -1,10 +1,11 @@
 import datetime
 import json
 import re
-from typing import List, Any, Optional
+from typing import List, Any, Optional, TypeVar, Type, Union
 import boto3
 from botocore.exceptions import ClientError
 import logging
+from pydantic import BaseModel
 
 from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
@@ -18,6 +19,9 @@ from myapi.utils.config import Settings
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
+
+# TypeVar for generic schema translation
+T = TypeVar('T', bound=BaseModel)
 
 
 class TranslateService:
@@ -549,3 +553,86 @@ class TranslateService:
         except Exception as e:
             logger.error(f"JSON 번역 중 오류 발생: {e}")
             return json_data
+
+    def translate_schema(self, schema_instance: T) -> T:
+        """
+        Pydantic Schema의 str/text 타입 필드들을 번역하여 동일한 스키마로 반환합니다.
+        
+        Args:
+            schema_instance: 번역할 Pydantic 모델 인스턴스
+            
+        Returns:
+            번역된 필드들을 포함한 동일한 타입의 스키마 인스턴스
+            
+        Example:
+            news_schema = NewsSchema(title="Hello", content="World", author="John")
+            translated = translate_service.translate_schema(news_schema)
+            # translated.title, content, author가 한국어로 번역됨
+        """
+        try:
+            # 원본 스키마를 딥 카피
+            translated_data = schema_instance.model_copy(deep=True)
+            
+            # 스키마의 모든 필드를 확인
+            for field_name, field_info in schema_instance.model_fields.items():
+                field_value = getattr(schema_instance, field_name, None)
+                
+                # 값이 None이면 건너뛰기
+                if field_value is None:
+                    continue
+                    
+                # str 타입 필드만 번역
+                if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
+                    if field_value.strip():  # 빈 문자열이 아닌 경우만 번역
+                        logger.debug(f"번역 중: {field_name} = {field_value[:50]}...")
+                        translated_value = self._translate_text_with_aws(field_value)
+                        setattr(translated_data, field_name, translated_value)
+                        logger.debug(f"번역 완료: {field_name} = {translated_value[:50]}...")
+                        
+                # 중첩된 Pydantic 모델인 경우 재귀적으로 번역
+                elif hasattr(field_value, 'model_fields') and isinstance(field_value, BaseModel):
+                    logger.debug(f"중첩 모델 번역 중: {field_name}")
+                    translated_nested = self.translate_schema(field_value)
+                    setattr(translated_data, field_name, translated_nested)
+                    
+                # 리스트 안에 Pydantic 모델이 있는 경우
+                elif isinstance(field_value, list) and field_value:
+                    translated_list = []
+                    for item in field_value:
+                        if isinstance(item, BaseModel):
+                            translated_list.append(self.translate_schema(item))
+                        elif isinstance(item, str) and item.strip():
+                            translated_list.append(self._translate_text_with_aws(item))
+                        else:
+                            translated_list.append(item)
+                    setattr(translated_data, field_name, translated_list)
+            
+            logger.info(f"{type(schema_instance).__name__} 스키마 번역 완료")
+            return translated_data
+            
+        except Exception as e:
+            logger.error(f"스키마 번역 중 오류 발생: {e}")
+            # 오류 발생 시 원본 반환
+            return schema_instance
+
+    def _is_string_field(self, annotation: Any) -> bool:
+        """
+        필드의 타입이 문자열 타입인지 확인합니다.
+        """
+        try:
+            # str 타입 직접 확인
+            if annotation is str:
+                return True
+                
+            # Union 타입인 경우 (Optional[str] 등)
+            if hasattr(annotation, '__origin__'):
+                if annotation.__origin__ is Union:
+                    return str in annotation.__args__
+                    
+            # typing.Optional, typing.Union 등의 경우
+            if hasattr(annotation, '__args__') and annotation.__args__:
+                return str in annotation.__args__
+                
+            return False
+        except Exception:
+            return False

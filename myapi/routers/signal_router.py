@@ -4,6 +4,7 @@ import logging
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends
 
+from myapi.services.translate_service import TranslateService
 from myapi.utils.auth import verify_bearer_token
 from datetime import timedelta
 
@@ -24,7 +25,6 @@ from myapi.domain.signal.signal_schema import (
     GetSignalByOnlyAIRequest,
     GetSignalRequest,
     SignalBaseResponse,
-    SignalJoinTickerResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
@@ -90,6 +90,9 @@ def generate_signal_result(
         Provide[Container.repositories.signals_repository]
     ),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    translate_service: TranslateService = Depends(
+        Provide[Container.services.translate_service]
+    ),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -113,6 +116,8 @@ def generate_signal_result(
 
         if not isinstance(result, SignalPromptResponse):
             return result
+
+        result = translate_service.translate_schema(result)
 
         signals_repository.create_signal(
             ticker=request.data.ticker,
@@ -764,103 +769,57 @@ def send_discord_message(
         logger.error(f"Error sending Discord message: {e}")
 
 
-# 비동기 최적화된 Signal 엔드포인트들 추가
-
-
-@router.get("/async/today", response_model=List[SignalBaseResponse])
+@router.get("/ticker/{ticker}", response_model=List[SignalBaseResponse])
 @inject
-async def get_today_signals_async(
-    action: Literal["buy", "sell", "hold", "all"] = "buy",
-    db_signal_service: DBSignalService = Depends(
-        Provide[Container.services.db_signal_service]
-    ),
-):
-    """
-    비동기로 오늘 생성된 모든 시그널을 조회 - 성능 최적화
-    """
-    return await db_signal_service.get_today_signals(action=action)
-
-
-@router.get("/async/ticker/{ticker}", response_model=List[SignalBaseResponse])
-@inject
-async def get_signals_by_ticker_async(
+async def get_signals_by_ticker(
     ticker: str,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
-    비동기로 특정 티커의 모든 시그널을 조회 - 성능 최적화
+    특정 티커의 모든 시그널을 조회합니다.
     """
     return await db_signal_service.get_signals_by_ticker(ticker)
 
 
-@router.get("/async/recent", response_model=List[SignalBaseResponse])
+@router.get("/recent", response_model=List[SignalBaseResponse])
 @inject
-async def get_recent_signals_async(
+async def get_recent_signals(
     limit: int = 10,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
-    비동기로 최근 시그널들을 조회 - 성능 최적화
-    캐싱 가능한 엔드포인트
+    최근 시그널들을 조회합니다.
     """
     return await db_signal_service.get_recent_signals(limit=limit)
 
 
-@router.get("/async/high-probability", response_model=List[SignalBaseResponse])
+@router.get("/high-probability", response_model=List[SignalBaseResponse])
 @inject
-async def get_high_probability_signals_async(
+async def get_high_probability_signals(
     threshold: float = 70.0,
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
-    비동기로 높은 확률의 시그널들을 조회 - 성능 최적화
+    높은 확률의 시그널들을 조회합니다.
     """
     return await db_signal_service.get_high_probability_signals(threshold=threshold)
 
 
-@router.get("/async/date/{date}")
+@router.get("/stats/{by_type}")
 @inject
-async def get_signals_by_date_async(
-    date: str,
-    symbols: str = "",
-    strategy_type: Optional[str] = None,
-    db_signal_service: DBSignalService = Depends(
-        Provide[Container.services.db_signal_service]
-    ),
-):
-    """
-    비동기로 특정 날짜의 시그널들을 조회 - 배치 처리로 성능 최적화
-    """
-    symbol_list = symbols.split(",") if symbols and symbols.strip() else []
-    date_value = dt.datetime.strptime(date, "%Y-%m-%d").date()
-    validate_date(date_value)
-
-    # 배치 처리를 통한 성능 최적화
-    response = await db_signal_service.get_signals_result(
-        date=date_value,
-        symbols=symbol_list,
-        strategy_type=strategy_type,
-    )
-
-    return {"signals": response}
-
-
-@router.get("/async/stats/{by_type}")
-@inject
-async def get_signals_stats_async(
+async def get_signals_stats(
     by_type: Literal["ticker", "strategy"] = "ticker",
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
 ):
     """
-    비동기로 시그널 통계를 조회 - 성능 최적화
-    캐싱 권장 엔드포인트
+    시그널 통계를 조회합니다.
     """
     return await db_signal_service.get_signals_stats(by_type=by_type)

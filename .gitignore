@@ -431,3 +431,7 @@ $RECYCLE.BIN/
 *.sqlite3
 
 make_project.sh
+
+
+*node_modules/
+node_modules

@@ -1,6 +1,11 @@
 from datetime import date, timedelta
 from typing import Literal, Optional
 from fastapi import HTTPException
+import logging
+
+from myapi.services.translate_service import TranslateService
+
+logger = logging.getLogger(__name__)
 
 
 from myapi.domain.news.news_models import MarketForecast
@@ -23,9 +28,11 @@ class WebSearchService:
         self,
         websearch_repository: WebSearchResultRepository,
         ai_service: AIService,
+        translate_service: TranslateService,
     ):
         self.websearch_repository = websearch_repository
         self.ai_service = ai_service
+        self.translate_service = translate_service
 
     def _build_prompt(
         self, today: str, source: Literal["Major", "Minor"] = "Major"
@@ -216,6 +223,13 @@ class WebSearchService:
             raise ValueError("Invalid response format from AI service")
 
         analysis = response.analysis
+
+        # Translate analysis if translate_service is available
+        try:
+            analysis = self.translate_service.translate_schema(analysis)
+        except Exception as e:
+            logger.warning(f"Failed to translate market analysis: {e}")
+
         self.websearch_repository.create_analysis(
             today, analysis.model_dump(), name="market_analysis"
         )
@@ -331,9 +345,19 @@ class WebSearchService:
             if not isinstance(stock, MahaneyStockAnalysis):
                 raise ValueError("Invalid stock data format in response")
 
+            # Translate stock analysis if translate_service is available
+            translated_stock = stock
+            if self.translate_service:
+                try:
+                    translated_stock = self.translate_service.translate_schema(stock)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to translate Mahaney analysis for {stock.stock_name}: {e}"
+                    )
+
             self.websearch_repository.create_analysis(
                 analysis_date=target_date,
-                analysis=stock.model_dump(),
+                analysis=translated_stock.model_dump(),
                 name="mahaney_analysis",
             )
 
