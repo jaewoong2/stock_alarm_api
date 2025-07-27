@@ -24,7 +24,6 @@ from myapi.services.translate_service import TranslateService
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import (
     Article,
-    GetSignalByOnlyAIRequest,
     SignalPromptData,
     TechnicalSignal,
     Strategy,
@@ -1070,15 +1069,16 @@ class SignalService:
             ]
 
             # Translate headlines if translate_service is available
-            translated_headlines = []
-            for headline in headlines:
-                try:
-                    translated = self.translate_service.translate_schema(headline)
-                    translated_headlines.append(translated)
-                except Exception as e:
-                    logger.warning(f"Failed to translate headline: {e}")
-                    translated_headlines.append(headline)
-            return translated_headlines
+            if self.translate_service:
+                translated_headlines = []
+                for headline in headlines:
+                    try:
+                        translated = self.translate_service.translate_schema(headline)
+                        translated_headlines.append(translated)
+                    except Exception as e:
+                        logger.warning(f"Failed to translate headline: {e}")
+                        translated_headlines.append(headline)
+                return translated_headlines
 
             return headlines
         except ImportError:
@@ -1287,17 +1287,18 @@ class SignalService:
         ]
 
         # Translate articles if translate_service is available
-        translated_articles = []
+        if self.translate_service:
+            translated_articles = []
+            for article in articles:
+                try:
+                    translated = self.translate_service.translate_schema(article)
+                    translated_articles.append(translated)
+                except Exception as e:
+                    logger.warning(f"Failed to translate article: {e}")
+                    translated_articles.append(article)
+            return translated_articles
 
-        for article in articles:
-            try:
-                translated = self.translate_service.translate_schema(article)
-                translated_articles.append(translated)
-            except Exception as e:
-                logger.warning(f"Failed to translate article: {e}")
-                translated_articles.append(article)
-
-        return translated_articles
+        return articles
 
     def generate_web_search_prompt(
         self,

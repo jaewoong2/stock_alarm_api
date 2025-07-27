@@ -88,20 +88,6 @@ class DBSignalService:
 
             # 결과 처리
             for row in signals:
-                # symbols 파라미터가 제공될 때만 detailed 정보와 translated Signal 처리
-                if symbols is not None:
-                    translated_signal = self.translate_service.get_translated_by_ticker(
-                        target_date=date,
-                        ticker=row.signal.ticker,
-                        strategy_filter=strategy_type or "ALL",
-                        ai_model=row.signal.ai_model or "OPENAI",
-                    )
-
-                    if translated_signal:
-                        row.signal = SignalJoinTickerResponse.Signal.model_validate(
-                            translated_signal.model_dump()
-                        )
-
                 signal, ticker = row.signal, row.ticker
 
                 if not signal or not ticker:

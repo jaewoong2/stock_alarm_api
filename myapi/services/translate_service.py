@@ -21,7 +21,7 @@ from myapi.utils.config import Settings
 logger = logging.getLogger(__name__)
 
 # TypeVar for generic schema translation
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar("T", bound=BaseModel)
 
 
 class TranslateService:
@@ -127,6 +127,37 @@ class TranslateService:
 
         return response.strip()
 
+    def _clean_repetitive_text(self, text: str) -> str:
+        """
+        반복되는 텍스트 패턴을 감지하고 정리합니다.
+        """
+        if not text or len(text) < 10:
+            return text
+
+        # 같은 문장이나 구절의 반복 제거
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
+        unique_sentences = []
+        seen = set()
+
+        for sentence in sentences:
+            # 문장이 너무 유사하거나 이미 본 것이면 건너뛰기
+            sentence_normalized = re.sub(r"[^\w\s]", "", sentence.lower())
+            if sentence_normalized not in seen and len(sentence) > 3:
+                seen.add(sentence_normalized)
+                unique_sentences.append(sentence)
+
+        cleaned = ". ".join(unique_sentences)
+        if cleaned and not cleaned.endswith("."):
+            cleaned += "."
+
+        # 단어 반복 패턴 제거 (예: "매우 매우 매우 좋은" -> "매우 좋은")
+        cleaned = re.sub(r"\b(\w+)\s+\1\s+\1+", r"\1", cleaned)
+
+        # 구절 반복 패턴 제거
+        cleaned = re.sub(r"(.{10,}?)\s*\1+", r"\1", cleaned)
+
+        return cleaned.strip()
+
     def _translate_text_with_aws(self, text: str) -> str:
         if not text or not text.strip():
             return text
@@ -138,44 +169,46 @@ class TranslateService:
             )
             return text
 
+        # 텍스트가 너무 짧거나 이미 한국어인 경우 건너뛰기
+        if len(text) < 10 or re.search(r"[가-힣]", text):
+            return text
+
         try:
             # 더 구체적이고 명확한 번역 프롬프트
             prompt = f"""
-            ╭─ TRANSLATION TASK
-            │ • Translate the following English text to ㅜatural Korean
-            │ • Context: Financial/Investment analysis content
-            │ • Target audience: investors and traders
-            │ • Maintain professional tone and accuracy
-            ╰─ END TASK
+            You are a professional Korean translator specializing in financial content.
+            TASK: Translate the following English text to natural Korean.
 
-            ╭─ TRANSLATION RULES
-            │ • Keep financial terms and ticker symbols unchanged (e.g., S&P 500, NASDAQ, USD)
-            │ • Use formal Korean language
-            │ • Preserve numbers, percentages, and dates exactly as written
-            │ • Do NOT add explanations, comments, or additional context
-            │ • Do NOT include phrases like "번역:", "한국어:", "Korean translation:"
-            │ • Output ONLY the translated Korean text
-            │ • Do Not Summarize or simplify the content (keep all details) !! Very Important !!
-            ╰─ END RULES
+            RULES:
+            • Keep financial terms and ticker symbols unchanged (S&P 500, NASDAQ, etc.)
+            • Use formal Korean language appropriate for investors
+            • Preserve all numbers, percentages, and dates exactly
+            • Output ONLY the Korean translation, no explanations
+            • Maintain the original meaning and tone
+            • Avoid repetitive or circular translations
+            • Be concise and natural
 
-            ╭─ INPUT TEXT
-            │ {text}
-            ╰─ END INPUT
+            TEXT TO TRANSLATE:
+            {text}
 
-            Korean Translation:
+            KOREAN TRANSLATION:
             """
 
+            # Nova API 호출
             response = self.ai_service.nova_lite(prompt)
 
             # 응답에서 순수한 번역 결과만 추출
             translated = self._extract_translation(response)
 
-            # 로깅으로 번역 과정 확인
-            logger.info(f"원문: {text[:50]}...")
-            logger.info(f"AI 응답: {response[:100]}...")
-            logger.info(f"추출된 번역: {translated[:50]}...")
+            # 반복 텍스트 감지 및 정리
+            translated = self._clean_repetitive_text(translated)
 
-            return response
+            # 로깅으로 번역 과정 확인
+            logger.debug(f"원문: {text[:50]}...")
+            logger.debug(f"AI 응답: {response[:100]}...")
+            logger.debug(f"최종 번역: {translated[:50]}...")
+
+            return translated
 
         except ClientError as e:
             logger.error(f"AWS LLM 오류: {e}")
@@ -557,13 +590,13 @@ class TranslateService:
     def translate_schema(self, schema_instance: T) -> T:
         """
         Pydantic Schema의 str/text 타입 필드들을 번역하여 동일한 스키마로 반환합니다.
-        
+
         Args:
             schema_instance: 번역할 Pydantic 모델 인스턴스
-            
+
         Returns:
             번역된 필드들을 포함한 동일한 타입의 스키마 인스턴스
-            
+
         Example:
             news_schema = NewsSchema(title="Hello", content="World", author="John")
             translated = translate_service.translate_schema(news_schema)
@@ -572,29 +605,35 @@ class TranslateService:
         try:
             # 원본 스키마를 딥 카피
             translated_data = schema_instance.model_copy(deep=True)
-            
+
             # 스키마의 모든 필드를 확인
             for field_name, field_info in schema_instance.model_fields.items():
                 field_value = getattr(schema_instance, field_name, None)
-                
+
                 # 값이 None이면 건너뛰기
                 if field_value is None:
                     continue
-                    
+
                 # str 타입 필드만 번역
-                if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
+                if self._is_string_field(field_info.annotation) and isinstance(
+                    field_value, str
+                ):
                     if field_value.strip():  # 빈 문자열이 아닌 경우만 번역
                         logger.debug(f"번역 중: {field_name} = {field_value[:50]}...")
                         translated_value = self._translate_text_with_aws(field_value)
                         setattr(translated_data, field_name, translated_value)
-                        logger.debug(f"번역 완료: {field_name} = {translated_value[:50]}...")
-                        
+                        logger.debug(
+                            f"번역 완료: {field_name} = {translated_value[:50]}..."
+                        )
+
                 # 중첩된 Pydantic 모델인 경우 재귀적으로 번역
-                elif hasattr(field_value, 'model_fields') and isinstance(field_value, BaseModel):
+                elif hasattr(field_value, "model_fields") and isinstance(
+                    field_value, BaseModel
+                ):
                     logger.debug(f"중첩 모델 번역 중: {field_name}")
                     translated_nested = self.translate_schema(field_value)
                     setattr(translated_data, field_name, translated_nested)
-                    
+
                 # 리스트 안에 Pydantic 모델이 있는 경우
                 elif isinstance(field_value, list) and field_value:
                     translated_list = []
@@ -606,10 +645,10 @@ class TranslateService:
                         else:
                             translated_list.append(item)
                     setattr(translated_data, field_name, translated_list)
-            
+
             logger.info(f"{type(schema_instance).__name__} 스키마 번역 완료")
             return translated_data
-            
+
         except Exception as e:
             logger.error(f"스키마 번역 중 오류 발생: {e}")
             # 오류 발생 시 원본 반환
@@ -623,16 +662,16 @@ class TranslateService:
             # str 타입 직접 확인
             if annotation is str:
                 return True
-                
+
             # Union 타입인 경우 (Optional[str] 등)
-            if hasattr(annotation, '__origin__'):
+            if hasattr(annotation, "__origin__"):
                 if annotation.__origin__ is Union:
                     return str in annotation.__args__
-                    
+
             # typing.Optional, typing.Union 등의 경우
-            if hasattr(annotation, '__args__') and annotation.__args__:
+            if hasattr(annotation, "__args__") and annotation.__args__:
                 return str in annotation.__args__
-                
+
             return False
         except Exception:
             return False

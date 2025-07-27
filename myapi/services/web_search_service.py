@@ -108,6 +108,8 @@ class WebSearchService:
                 schema=MarketForecastResponse,
             )
 
+            response = self.translate_service.translate_schema(response)
+
             if not isinstance(response, MarketForecastResponse):
                 raise ValueError("Invalid response format from AI service")
 
@@ -350,6 +352,7 @@ class WebSearchService:
             if self.translate_service:
                 try:
                     translated_stock = self.translate_service.translate_schema(stock)
+                    translated_stock.stock_name = stock.stock_name.upper()
                 except Exception as e:
                     logger.warning(
                         f"Failed to translate Mahaney analysis for {stock.stock_name}: {e}"

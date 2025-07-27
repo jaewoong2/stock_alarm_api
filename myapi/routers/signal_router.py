@@ -117,7 +117,10 @@ def generate_signal_result(
         if not isinstance(result, SignalPromptResponse):
             return result
 
-        result = translate_service.translate_schema(result)
+        try:
+            result = translate_service.translate_schema(result)
+        except Exception as e:
+            logger.warning(f"Failed to translate signal result: {e}")
 
         signals_repository.create_signal(
             ticker=request.data.ticker,
@@ -141,29 +144,6 @@ def generate_signal_result(
                 confidence_level=result.chart_pattern.confidence_level,
             ),
         )
-
-        # try:
-        #     embed = format_signal_embed(result, model=request.ai)
-        #     discord_content = DiscordMessageRequest(embed=embed)
-        #     discord_result = aws_service.generate_queue_message_http(
-        #         body=discord_content.model_dump_json(),
-        #         path="signals/discord/message",
-        #         method="POST",
-        #         query_string_parameters={},
-        #     )
-        #     aws_service.send_sqs_fifo_message(
-        #         queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
-        #         message_body=json.dumps(discord_result),
-        #         message_group_id="discord",
-        #         message_deduplication_id="discord_"
-        #         + str(request.data.ticker)
-        #         + str(request.ai)
-        #         + str(date.today()),
-        #     )
-
-        #     return discord_content
-        # except Exception as e:
-        #     logger.error(f"Error SendingDiscord: {e}")
 
         return result
 
