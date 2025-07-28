@@ -270,7 +270,7 @@ def update_ticker_informations(
 
 @router.get("/signals", response_model=List[SignalAccuracyResponse])
 @inject
-def get_signal_accuracy(
+async def get_signal_accuracy(
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
@@ -287,7 +287,7 @@ def get_signal_accuracy(
             raise HTTPException(status_code=404, detail="등록된 티커가 없습니다")
 
         # 시그널 정확도 조회
-        _signals = db_signal_service.get_all_signals(GetSignalRequest())  # 사용하지 않으므로 _로 표시
+        _signals = await db_signal_service.get_all_signals(GetSignalRequest())  # 사용하지 않으므로 _로 표시
         _tickers = ticker_service.get_all_tickers()  # 사용하지 않으므로 _로 표시
         
         # TODO: 실제 시그널 정확도 계산 로직 구현 필요

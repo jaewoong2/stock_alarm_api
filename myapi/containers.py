@@ -9,6 +9,8 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
+from myapi.services.technical_analysis_service import TechnicalAnalysisService
+from myapi.services.news_service import NewsService
 from myapi.services.ticker_service import TickerService
 from myapi.services.web_search_service import WebSearchService
 from myapi.services.translate_service import TranslateService
@@ -38,9 +40,13 @@ class ServiceModule(containers.DeclarativeContainer):
     config = providers.DependenciesContainer()
     repositories = providers.DependenciesContainer()
 
+    # Core services
     aws_service = providers.Factory(AwsService, settings=config.config)
     ai_service = providers.Factory(AIService, settings=config.config)
     discord_service = providers.Factory(DiscordService, settings=config.config)
+
+    # Technical analysis service (no dependencies)
+    technical_analysis_service = providers.Factory(TechnicalAnalysisService)
 
     translate_service = providers.Factory(
         TranslateService,
@@ -50,6 +56,14 @@ class ServiceModule(containers.DeclarativeContainer):
         settings=config.config,
     )
     
+    # News service
+    news_service = providers.Factory(
+        NewsService,
+        settings=config.config,
+        translate_service=translate_service,
+    )
+    
+    # Main signal service with refactored dependencies
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,

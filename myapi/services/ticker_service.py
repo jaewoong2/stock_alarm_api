@@ -341,7 +341,7 @@ class TickerService:
         """
         try:
             # 데이터 가져오기
-            dataframe = self.signals_service.fetch_ohlcv(
+            dataframe = self.signals_service.technical_service.fetch_ohlcv(
                 ticker=ticker, start=start, end=end
             )
 
@@ -361,6 +361,7 @@ class TickerService:
             # 데이터프레임의 Date 별로 Ticker 정보 생성
             for _, row in df_reset.iterrows():
                 date = row["Date"]
+                record_date = None
 
                 if isinstance(date, Timestamp):
                     record_date = date.to_pydatetime().date()
