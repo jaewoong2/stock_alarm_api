@@ -179,9 +179,7 @@ class MahaneyAnalysisGetRequest(BaseModel):
     tickers: Optional[List[str]] = None
     recommendation: Optional[Literal["Buy", "Sell", "Hold"]] = None
     limit: Optional[int] = None
-    sort_by: Optional[
-        Literal["recommendation_score", "final_assessment", "stock_name"]
-    ] = "stock_name"
+    sort_by: Optional[Literal["recommendation_score", "final_assessment", "stock_name"]] = "stock_name"
     sort_order: Optional[Literal["asc", "desc"]] = "asc"
 
 
@@ -192,29 +190,3 @@ class MahaneyAnalysisGetResponse(BaseModel):
     actual_date: Optional[dt.date] = None  # 실제 사용된 데이터의 날짜
     is_exact_date_match: bool = True  # 요청한 날짜와 정확히 일치하는지
     request_params: MahaneyAnalysisGetRequest
-
-
-class Article(BaseModel):
-    id: str
-    title: str
-    summary: str
-    url: str
-    published: dt.datetime
-    category: str = Field(..., examples=["earnings", "m&a", "regulatory"])
-
-
-class NewsResponse(BaseModel):
-    date: dt.date
-    articles: List[Article]
-
-
-class TickerImpact(BaseModel):
-    ticker: str
-    catalyst: str
-    sentiment: Literal["positive", "neutral", "negative"]
-    source_article_id: str
-
-
-class DateRange(BaseModel):
-    start: dt.date
-    end: dt.date

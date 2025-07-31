@@ -174,10 +174,6 @@ class SignalsRepository:
 
         return [str(signal.ticker) for signal in signals]
 
-    def get_all_signals(self, request: GetSignalRequest) -> List[SignalBaseResponse]:
-        """모든 시그널을 조회합니다."""
-        return self.get_signals(request)
-
     def get_signals(self, request: GetSignalRequest):
         """
         모든 신호를 가져옵니다.
@@ -565,23 +561,6 @@ class SignalsRepository:
             .all()
         )
         return [SignalBaseResponse.model_validate(s) for s in signals]
-
-    def get_today_signals(self, action: str = "buy") -> List[SignalBaseResponse]:
-        """오늘 생성된 시그널을 조회합니다."""
-        self._ensure_valid_session()
-        
-        from datetime import date as date_type
-        today = date_type.today()
-        
-        query = self.db_session.query(Signals).filter(
-            func.date(Signals.created_at) == today
-        )
-        
-        if action != "all":
-            query = query.filter(Signals.action == action)
-            
-        signals = query.order_by(desc(Signals.created_at)).all()
-        return [self._to_signal_response(signal) for signal in signals]
 
     def get_high_probability_signals(
         self, threshold: float = 70.0

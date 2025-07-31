@@ -367,12 +367,39 @@ class SignalUpdate(BaseModel):
     result_description: Optional[str] = None
 
 
-# Article 모델은 별도 news_schema.py로 이동해야 함
+# models.py
+from datetime import date, datetime, timezone
+from typing import Literal, List
+from pydantic import BaseModel, Field
+
+
+class Article(BaseModel):
+    id: str
+    title: str
+    summary: str
+    url: str
+    published: datetime
+    category: str = Field(..., examples=["earnings", "m&a", "regulatory"])
+
+
+class NewsResponse(BaseModel):
+    date: date
+    articles: List[Article]
+
+
+class TickerImpact(BaseModel):
+    ticker: str
+    catalyst: str
+    sentiment: Literal["positive", "neutral", "negative"]
+    source_article_id: str
+
+
+class DateRange(BaseModel):
+    start: date
+    end: date
 
 
 class WebSearchTickerResult(BaseModel):
-    """웹 검색 티커 결과"""
-
     issued_YYYYMMDD: str
     summary: str
     full_description: str
@@ -381,39 +408,64 @@ class WebSearchTickerResult(BaseModel):
 
 
 class WebSearchTickerResponse(BaseModel):
-    """웹 검색 티커 응답"""
-
     search_results: List[WebSearchTickerResult]
     total_detail_description_with_why: str
     total_recommendation: Literal["Buy", "Hold", "Sell", "None"]
 
 
 class GenerateSignalResultRequest(BaseModel):
-    """시그널 생성 결과 요청 스키마"""
+    """
+    Response schema for the generate signal result endpoint.
+    """
 
-    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"
+    ai: Literal["OPENAI", "GOOGLE"] = "OPENAI"  # Store the AI model used for the signal
     data: SignalPromptData
     summary: str
     prompt: str
 
 
 class DiscordMessageRequest(BaseModel):
-    """디스코드 메시지 요청 스키마"""
+    """
+    Schema for Discord messages.
+    """
 
     content: str = ""
-    embed: Optional[List] = None
+    embed: Optional[List] = None  # Optional embed data for rich content
+
+
+
+
 
 
 class GetSignalRequest(BaseModel):
-    """시그널 조회 요청 스키마"""
+    """
+    Request schema for getting signals.
+    """
 
-    tickers: List[str] | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    actions: List[Literal["Buy", "Sell", "Hold"]] | None = None
+    tickers: List[str] | None = None  # Optional ticker filter
+    start_date: str | None = None  # Optional start date for filtering
+    end_date: str | None = None  # Optional end date for filtering
+    actions: List[Literal["Buy", "Sell", "Hold"]] | None = (
+        None  # Optional action filter
+    )
 
 
-# SignalWithTicker는 중복이므로 제거 - SignalJoinTickerResponse 사용
+class SignalWithTicker(BaseModel):
+    """
+    Signal with ticker information.
+    """
+
+    id: int
+    ticker: str
+    entry_price: float
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    action: Literal["buy", "sell", "hold"]
+    timestamp: datetime
+    probability: Optional[str] = None
+    result_description: Optional[str] = None
+    report_summary: Optional[str] = None
+    strategy: Optional[str] = None
 
 
 class SignalJoinTickerResponse(BaseModel):
@@ -466,6 +518,10 @@ class SignalJoinTickerResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+
+
+
+
 class GetSignalByOnlyAIRequest(BaseModel):
     """
     Request schema for getting signals by AI model.
@@ -479,10 +535,15 @@ class GetSignalByOnlyAIRequest(BaseModel):
 
 
 class GetSignalByOnlyAIPromptSchema(BaseModel):
-    """인공지능 시그널 프롬프트 스키마"""
+    """
+    Prompt schema for getting signals by AI model.
+    """
 
     class Tickers(BaseModel):
-        """티커 정보"""
+        """
+        Tickers schema for the AI model.
+        Contains a list of tickers to filter the signals.
+        """
 
         ticker: str = ""
         result_description: str = ""
@@ -523,9 +584,7 @@ class SignalValueObject(BaseModel):
         return cls.model_validate(obj)
 
     @classmethod
-    def to_orm(cls, value_object):
-        """데이터베이스 모델로 변환"""
-        from myapi.domain.signal.signal_models import Signals
-
+    def to_orm(cls, value_object) -> Signals:
+        """SignalValueObject를 Signals 모델 객체로 변환"""
         data = value_object.model_dump(exclude={"id"})
         return Signals(**data)
