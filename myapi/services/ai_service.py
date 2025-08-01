@@ -121,8 +121,7 @@ class AIService:
                     messages=conversation,
                     inferenceConfig={
                         "maxTokens": 5120,
-                        "temperature": 0.3,
-                        "topP": 0.9,
+                        "temperature": 0.2,
                     },
                 )
             except ClientError as e:
@@ -135,8 +134,7 @@ class AIService:
                             messages=conversation,
                             inferenceConfig={
                                 "maxTokens": 5120,
-                                "temperature": 0.3,
-                                "topP": 0.9,
+                                "temperature": 0.2,
                             },
                         )
                     except Exception:
