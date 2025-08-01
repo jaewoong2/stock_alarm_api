@@ -2,6 +2,7 @@ from typing import Literal, Optional
 import datetime as dt
 
 from myapi.domain.signal.signal_schema import DefaultTickers
+from myapi.services.translate_service import TranslateService
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
 
@@ -11,7 +12,6 @@ from dependency_injector.wiring import inject, Provide
 from myapi.containers import Container
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisRequest,
-    MahaneyAnalysisResponse,
     MahaneyAnalysisGetRequest,
     MahaneyAnalysisGetResponse,
     WebSearchMarketResponse,
@@ -67,15 +67,22 @@ def news_recommendations(
 def news_summary(
     signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    translate_service: TranslateService = Depends(
+        Provide[Container.services.translate_service]
+    ),
 ):
     today_str = dt.date.today().strftime("%Y-%m-%d")
     prompt = signal_service.generate_us_market_prompt(today_str)
+
     result = ai_service.gemini_search_grounding(
         prompt=prompt,
         schema=WebSearchMarketResponse,
     )
 
     if isinstance(result, WebSearchMarketResponse):
+
+        result = translate_service.translate_schema(result)
+
         signal_service.save_web_search_results(
             result_type="market",
             results=result.search_results,
@@ -149,7 +156,9 @@ async def get_mahaney_analysis(
     tickers: Optional[str] = None,
     recommendation: Optional[Literal["Buy", "Sell", "Hold"]] = None,
     limit: Optional[int] = None,
-    sort_by: Optional[Literal["recommendation_score", "final_assessment", "stock_name"]] = "stock_name",
+    sort_by: Optional[
+        Literal["recommendation_score", "final_assessment", "stock_name"]
+    ] = "stock_name",
     sort_order: Optional[Literal["asc", "desc"]] = "asc",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
@@ -166,12 +175,12 @@ async def get_mahaney_analysis(
     :return: Mahaney 분석 결과
     """
     target_date = validate_date(target_date if target_date else dt.date.today())
-    
+
     # 쉼표로 구분된 티커 문자열을 리스트로 변환
     ticker_list = None
     if tickers:
         ticker_list = [ticker.strip().upper() for ticker in tickers.split(",")]
-    
+
     request_params = MahaneyAnalysisGetRequest(
         target_date=target_date,
         tickers=ticker_list,
@@ -180,7 +189,7 @@ async def get_mahaney_analysis(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    
+
     return await websearch_service.get_mahaney_analysis_with_filters(request_params)
 
 

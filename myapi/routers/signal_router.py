@@ -163,6 +163,9 @@ def llm_query(
     ai_service: AIService = Depends(Provide[Container.services.ai_service]),
     aws_service: AwsService = Depends(Provide[Container.services.aws_service]),
     settings: Settings = Depends(Provide[Container.config.config]),
+    translate_service: TranslateService = Depends(
+        Provide[Container.services.translate_service]
+    ),
 ):
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
@@ -180,17 +183,22 @@ def llm_query(
             schema=WebSearchTickerResponse,
         )
 
-        if web_search_gemini_result and isinstance(
-            web_search_gemini_result, WebSearchTickerResponse
-        ):
+        if not web_search_gemini_result:
+            raise ValueError("Invalid response format from AI service for web search")
+
+        if isinstance(web_search_gemini_result, WebSearchTickerResponse):
             logger.info(
                 f"Web search results for {req.ticker} on {today_YYYY_MM_DD}: {web_search_gemini_result.search_results}"
             )
+
+            result = translate_service.translate_schema(web_search_gemini_result)
+
             signal_service.save_web_search_results(
                 result_type="ticker",
-                results=web_search_gemini_result.search_results,
+                results=result.search_results,
                 ticker=req.ticker,
             )
+
         if req.additional_info and web_search_gemini_result:
             req.additional_info = (
                 req.additional_info

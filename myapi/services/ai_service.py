@@ -120,7 +120,6 @@ class AIService:
                 response = client.converse(
                     modelId=model_id,
                     messages=conversation,
-                    inferenceConfig={"maxTokens": 8192},
                 )
             except (ClientError, Exception) as e:
                 raise HTTPException(
