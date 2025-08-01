@@ -101,10 +101,9 @@ class AIService:
     def nova_lite(self, prompt: str):
         """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""
         try:
-            # Bedrock Runtime 클라이언트 생성
             client = boto3.client(
                 service_name="bedrock-runtime",
-                region_name="ap-northeast-2",  # AWS 리전을 적절히 설정하세요
+                region_name="ap-northeast-2",
             )
             model_id = "apac.amazon.nova-lite-v1:0"
 
@@ -120,30 +119,67 @@ class AIService:
                 response = client.converse(
                     modelId=model_id,
                     messages=conversation,
+                    inferenceConfig={
+                        "maxTokens": 5120,
+                        "temperature": 0.3,
+                        "topP": 0.9,
+                    },
                 )
-            except (ClientError, Exception) as e:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Model not found: {e}",
-                )
+            except ClientError as e:
+                error_code = e.response["Error"]["Code"]
+                if error_code == "ValidationException":
+                    # 모델 ID가 잘못된 경우 대체 모델 시도
+                    try:
+                        response = client.converse(
+                            modelId=model_id,
+                            messages=conversation,
+                            inferenceConfig={
+                                "maxTokens": 5120,
+                                "temperature": 0.3,
+                                "topP": 0.9,
+                            },
+                        )
+                    except Exception:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Nova model not available: {e}",
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"AWS Bedrock error: {e}",
+                    )
 
-            if not response:
+            if not response or "output" not in response:
                 raise HTTPException(
                     status_code=404,
                     detail="No response body found from Bedrock model.",
                 )
-            # 응답 파싱
-            completion_content = response["output"]["message"]["content"][0]["text"]
 
-            if not completion_content:
+            # 응답 파싱 - 안전한 접근
+            try:
+                completion_content = response["output"]["message"]["content"][0]["text"]
+            except (KeyError, IndexError, TypeError) as e:
                 raise HTTPException(
                     status_code=404,
-                    detail="No content found in the Bedrock model response.",
+                    detail=f"Invalid response structure from Bedrock: {e}",
                 )
 
-            return completion_content
+            if not completion_content or not completion_content.strip():
+                raise HTTPException(
+                    status_code=404,
+                    detail="Empty content from Bedrock model response.",
+                )
+
+            return completion_content.strip()
+
+        except HTTPException:
+            # HTTPException은 다시 raise
+            raise
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Bedrock service error: {e}")
+            raise HTTPException(
+                status_code=503, detail=f"Bedrock service error: {str(e)}"
+            )
 
     def nova_lite_completion(self, prompt: str, schema: Type[T]):
         """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""

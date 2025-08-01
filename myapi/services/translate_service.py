@@ -162,46 +162,59 @@ class TranslateService:
         if not text or not text.strip():
             return text
 
-        # AWS Translate 클라이언트가 없으면 원본 텍스트 반환
-        if not self.translate_client:
-            logger.warning(
-                "AWS Translate 클라이언트가 초기화되지 않음. 원본 텍스트 반환."
-            )
-            return text
-
         # 텍스트가 너무 짧거나 이미 한국어인 경우 건너뛰기
-        if len(text) < 10 or re.search(r"[가-힣]", text):
+        if len(text) < 5 or re.search(r"[가-힣]", text):
             return text
 
         try:
             # 더 구체적이고 명확한 번역 프롬프트
             prompt = f"""
-            You are a professional Korean translator specializing in financial content.
+            You are a professional Korean translator specializing in financial content translation.
+
             TASK: Translate the following English text to natural Korean.
 
             RULES:
-            • Keep financial terms and ticker symbols unchanged (S&P 500, NASDAQ, etc.)
-            • Use formal Korean language appropriate for investors
-            • Preserve all numbers, percentages, and dates exactly
-            • Output ONLY the Korean translation, no explanations
-            • Maintain the original meaning and tone
-            • Avoid repetitive or circular translations
-            • Be concise and natural
+            1. Keep financial terms and ticker symbols unchanged (S&P 500, NASDAQ, TSLA, AAPL, etc.)
+            2. Use formal Korean language appropriate for professional investors
+            3. Preserve all numbers, percentages, and dates exactly as they are
+            4. Output ONLY the Korean translation without any explanations or additional text
+            5. Maintain the original meaning and professional tone
+            6. Avoid repetitive phrases or circular translations
+            7. Be concise and natural in Korean
+            8. Do not use quotation marks or prefixes like "번역:" in your response
 
             TEXT TO TRANSLATE:
-            {text}
+            {text.strip()}
 
             KOREAN TRANSLATION:
             """
 
-            # Nova API 호출
-            response = self.ai_service.nova_lite(prompt)
+            # AI 서비스를 통해 번역 수행
+            try:
+                response = self.ai_service.nova_lite(prompt)
+
+                if not response or not response.strip():
+                    logger.warning(
+                        f"Nova API returned empty response for text: {text[:50]}..."
+                    )
+                    return text
+
+            except Exception as ai_error:
+                logger.warning(f"Nova API 오류, 원본 텍스트 반환: {ai_error}")
+                return text
 
             # 응답에서 순수한 번역 결과만 추출
-            translated = self._extract_translation(response)
+            translated = response
 
-            # 반복 텍스트 감지 및 정리
-            translated = self._clean_repetitive_text(translated)
+            # 번역 결과 검증
+            if not translated or len(translated.strip()) < 2:
+                logger.warning(f"번역 결과가 너무 짧음: '{translated}', 원본 반환")
+                return text
+
+            # 번역이 원본과 동일하거나 의미가 없는 경우 원본 반환
+            if translated.strip().lower() == text.strip().lower():
+                logger.debug(f"번역 결과가 원본과 동일함, 원본 반환: {text[:30]}...")
+                return text
 
             # 로깅으로 번역 과정 확인
             logger.debug(f"원문: {text[:50]}...")
@@ -210,11 +223,8 @@ class TranslateService:
 
             return translated
 
-        except ClientError as e:
-            logger.error(f"AWS LLM 오류: {e}")
-            return text
         except Exception as e:
-            logger.error(f"텍스트 번역 중 오류 발생: {e}")
+            logger.error(f"텍스트 번역 중 예외 발생: {e}")
             return text
 
     def _translate_signal(self, signal: SignalValueObject) -> SignalValueObject:
