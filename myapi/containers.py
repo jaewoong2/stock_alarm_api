@@ -12,6 +12,7 @@ from myapi.services.signal_service import SignalService
 from myapi.services.ticker_service import TickerService
 from myapi.services.web_search_service import WebSearchService
 from myapi.services.translate_service import TranslateService
+from myapi.services.research_service import ResearchService
 from myapi.utils.config import Settings
 
 
@@ -76,6 +77,13 @@ class ServiceModule(containers.DeclarativeContainer):
         translate_service=translate_service,
     )
 
+    research_service = providers.Factory(
+        ResearchService,
+        websearch_repository=repositories.web_search_repository,
+        ai_service=ai_service,
+        translate_service=translate_service,
+    )
+
 
 class Container(containers.DeclarativeContainer):
     """Application container"""
@@ -88,6 +96,7 @@ class Container(containers.DeclarativeContainer):
             "myapi.routers.auth_router",
             "myapi.routers.translate_router",
             "myapi.routers.batch_router",
+            "myapi.routers.research_router",
         ]
     )
 

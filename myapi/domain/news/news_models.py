@@ -40,7 +40,7 @@ class AiAnalysisModel(Base):
     __table_args__ = {"schema": "crypto"}
 
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, nullable=False, unique=True)
+    date = Column(Date, nullable=False)
     name = Column(String, nullable=False, default="market_analysis")
     value = Column(JSON, nullable=False)
-    name = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

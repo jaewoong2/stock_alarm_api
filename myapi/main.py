@@ -15,6 +15,7 @@ from myapi.routers import (
     ticker_router,
     translate_router,
     batch_router,
+    research_router,
 )
 from myapi.utils.config import init_logging
 
@@ -106,4 +107,5 @@ app.include_router(news_router.router)
 app.include_router(auth_router.router)
 app.include_router(translate_router.router)
 app.include_router(batch_router.router)
+app.include_router(research_router.router)
 handler = Mangum(app)
