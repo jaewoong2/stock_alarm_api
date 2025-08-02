@@ -100,6 +100,13 @@ class AIService:
 
     def nova_lite(self, prompt: str):
         """Call AWS Bedrock Nova Lite model using AWS Boto3 Bedrock client."""
+        # 프롬프트 길이에 따른 동적 max_tokens 계산
+        prompt_length = len(prompt)
+        max_tokens = max(512, min(5120, prompt_length * 4))
+        return self.nova_lite_with_tokens(prompt, max_tokens)
+
+    def nova_lite_with_tokens(self, prompt: str, max_tokens: int = 5120):
+        """Call AWS Bedrock Nova Lite model with custom max_tokens."""
         try:
             client = boto3.client(
                 service_name="bedrock-runtime",
@@ -120,7 +127,7 @@ class AIService:
                     modelId=model_id,
                     messages=conversation,
                     inferenceConfig={
-                        "maxTokens": 5120,
+                        "maxTokens": max_tokens,
                         "temperature": 0.2,
                     },
                 )
@@ -133,7 +140,7 @@ class AIService:
                             modelId=model_id,
                             messages=conversation,
                             inferenceConfig={
-                                "maxTokens": 5120,
+                                "maxTokens": max_tokens,
                                 "temperature": 0.2,
                             },
                         )
@@ -163,16 +170,9 @@ class AIService:
                     detail=f"Invalid response structure from Bedrock: {e}",
                 )
 
-            if not completion_content or not completion_content.strip():
-                raise HTTPException(
-                    status_code=404,
-                    detail="Empty content from Bedrock model response.",
-                )
-
-            return completion_content.strip()
+            return completion_content
 
         except HTTPException:
-            # HTTPException은 다시 raise
             raise
         except Exception as e:
             raise HTTPException(

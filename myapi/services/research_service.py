@@ -40,10 +40,11 @@ class ResearchService:
     def _build_research_prompt(self, request: ResearchRequest) -> str:
         """Build Perplexity research prompt based on user requirements."""
         return f"""
-            Role: You are an evidence-based research assistant.
-            Task: Search for recent issues/policies/press releases based on the parameters below and return each item as a JSON array.
-            Required: (1) Source link, (2) Initial announcement 'date', (3) Summary in 1-2 sentences, (4) Key entities (institutions/companies/regions), (5) Event type (policy/budget/tech announcement/regulation/sanctions/Capex/RFP, etc.).
-            Quality requirements: Remove duplicate articles of the same event, prioritize official documents/press releases.
+            Role: You are an evidence-based research assistant focusing on US stock market impact analysis.
+            Task: Search for recent issues/policies/press releases that could impact US stocks/companies based on the parameters below and return each item as a JSON array.
+            Focus: Only include events that have potential impact on US publicly traded companies and their stock prices.
+            Required: (1) Source link, (2) Initial announcement 'date', (3) Summary in 1-2 sentences focusing on stock market implications, (4) Key US companies/stocks that could be affected, (5) Event type (policy/budget/tech announcement/regulation/sanctions/Capex/RFP, etc.).
+            Quality requirements: Remove duplicate articles of the same event, prioritize official documents/press releases that affect US stock market.
             Parameters:
             - Region: {request.region}
             - Topic: {request.topic}
@@ -56,8 +57,8 @@ class ResearchService:
                     "title": "...",
                     "date": "YYYY-MM-DD",
                     "source": "URL",
-                    "summary": "...",
-                    "entities": ["...","..."],
+                    "summary": "Summary with focus on US stock market impact...",
+                    "entities": ["US Company/Stock ticker 1", "US Company/Stock ticker 2", "..."],
                     "event_type": "policy|budget|tech|regulation|sanction|capex|rfp"
                 }}
             ]
@@ -68,80 +69,83 @@ class ResearchService:
         """Build o4-mini sector analysis prompt."""
         return f"""
         # Role Assignment
-        You are a top-tier securities analyst with 20 years of experience. You specialize in analyzing macroeconomic and industry trends to predict cascading ripple effects, and through this, you discover hidden beneficiary sectors and stocks.
+        You are a top-tier US stock market analyst with 20 years of experience. You specialize in analyzing macroeconomic and industry trends to predict cascading ripple effects on US publicly traded companies, and through this, you discover hidden beneficiary sectors and US stocks.
 
         # Latest News or Policy to Analyze
         {news_content}
 
         # Analysis Instructions
-        Based on the content above, please analyze the industry sectors expected to benefit at each stage according to the 4-stage cascade analysis model below, along with their reasons and representative stocks (including domestic and international).
+        Based on the content above, please analyze the US industry sectors expected to benefit at each stage according to the 4-stage cascade analysis model below, along with their reasons and representative US publicly traded companies (focus on NYSE/NASDAQ listed stocks).
 
         ## Analysis Result JSON Format:
         {{
         "analysis": {{
             "primary_beneficiaries": [
             {{
-                "sector": "Direct beneficiary sector name",
-                "reason": "Reason and basis for benefits",
-                "companies": ["Representative stock 1", "Representative stock 2", "Representative stock 3"]
+                "sector": "Direct beneficiary US sector name",
+                "reason": "Reason and basis for benefits to US companies",
+                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "supply_chain_beneficiaries": [
             {{
-                "sector": "Supply chain beneficiary sector name",
-                "reason": "Reason for benefits from upstream industry growth",
-                "companies": ["Representative stock 1", "Representative stock 2", "Representative stock 3"]
+                "sector": "Supply chain beneficiary US sector name",
+                "reason": "Reason for benefits from upstream industry growth to US companies",
+                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "bottleneck_solution_beneficiaries": [
             {{
-                "sector": "Bottleneck solution beneficiary sector name",
-                "reason": "Potential problems and solution approaches",
-                "companies": ["Representative stock 1", "Representative stock 2", "Representative stock 3"]
+                "sector": "Bottleneck solution beneficiary US sector name",
+                "reason": "Potential problems and solution approaches by US companies",
+                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "infrastructure_beneficiaries": [
             {{
-                "sector": "Infrastructure/ecosystem expansion beneficiary sector name", 
-                "reason": "Reason for providing essential infrastructure for ecosystem expansion",
-                "companies": ["Representative stock 1", "Representative stock 2", "Representative stock 3"]
+                "sector": "Infrastructure/ecosystem expansion beneficiary US sector name", 
+                "reason": "Reason for providing essential infrastructure for ecosystem expansion by US companies",
+                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ]
         }}
         }}
 
         ### Primary Beneficiary Sectors (Direct Benefits)
-        * **Analysis Question:** Which sectors will receive the most direct and immediate benefits from the above news/policy?
+        * **Analysis Question:** Which US sectors and publicly traded companies will receive the most direct and immediate benefits from the above news/policy?
 
         ### Secondary Beneficiary Sectors (Supply Chain/Upstream Benefits)
-        * **Analysis Question:** Following the growth of primary beneficiary sectors, which sectors among the 'supply chain' or 'upstream industries' that provide components, equipment, materials, and services to those sectors will benefit?
+        * **Analysis Question:** Following the growth of primary beneficiary sectors, which US sectors among the 'supply chain' or 'upstream industries' that provide components, equipment, materials, and services to those sectors will benefit?
 
         ### Tertiary Beneficiary Sectors (Problem Solving/Bottleneck Benefits)
-        * **Analysis Question:** What 'bottlenecks' or 'new problems' (e.g., power shortage, data processing limits, waste issues, regulatory tightening) will inevitably arise from the rapid growth of primary and secondary sectors, and which sectors can benefit by solving these issues?
+        * **Analysis Question:** What 'bottlenecks' or 'new problems' will inevitably arise from the rapid growth of primary and secondary sectors, and which US sectors and companies can benefit by solving these issues?
 
         ### Quaternary Beneficiary Sectors (Infrastructure/Ecosystem Expansion Benefits)
-        * **Analysis Question:** Which sectors provide essential 'core infrastructure' or 'platforms' (e.g., cloud, data centers, specialized logistics, finance/payments) necessary for this new industrial ecosystem to be stably maintained and further expanded?
+        * **Analysis Question:** Which US sectors provide essential 'core infrastructure' or 'platforms' necessary for this new industrial ecosystem to be stably maintained and further expanded?
 
         # Result Reporting Format
+        * Focus exclusively on US publicly traded companies (NYSE, NASDAQ).
         * Please clearly distinguish and present the analysis content for each stage.
         * Logically connect the analysis rationale to the news content and explain.
-        * Briefly comment on the potential from short-term and medium-to-long-term perspectives for each sector.
+        * Briefly comment on the potential from short-term and medium-to-long-term perspectives for each US sector.
         """
 
     def _build_leading_stocks_prompt(self, sectors: List[str]) -> str:
         """Build Perplexity leading stocks analysis prompt."""
         sectors_text = ", ".join(sectors)
         return f"""
-        You are a technology stock specialist analyst. Please find and analyze leading stocks in the following sectors:
+        You are a US stock market specialist analyst. Please find and analyze leading US publicly traded stocks in the following sectors:
 
         **Target Sectors for Analysis:** {sectors_text}
 
         **Selection Criteria:**
-        1. Revenue growth rate averaging 15% or higher over the last 4 quarters
-        2. Relative Strength (RS) index of 70 or higher compared to S&P500
-        3. Focus on technology stocks (AI, semiconductors, software, biotech, cleantech, etc.)
-        4. Market capitalization of $1 billion or more
-        5. Recent trading volume showing an increasing trend compared to average
+        1. US publicly traded companies (NYSE, NASDAQ only)
+        2. Revenue growth rate averaging 10% or higher over the last 4 quarters
+        3. Relative Strength (RS) index higher compared to S&P500
+        4. Focus on diverse sectors - technology, healthcare, energy, consumer goods, financials, industrials, materials, utilities, real estate
+        5. Market capitalization of $1 billion or more
+        6. Recent trading volume showing an increasing trend compared to average
+        7. at least 7 stocks in each sector
 
         **Analysis Items:**
         - Financial performance (revenue/profit growth rates)
@@ -154,25 +158,29 @@ class ResearchService:
         "leading_stocks": [
             {{
             "stock_metrics": {{
-                "ticker": "NVDA",
-                "company_name": "NVIDIA Corporation",
-                "revenue_growth_rate": 88.0,
-                "rs_strength": 95.0,
-                "market_cap": 2000000.0,
-                "sector": "Semiconductors",
-                "current_price": 875.50,
+                "ticker": "JPM",
+                "company_name": "JPMorgan Chase & Co.",
+                "revenue_growth_rate": 22.0,
+                "rs_strength": 78.0,
+                "market_cap": 485000.0,
+                "sector": "Financials",
+                "current_price": 165.50,
                 "volume_trend": "Increasing"
             }},
-            "analysis_summary": "AI chip leader with surging data center demand",
-            "growth_potential": "Continued growth through 2025 with AI infrastructure expansion",
-            "risk_factors": ["China export restrictions", "Intensifying competition", "Valuation concerns"],
-            "target_price": 950.0,
+            "analysis_summary": "Leading US bank with strong lending growth and digital transformation",
+            "growth_potential": "Continued growth through 2025 with rising interest rates and digital banking expansion",
+            "risk_factors": ["Credit risk in economic downturn", "Regulatory changes", "Competition from fintech"],
+            "target_price": 180.0,
             "recommendation": "Buy"
             }}
         ]
         }}
 
-        When searching, please provide comprehensive analysis incorporating the latest financial data, analyst consensus, and technical indicators.
+        **Important:** 
+        - Only include US stocks traded on NYSE or NASDAQ
+        - Diversify across different sectors beyond just technology
+        - Include stocks from healthcare, energy, consumer goods, financials, industrials, materials, utilities, real estate sectors
+        - Provide comprehensive analysis incorporating the latest financial data, analyst consensus, and technical indicators.
         """
 
     async def perplexity_research(self, request: ResearchRequest) -> ResearchResponse:
@@ -252,7 +260,7 @@ class ResearchService:
             # Step 1: Perplexity Research with default values
             research_request = ResearchRequest(
                 region="United States",
-                topic="AI Technology and Infrastructure",
+                topic="Economic Policy and Market Developments",
                 period_days=14,
             )
             research_results = await self.perplexity_research(research_request)
@@ -314,39 +322,41 @@ class ResearchService:
             # Save to database with enhanced metadata
             target_date = request.target_date if request.target_date else date.today()
 
-            # Add metadata for better searchability
-            analysis_data = comprehensive_response.analysis.model_dump()
+            # Translate the comprehensive response first
+            translated_analysis = self.translate_service.translate_schema(
+                comprehensive_response.analysis
+            )
 
+            # Convert to dict (JSON serializable)
+            analysis_data = translated_analysis.model_dump()
+
+            # Add metadata for better searchability
             analysis_data["metadata"] = {
                 "research_type": "comprehensive",
                 "ai_models_used": ["perplexity-sonar-pro", "openai-o4-mini"],
                 "total_research_items": len(
-                    comprehensive_response.analysis.research_results.research_items
+                    translated_analysis.research_results.research_items
                 ),
                 "total_sectors_analyzed": (
                     len(
-                        comprehensive_response.analysis.sector_analysis.analysis.primary_beneficiaries
+                        translated_analysis.sector_analysis.analysis.primary_beneficiaries
                     )
                     + len(
-                        comprehensive_response.analysis.sector_analysis.analysis.supply_chain_beneficiaries
+                        translated_analysis.sector_analysis.analysis.supply_chain_beneficiaries
                     )
                     + len(
-                        comprehensive_response.analysis.sector_analysis.analysis.bottleneck_solution_beneficiaries
+                        translated_analysis.sector_analysis.analysis.bottleneck_solution_beneficiaries
                     )
                     + len(
-                        comprehensive_response.analysis.sector_analysis.analysis.infrastructure_beneficiaries
+                        translated_analysis.sector_analysis.analysis.infrastructure_beneficiaries
                     )
                 ),
                 "total_stocks_identified": len(
-                    comprehensive_response.analysis.leading_stocks.leading_stocks
+                    translated_analysis.leading_stocks.leading_stocks
                 ),
                 "created_by": "research_service",
                 "version": "1.0",
             }
-
-            analysis_data = self.translate_service.translate_schema(
-                comprehensive_response.analysis
-            )
 
             saved_analysis = self.websearch_repository.create_analysis(
                 analysis_date=target_date,
@@ -356,36 +366,24 @@ class ResearchService:
 
             # Also save individual components for separate analysis
             try:
-
-                translated_research_results = self.translate_service.translate_schema(
-                    comprehensive_response.analysis.research_results
-                )
-                # Save research results separately
+                # Save research results separately (already translated and in dict format)
                 self.websearch_repository.create_analysis(
                     analysis_date=target_date,
-                    analysis=translated_research_results,
+                    analysis=analysis_data["research_results"],
                     name="research_results",
                 )
 
-                translated_sector_analysis = self.translate_service.translate_schema(
-                    comprehensive_response.analysis.sector_analysis
-                )
-
-                # Save sector analysis separately
+                # Save sector analysis separately (already translated and in dict format)
                 self.websearch_repository.create_analysis(
                     analysis_date=target_date,
-                    analysis=translated_sector_analysis.model_dump(),
+                    analysis=analysis_data["sector_analysis"],
                     name="sector_analysis",
                 )
 
-                translated_leading_stocks = self.translate_service.translate_schema(
-                    comprehensive_response.analysis.leading_stocks
-                )
-
-                # Save leading stocks separately
+                # Save leading stocks separately (already translated and in dict format)
                 self.websearch_repository.create_analysis(
                     analysis_date=target_date,
-                    analysis=translated_leading_stocks.model_dump(),
+                    analysis=analysis_data["leading_stocks"],
                     name="leading_stocks",
                 )
 
@@ -401,7 +399,7 @@ class ResearchService:
                 id=saved_analysis.id,
                 date=saved_analysis.date,
                 name=saved_analysis.name,
-                value=comprehensive_response.analysis,
+                value=translated_analysis,  # Use the translated version
                 created_at=None,  # Will be set by database
             )
 

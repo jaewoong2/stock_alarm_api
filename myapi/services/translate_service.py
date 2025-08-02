@@ -1,9 +1,8 @@
 import datetime
 import json
 import re
-from typing import List, Any, Optional, TypeVar, Type, Union
+from typing import List, Any, Optional, TypeVar, Union
 import boto3
-from botocore.exceptions import ClientError
 import logging
 from pydantic import BaseModel
 
@@ -77,12 +76,41 @@ class TranslateService:
             lines.append("")
         return "\n".join(lines)
 
+    def _should_skip_translation(self, field_name: str, field_value: str) -> bool:
+        """번역을 건너뛸 필드인지 확인"""
+        # 날짜 형식 (YYYY-MM-DD)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", field_value.strip()):
+            return True
+
+        # URL 형식
+        if field_value.strip().startswith(("http://", "https://")):
+            return True
+
+        # 티커 심볼 (대문자 2-5자)
+        if re.match(r"^[A-Z]{2,5}$", field_value.strip()):
+            return True
+
+        # 특정 필드명 제외
+        skip_fields = ["date", "url", "source", "ticker", "symbol", "id"]
+        if field_name.lower() in skip_fields:
+            return True
+
+        return False
+
     def _extract_translation(self, response: str) -> str:
         """
         AI 응답에서 순수한 번역 결과만 추출합니다.
         """
         if not response or not response.strip():
             return response
+
+        # "Translation:" 이후의 모든 텍스트 가져오기
+        markers = ["Translation:", "번역:", "KOREAN TRANSLATION:"]
+        for marker in markers:
+            if marker in response:
+                after_marker = response.split(marker, 1)[1].strip()
+                if after_marker and re.search(r"[가-힣]", after_marker):
+                    return after_marker
 
         # 한국어 문장만 추출하는 정규식 패턴
         # 한글, 숫자, 기본 문장부호만 포함하는 패턴
@@ -167,31 +195,27 @@ class TranslateService:
             return text
 
         try:
-            # 더 구체적이고 명확한 번역 프롬프트
-            prompt = f"""
-            You are a professional Korean translator specializing in financial content translation.
+            # 개선된 번역 프롬프트
+            prompt = f"""Translate the following English text to Korean. Keep it natural and concise.
 
-            TASK: Translate the following English text to natural Korean.
+Rules:
+- Preserve financial terms (S&P 500, NASDAQ, TSLA, AAPL, etc.)
+- Keep numbers, percentages, dates unchanged
+- Use professional tone for financial content
+- Output only the Korean translation
 
-            RULES:
-            1. Keep financial terms and ticker symbols unchanged (S&P 500, NASDAQ, TSLA, AAPL, etc.)
-            2. Use formal Korean language appropriate for professional investors
-            3. Preserve all numbers, percentages, and dates exactly as they are
-            4. Output ONLY the Korean translation without any explanations or additional text
-            5. Maintain the original meaning and professional tone
-            6. Avoid repetitive phrases or circular translations
-            7. Be concise and natural in Korean
-            8. Do not use quotation marks or prefixes like "번역:" in your response
+Text: {text.strip()}
 
-            TEXT TO TRANSLATE:
-            {text.strip()}
+Translation:"""
 
-            KOREAN TRANSLATION:
-            """
-
+            # 입력 텍스트 길이에 따른 동적 max_tokens 계산
+            input_length = len(text)
+            # 한국어는 보통 영어보다 1.5-2배 길어지므로 여유있게 설정
+            max_tokens = max(256, min(4096, input_length * 3))
+            
             # AI 서비스를 통해 번역 수행
             try:
-                response = self.ai_service.nova_lite(prompt)
+                response = self.ai_service.nova_lite_with_tokens(prompt, max_tokens)
 
                 if not response or not response.strip():
                     logger.warning(
@@ -204,7 +228,7 @@ class TranslateService:
                 return text
 
             # 응답에서 순수한 번역 결과만 추출
-            translated = response
+            translated = self._extract_translation(response)
 
             # 번역 결과 검증
             if not translated or len(translated.strip()) < 2:
@@ -624,11 +648,13 @@ class TranslateService:
                 if field_value is None:
                     continue
 
-                # str 타입 필드만 번역
+                # str 타입 필드만 번역 (날짜, URL, 티커 제외)
                 if self._is_string_field(field_info.annotation) and isinstance(
                     field_value, str
                 ):
-                    if field_value.strip():  # 빈 문자열이 아닌 경우만 번역
+                    if field_value.strip() and not self._should_skip_translation(
+                        field_name, field_value
+                    ):  # 번역 제외 조건 추가
                         logger.debug(f"번역 중: {field_name} = {field_value[:50]}...")
                         translated_value = self._translate_text_with_aws(field_value)
                         setattr(translated_data, field_name, translated_value)
