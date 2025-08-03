@@ -41,7 +41,6 @@ async def perplexity_research(
         "region": "미국",
         "topic": "AI 데이터센터",
         "period_days": 14,
-        "language": "한국어"
     }
     ```
     """
@@ -263,7 +262,7 @@ async def get_research_components(
 ):
     """
     특정 날짜의 개별 연구 컴포넌트들을 조회합니다.
-    
+
     **반환 컴포넌트:**
     - research_results: Perplexity 검색 결과
     - sector_analysis: o4-mini 섹터 분석
@@ -288,7 +287,7 @@ async def get_latest_analysis_summary(
 ):
     """
     오늘의 최신 분석 요약을 조회합니다.
-    
+
     **요약 정보:**
     - 분석 날짜
     - 사용 가능한 컴포넌트

@@ -6,6 +6,7 @@ import boto3
 import logging
 from pydantic import BaseModel
 
+from myapi.domain.ai.ai_schema import ChatModel
 from myapi.domain.signal.signal_schema import (
     GetSignalRequest,
     SignalBaseResponse,
@@ -196,26 +197,40 @@ class TranslateService:
 
         try:
             # 개선된 번역 프롬프트
-            prompt = f"""Translate the following English text to Korean. Keep it natural and concise.
+            prompt = f"""
+            Translate the following English text to Korean. Keep it natural and concise.
 
-Rules:
-- Preserve financial terms (S&P 500, NASDAQ, TSLA, AAPL, etc.)
-- Keep numbers, percentages, dates unchanged
-- Use professional tone for financial content
-- Output only the Korean translation
+            Rules:
+            - Preserve financial terms (S&P 500, NASDAQ, TSLA, AAPL, etc.)
+            - Keep numbers, percentages, dates unchanged
+            - Use professional tone for financial content
+            - Output only the Korean translation
+            - Avoid unnecessary explanations or context
+            - If the text is already in Korean or too short, return it unchanged
+            - If the text contains repetitive phrases, clean them up
 
-Text: {text.strip()}
+            Text: {text.strip()}
 
-Translation:"""
+            Translation:
+            """
 
-            # 입력 텍스트 길이에 따른 동적 max_tokens 계산
-            input_length = len(text)
-            # 한국어는 보통 영어보다 1.5-2배 길어지므로 여유있게 설정
-            max_tokens = max(256, min(4096, input_length * 3))
-            
+            class TranslationSchema(BaseModel):
+                translation: str
+
             # AI 서비스를 통해 번역 수행
             try:
-                response = self.ai_service.nova_lite_with_tokens(prompt, max_tokens)
+                response = self.ai_service.completions_parse(
+                    system_prompt="Translate to Korean",
+                    image_url="",
+                    chat_model=ChatModel.GPT_4O_MINI,
+                    prompt=prompt,
+                    schema=TranslationSchema,
+                )
+
+                if not isinstance(response, TranslationSchema):
+                    raise ValueError("Invalid response format from AI service")
+
+                response = response.translation
 
                 if not response or not response.strip():
                     logger.warning(
