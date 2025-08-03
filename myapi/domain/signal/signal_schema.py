@@ -53,6 +53,7 @@ DefaultStrategies: List[Strategy] = [
 ]
 
 DefaultTickers = [
+    "CRWV",
     "SPY",
     "QQQ",
     "AMAT",
@@ -433,10 +434,6 @@ class DiscordMessageRequest(BaseModel):
     embed: Optional[List] = None  # Optional embed data for rich content
 
 
-
-
-
-
 class GetSignalRequest(BaseModel):
     """
     Request schema for getting signals.
@@ -516,10 +513,6 @@ class SignalJoinTickerResponse(BaseModel):
     result: Optional[Result]
 
     model_config = {"from_attributes": True}
-
-
-
-
 
 
 class GetSignalByOnlyAIRequest(BaseModel):

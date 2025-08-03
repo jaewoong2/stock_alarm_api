@@ -59,6 +59,12 @@ def execute_batch_jobs(
             "query_string_parameters": {"source": "Minor"},
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
+        {
+            "path": "research/analysis",
+            "method": "POST",
+            "body": {},
+            "group_id": "research",
+        },
     ]
 
     # 티커를 5개씩 분할하여 translate/signals 작업 추가

@@ -233,19 +233,21 @@ class WebSearchResultRepository:
                 ]
                 query = query.filter(or_(*ticker_filters))
 
-            if models:
-                query = query.filter(
-                    text("value->>'ai_model' = :ai_model").params(ai_model=models)
-                )
+            if name == "signals":
+                if models:
+                    query = query.filter(
+                        text("value->>'ai_model' = :ai_model").params(ai_model=models)
+                    )
 
-            if strategy_filter == "AI_GENERATED":
-                query = query.filter(text("value->>'strategy' = :strategy")).params(
-                    strategy="AI_GENERATED"
-                )
-            elif strategy_filter != "AI_GENERATED":
-                query = query.filter(text("value->>'strategy' != :strategy")).params(
-                    strategy="AI_GENERATED"
-                )
+                if strategy_filter == "AI_GENERATED":
+                    query = query.filter(text("value->>'strategy' = :strategy")).params(
+                        strategy="AI_GENERATED"
+                    )
+
+                elif strategy_filter != "AI_GENERATED":
+                    query = query.filter(
+                        text("value->>'strategy' != :strategy")
+                    ).params(strategy="AI_GENERATED")
 
             results = query.all()
 

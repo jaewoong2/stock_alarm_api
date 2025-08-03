@@ -45,6 +45,9 @@ class ResearchService:
             Focus: Only include events that have potential impact on US publicly traded companies and their stock prices.
             Required: (1) Source link, (2) Initial announcement 'date', (3) Summary in 1-2 sentences focusing on stock market implications, (4) Key US companies/stocks that could be affected, (5) Event type (policy/budget/tech announcement/regulation/sanctions/Capex/RFP, etc.).
             Quality requirements: Remove duplicate articles of the same event, prioritize official documents/press releases that affect US stock market.
+            
+            Find at least Five recent issues/policies/press releases that could impact US stocks/companies based on the parameters below and return each item as a JSON array.
+
             Parameters:
             - Region: {request.region}
             - Topic: {request.topic}
@@ -84,28 +87,24 @@ class ResearchService:
             {{
                 "sector": "Direct beneficiary US sector name",
                 "reason": "Reason and basis for benefits to US companies",
-                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "supply_chain_beneficiaries": [
             {{
                 "sector": "Supply chain beneficiary US sector name",
                 "reason": "Reason for benefits from upstream industry growth to US companies",
-                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "bottleneck_solution_beneficiaries": [
             {{
                 "sector": "Bottleneck solution beneficiary US sector name",
                 "reason": "Potential problems and solution approaches by US companies",
-                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ],
             "infrastructure_beneficiaries": [
             {{
                 "sector": "Infrastructure/ecosystem expansion beneficiary US sector name", 
                 "reason": "Reason for providing essential infrastructure for ecosystem expansion by US companies",
-                "companies": ["US Stock Ticker 1 (Company Name)", "US Stock Ticker 2 (Company Name)", "US Stock Ticker 3 (Company Name)"]
             }}
             ]
         }}

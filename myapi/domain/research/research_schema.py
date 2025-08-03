@@ -33,7 +33,6 @@ class ResearchResponse(BaseModel):
 class SectorAnalysis(BaseModel):
     sector: str
     reason: str
-    companies: List[str]
 
 
 class SectorAnalysisData(BaseModel):
