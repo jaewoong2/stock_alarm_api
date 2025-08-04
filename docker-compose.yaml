@@ -11,3 +11,4 @@ services:
     environment:
       - NODE_ENV=production
       - PROJECT_NAME=stock_alarm
+      - DEPLOYMENT_TYPE=lambda

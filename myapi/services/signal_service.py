@@ -838,6 +838,8 @@ class SignalService:
                 )
             )
 
+        vol_z = df["VOL_Z"].iloc[-1] if "VOL_Z" in cols else None
+
         # GAP_UP (신규 전략)
         if "GAP_UP" in strategies:
             triggered = (
@@ -953,6 +955,7 @@ class SignalService:
         if "DONCHIAN_BREAKOUT" in strategies:
             donch_high_prev = df["DCU_20_20"].iloc[-2]
             donch_high_now = df["DCU_20_20"].iloc[-1]
+            adx_last = df["ADX_14"].iloc[-1]
 
             triggered = bool(
                 close_last > donch_high_prev  # 20일 고가 돌파
@@ -1153,7 +1156,7 @@ class SignalService:
             ### Constraints:
             - Entry, stop-loss, and take-profit prices must be realistic.
             - Consider short-term trading horizon (1-2 days).
-            - Input Data Importance: Stock's OHLCV DataFrame *** > News Headlines **  > Fundamental Data, Report Summary *
+            - Input Data Importance: Stock's OHLCV DataFrame **** > Fundamental Data ** > News Headlines *
 
         
         ### Input Data

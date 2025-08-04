@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  tqqq-fastapi:
+    platform: linux/amd64
+    image: 849441246713.dkr.ecr.ap-northeast-2.amazonaws.com/tqqq-fastapi-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+      no_cache: true
+      args:
+        PROJECT_NAME: tqqq-fastapi
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_NAME=tqqq-fastapi
+      - PORT=8000
+      - HOST=0.0.0.0
+    ports:
+      - "8000:8000"
+    networks:
+      - fastapi-network
+
+networks:
+  fastapi-network:
+    driver: bridge

@@ -102,6 +102,12 @@ def hello():
     return {"message": "Hello World!!"}
 
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for load balancer."""
+    return {"status": "healthy", "service": "tqqq-fastapi"}
+
+
 app.include_router(signal_router.router)
 app.include_router(ticker_router.router)
 app.include_router(news_router.router)
@@ -109,4 +115,13 @@ app.include_router(auth_router.router)
 app.include_router(translate_router.router)
 app.include_router(batch_router.router)
 app.include_router(research_router.router)
-handler = Mangum(app)
+
+# Lambda 환경에서만 Mangum 핸들러 생성
+deployment_type = os.getenv("DEPLOYMENT_TYPE", "").lower()
+if deployment_type == "lambda":
+    handler = Mangum(app)
+    logger.info("Mangum handler created for Lambda deployment")
+else:
+    logger.info(
+        f"Running in {deployment_type or 'standard'} mode - Mangum handler not created"
+    )

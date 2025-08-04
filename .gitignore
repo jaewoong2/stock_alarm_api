@@ -435,3 +435,33 @@ make_project.sh
 
 *node_modules/
 node_modules
+
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfplan
+terraform/crash.log
+terraform/crash.*.log
+terraform/.terraform.tfstate.lock.info
+
+
+# AWS 자격증명
+.aws/
+
+# 환경 변수
+.env
+.env.local
+.env.production
+
+# Docker 관련
+.dockerignore
+
+# 로그 파일
+*.log
+
+# 임시 파일
+*.tmp
+*.temp
