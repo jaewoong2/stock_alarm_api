@@ -10,14 +10,14 @@ resource "aws_ecs_cluster" "fastapi" {
   tags = local.common_tags
 }
 
-# ECS 클러스터 Capacity Provider (Spot Instance 사용)
+# ECS 클러스터 Capacity Provider (Spot 전용 - 비용 최적화)
 resource "aws_ecs_cluster_capacity_providers" "fastapi" {
   cluster_name = aws_ecs_cluster.fastapi.name
 
   capacity_providers = ["FARGATE_SPOT"]
 
   default_capacity_provider_strategy {
-    base              = 0
+    base              = 2    # 기본 2개 Spot 인스턴스
     weight            = 100
     capacity_provider = "FARGATE_SPOT"
   }
@@ -104,19 +104,22 @@ resource "aws_ecs_service" "fastapi" {
   name            = "${var.project_name}-service"
   cluster         = aws_ecs_cluster.fastapi.id
   task_definition = aws_ecs_task_definition.fastapi.arn
-  desired_count   = 1 # 최소 비용을 위해 1개만 실행
+  desired_count   = 2 # Spot 2개로 고가용성 확보
 
-  # Spot Instance 사용 설정
+  # Spot 전용 전략 (비용 최적화)
   capacity_provider_strategy {
     capacity_provider = "FARGATE_SPOT"
     weight            = 100
-    base              = 0
+    base              = 2    # 2개 모두 Spot
   }
+
+  # 서비스 재시작 정책
+  enable_execute_command = false
 
   network_configuration {
     subnets          = var.public_subnet_ids
     security_groups  = [var.security_group_id]
-    assign_public_ip = true # public subnet이므로 true 설정
+    assign_public_ip = true
   }
 
   load_balancer {
@@ -125,7 +128,7 @@ resource "aws_ecs_service" "fastapi" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener.fastapi_https]
+  depends_on = [aws_lb_listener_rule.fastapi_api]
 
   tags = local.common_tags
 }

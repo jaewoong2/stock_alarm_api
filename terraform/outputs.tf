@@ -5,8 +5,8 @@ output "ecr_repository_url" {
 }
 
 output "load_balancer_dns_name" {
-  description = "Load balancer DNS name"
-  value       = aws_lb.fastapi.dns_name
+  description = "Load balancer DNS name (existing ALB)"
+  value       = data.aws_lb.existing.dns_name
 }
 
 output "domain_url" {
@@ -22,4 +22,14 @@ output "ecs_cluster_name" {
 output "ecs_service_name" {
   description = "ECS service name"
   value       = aws_ecs_service.fastapi.name
+}
+
+output "existing_alb_arn" {
+  description = "Existing ALB ARN"
+  value       = data.aws_lb.existing.arn
+}
+
+output "fastapi_target_group_arn" {
+  description = "FastAPI target group ARN"
+  value       = aws_lb_target_group.fastapi.arn
 }

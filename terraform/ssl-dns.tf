@@ -9,15 +9,15 @@ data "aws_route53_zone" "main" {
   private_zone = false
 }
 
-# Route 53 Record for ALB
+# Route 53 Record for ALB (기존 ALB 참조)
 resource "aws_route53_record" "fastapi" {
   zone_id = data.aws_route53_zone.main.zone_id
   name    = var.domain_name
   type    = "A"
 
   alias {
-    name                   = aws_lb.fastapi.dns_name
-    zone_id                = aws_lb.fastapi.zone_id
+    name                   = data.aws_lb.existing.dns_name
+    zone_id                = data.aws_lb.existing.zone_id
     evaluate_target_health = true
   }
 }

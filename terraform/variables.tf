@@ -58,6 +58,12 @@ variable "domain_name" {
   default     = "ai-api.bamtoly.com"
 }
 
+variable "alert_email" {
+  description = "Email address for CloudWatch alarms"
+  type        = string
+  default     = "admin@bamtoly.com"
+}
+
 # 로컬 변수
 locals {
   common_tags = {
