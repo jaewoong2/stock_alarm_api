@@ -85,7 +85,6 @@ DefaultTickers = [
     "IREN",
     "MQ",
     "MSTR",
-    "NVEI",
     "SOFI",
     "TOST",
     "CEG",

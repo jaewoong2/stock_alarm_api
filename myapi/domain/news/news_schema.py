@@ -190,3 +190,92 @@ class MahaneyAnalysisGetResponse(BaseModel):
     actual_date: Optional[dt.date] = None  # 실제 사용된 데이터의 날짜
     is_exact_date_match: bool = True  # 요청한 날짜와 정확히 일치하는지
     request_params: MahaneyAnalysisGetRequest
+
+
+# ETF Portfolio Analysis Schemas
+class ETFPortfolioChange(BaseModel):
+    ticker: str
+    action: Literal["BUY", "SELL", "HOLD"]
+    shares_traded: Optional[float] = None
+    price_per_share: Optional[float] = None
+    total_value: Optional[float] = None
+    percentage_of_portfolio: Optional[float] = None
+    reason: Optional[str] = None
+
+
+class ETFPortfolioData(BaseModel):
+    etf_name: str
+    etf_ticker: str
+    date: str
+    total_portfolio_value: Optional[float] = None
+    changes: List[ETFPortfolioChange]
+    summary: str
+    source_url: Optional[str] = None
+
+
+class ETFAnalysisRequest(BaseModel):
+    etf_tickers: List[str] = ["ARKK", "QQQ", "VTI", "SPY"]
+    target_date: Optional[dt.date] = dt.date.today()
+
+
+class ETFAnalysisResponse(BaseModel):
+    etf_portfolios: List[ETFPortfolioData]
+
+
+class ETFAnalysisGetRequest(BaseModel):
+    etf_tickers: Optional[List[str]] = None
+    target_date: Optional[dt.date] = dt.date.today()
+    limit: Optional[int] = None
+    sort_by: Optional[Literal["date", "etf_name", "total_value"]] = "date"
+    sort_order: Optional[Literal["asc", "desc"]] = "desc"
+
+
+class ETFAnalysisGetResponse(BaseModel):
+    etf_analyses: List[ETFPortfolioData]
+    total_count: int
+    filtered_count: int
+    actual_date: Optional[dt.date] = None
+    is_exact_date_match: bool = True
+    request_params: ETFAnalysisGetRequest
+
+
+# ETF Analyst Summary Schemas
+class ETFMarketContext(BaseModel):
+    key_catalysts: List[str]
+    sector_rotation_trend: str
+    macro_backdrop: str
+
+
+class ETFIndividualStockAnalysis(BaseModel):
+    ticker: str
+    action_taken: Literal["BUY", "SELL", "HOLD"]
+    fundamental_rationale: str
+    technical_rationale: str
+    news_catalysts: List[str]
+    analyst_sentiment: str
+    valuation_assessment: str
+
+
+class ETFPortfolioStrategyInsights(BaseModel):
+    manager_thesis: str
+    risk_positioning: str
+    time_horizon: str
+    peer_comparison: str
+
+
+class ETFForwardLookingImplications(BaseModel):
+    sector_implications: str
+    stock_opportunities: List[str]
+    risk_factors: List[str]
+    retail_investor_takeaways: str
+
+
+class ETFAnalystSummaryResponse(BaseModel):
+    etf_ticker: str
+    analysis_date: str
+    market_context: ETFMarketContext
+    individual_stock_analysis: List[ETFIndividualStockAnalysis]
+    portfolio_strategy_insights: ETFPortfolioStrategyInsights
+    forward_looking_implications: ETFForwardLookingImplications
+    confidence_level: Literal["High", "Medium", "Low"]
+    data_sources: List[str]

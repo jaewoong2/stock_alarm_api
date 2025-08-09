@@ -270,31 +270,39 @@ class SignalService:
         :param end: 종료 날짜 (datetime.date)
         :return: OHLCV 데이터프레임
         """
-        df = (
-            yf.Ticker(ticker)
-            .history(
-                start=datetime.datetime.strftime(start, "%Y-%m-%d"),
-                end=datetime.datetime.strftime(end, "%Y-%m-%d"),
-                auto_adjust=True,
-            )  # ← 여기서는 group_by 파라미터 없음
-            .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
-        )
-        df.index.name = "Date"
-        return df
+        try:
+            df = (
+                yf.Ticker(ticker)
+                .history(
+                    start=datetime.datetime.strftime(start, "%Y-%m-%d"),
+                    end=datetime.datetime.strftime(end, "%Y-%m-%d"),
+                    auto_adjust=True,
+                )  # ← 여기서는 group_by 파라미터 없음
+                .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
+            )
+            df.index.name = "Date"
+            return df
+        except Exception as e:
+            logger.warning(f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}")
+            return pd.DataFrame()
 
     def _download_yf(self, ticker: str, start: date) -> pd.DataFrame:
         if start is None:
             start = date.today() - timedelta(days=days_back)
 
-        df = (
-            yf.Ticker(ticker)
-            .history(
-                start=start.isoformat(), end=date.today().isoformat(), auto_adjust=True
-            )  # ← 여기서는 group_by 파라미터 없음
-            .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
-        )
-        df.index.name = "Date"
-        return df
+        try:
+            df = (
+                yf.Ticker(ticker)
+                .history(
+                    start=start.isoformat(), end=date.today().isoformat(), auto_adjust=True
+                )  # ← 여기서는 group_by 파라미터 없음
+                .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
+            )
+            df.index.name = "Date"
+            return df
+        except Exception as e:
+            logger.warning(f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}")
+            return pd.DataFrame()
 
     def _download_stooq(self, ticker: str, start: date) -> pd.DataFrame:
         """

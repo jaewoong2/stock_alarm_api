@@ -18,6 +18,11 @@ from myapi.domain.news.news_schema import (
     MarketAnalysisResponse,
     MarketForecastResponse,
     MarketOverview,
+    ETFAnalysisResponse,
+    ETFAnalysisGetRequest,
+    ETFAnalysisGetResponse,
+    ETFPortfolioData,
+    ETFAnalystSummaryResponse,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -426,3 +431,346 @@ class WebSearchService:
             is_exact_date_match=is_exact_match,
             request_params=request,
         )
+
+    def generate_etf_portfolio_prompt(self, etf_tickers: list[str], target_date: str) -> str:
+        """Generate prompt for ETF portfolio analysis."""
+        if not isinstance(etf_tickers, list) or not etf_tickers:
+            raise ValueError("ETF tickers must be a non-empty list.")
+
+        etf_tickers = sorted(set([t.upper() for t in etf_tickers]))
+        ticker_list = ", ".join(etf_tickers)
+
+        prompt = f"""
+            Today is **{target_date}**.
+            
+            You are a specialized ETF research analyst with deep knowledge of active ETF portfolio management.
+            
+            **TASK**: Analyze the recent portfolio changes for these Active ETFs: [{ticker_list}]
+            
+            **REQUIREMENTS**:
+            1. Search for the **most recent portfolio holdings changes** for each ETF as of {target_date}
+            2. Focus on **ACTIVE ETFs** that frequently adjust their holdings (like ARK funds, active management strategies)
+            3. Identify **BUY/SELL transactions** made by the fund managers in the past 1-7 days
+            4. For each transaction, explain **WHY** the fund managers made these decisions
+            
+            **DATA TO COLLECT**:
+            For each ETF, find:
+            - Recent stock purchases (BUY actions)
+            - Recent stock sales (SELL actions) 
+            - Number of shares traded (if available)
+            - Approximate trade value
+            - Portfolio weight changes
+            - Fund manager's rationale or market commentary
+            
+            **ANALYSIS FOCUS**:
+            - What sectors are they rotating INTO and OUT OF?
+            - What specific catalysts drove these decisions?
+            - How do these moves align with current market trends?
+            - What does this suggest about the fund's investment thesis?
+            
+            **OUTPUT FORMAT**:
+            Return a JSON object with this exact structure:
+            ```json
+            {{
+                "etf_portfolios": [
+                    {{
+                        "etf_name": "ARK Innovation ETF",
+                        "etf_ticker": "ARKK",
+                        "date": "{target_date}",
+                        "total_portfolio_value": 8500000000.0,
+                        "changes": [
+                            {{
+                                "ticker": "TSLA",
+                                "action": "SELL",
+                                "shares_traded": 100000.0,
+                                "price_per_share": 185.50,
+                                "total_value": 18550000.0,
+                                "percentage_of_portfolio": 2.1,
+                                "reason": "Profit taking after strong Q4 earnings, rebalancing overweight position"
+                            }},
+                            {{
+                                "ticker": "PLTR",
+                                "action": "BUY",
+                                "shares_traded": 500000.0,
+                                "price_per_share": 45.20,
+                                "total_value": 22600000.0,
+                                "percentage_of_portfolio": 2.7,
+                                "reason": "AI government contracts acceleration, undervalued relative to peers"
+                            }}
+                        ],
+                        "summary": "ARK continued its AI theme focus by rotating out of overvalued EV positions into undervalued AI plays. Fund appears to be preparing for Q1 AI earnings season.",
+                        "source_url": "https://ark-funds.com/ark-innovation-etf"
+                    }}
+                ]
+            }}
+            ```
+            
+            **IMPORTANT NOTES**:
+            - Only include ETFs with **actual recent portfolio changes**
+            - If no recent changes found for an ETF, exclude it from results
+            - Use **real, current data** from {target_date} or the most recent available
+            - Cite sources where possible in the summary
+            - Focus on **actionable insights** about fund manager strategy
+        """
+        
+        return prompt
+
+    async def create_etf_analysis(
+        self, etf_tickers: list[str], target_date: date = date.today()
+    ):
+        """Create ETF portfolio analysis using AI service with web search grounding."""
+        if not etf_tickers:
+            raise ValueError("ETF tickers list cannot be empty")
+
+        prompt = self.generate_etf_portfolio_prompt(etf_tickers, target_date.strftime("%Y-%m-%d"))
+
+        response = self.ai_service.gemini_search_grounding(
+            prompt=prompt,
+            schema=ETFAnalysisResponse,
+        )
+
+        if not isinstance(response, ETFAnalysisResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        # Store each ETF portfolio analysis in ai_analysis table
+        for etf_data in response.etf_portfolios:
+            if not isinstance(etf_data, ETFPortfolioData):
+                raise ValueError("Invalid ETF data format in response")
+
+            # Translate ETF analysis if translate_service is available
+            translated_etf = etf_data
+            if self.translate_service:
+                try:
+                    translated_etf = self.translate_service.translate_schema(etf_data)
+                    translated_etf.etf_ticker = etf_data.etf_ticker.upper()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to translate ETF analysis for {etf_data.etf_ticker}: {e}"
+                    )
+
+            # Store in ai_analysis table with name "etf_portfolio_analysis"
+            self.websearch_repository.create_analysis(
+                analysis_date=target_date,
+                analysis=translated_etf.model_dump(),
+                name="etf_portfolio_analysis",
+            )
+
+        return response
+
+    async def get_etf_analysis(
+        self, target_date: date = date.today(), etf_tickers: Optional[list[str]] = None
+    ):
+        """Fetch ETF portfolio analysis for the given tickers."""
+        
+        responses = self.websearch_repository.get_all_analyses(
+            target_date=target_date,
+            name="etf_portfolio_analysis",
+            item_schema=ETFPortfolioData,
+            tickers=etf_tickers,
+        )
+
+        for response in responses:
+            if not isinstance(response.value, ETFPortfolioData):
+                raise ValueError("Invalid ETF data format in response")
+
+        return responses
+
+    async def get_etf_analysis_with_filters(
+        self, request: ETFAnalysisGetRequest
+    ) -> ETFAnalysisGetResponse:
+        """Fetch ETF analysis with filtering, sorting, and pagination."""
+        
+        # Ensure target_date is not None
+        target_date = request.target_date if request.target_date else date.today()
+        
+        # Get all ETF analyses for the date
+        all_analyses = await self.get_etf_analysis(
+            target_date=target_date, 
+            etf_tickers=request.etf_tickers
+        )
+        
+        # Convert to ETFPortfolioData objects
+        etf_analyses = [analysis.value for analysis in all_analyses if isinstance(analysis.value, ETFPortfolioData)]
+        
+        # Filter by ETF tickers if specified
+        if request.etf_tickers:
+            etf_tickers_upper = [ticker.upper() for ticker in request.etf_tickers]
+            etf_analyses = [
+                etf for etf in etf_analyses 
+                if etf.etf_ticker.upper() in etf_tickers_upper
+            ]
+
+        total_count = len(etf_analyses)
+        filtered_count = total_count
+
+        # Apply sorting
+        if request.sort_by:
+            reverse = request.sort_order == "desc"
+            if request.sort_by == "etf_name":
+                etf_analyses.sort(key=lambda x: x.etf_name, reverse=reverse)
+            elif request.sort_by == "date":
+                etf_analyses.sort(key=lambda x: x.date, reverse=reverse)
+            elif request.sort_by == "total_value":
+                etf_analyses.sort(
+                    key=lambda x: x.total_portfolio_value or 0, 
+                    reverse=reverse
+                )
+
+        # Apply limit
+        if request.limit and request.limit > 0:
+            etf_analyses = etf_analyses[:request.limit]
+
+        return ETFAnalysisGetResponse(
+            etf_analyses=etf_analyses,
+            total_count=total_count,
+            filtered_count=filtered_count,
+            actual_date=target_date,
+            is_exact_date_match=True,
+            request_params=request,
+        )
+
+    def generate_etf_analyst_summary_prompt(self, etf_portfolio_data: ETFPortfolioData, target_date: str) -> str:
+        """Generate prompt for deep analyst analysis of ETF portfolio changes."""
+        
+        changes_summary = []
+        for change in etf_portfolio_data.changes:
+            changes_summary.append(
+                f"- {change.action} {change.ticker}: {change.shares_traded} shares "
+                f"at ${change.price_per_share} (${change.total_value:,.0f} total value, "
+                f"{change.percentage_of_portfolio}% of portfolio)"
+            )
+        
+        changes_text = "\n".join(changes_summary)
+        
+        prompt = f"""
+            Today is **{target_date}**.
+            
+            You are a senior equity research analyst specializing in institutional portfolio analysis and market strategy.
+            
+            **CONTEXT**: 
+            The {etf_portfolio_data.etf_name} ({etf_portfolio_data.etf_ticker}) recently made the following portfolio changes:
+            
+            {changes_text}
+            
+            **CURRENT PORTFOLIO SUMMARY**:
+            {etf_portfolio_data.summary}
+            
+            **YOUR TASK**:
+            Conduct a **comprehensive analyst-level investigation** to understand WHY these specific trades were made:
+            
+            1. **Market Context Analysis**:
+               - What major market events/catalysts occurred around {target_date}?
+               - How did sector rotation trends influence these decisions?
+               - What macroeconomic factors (Fed policy, earnings, geopolitics) drove this strategy?
+            
+            2. **Company-Specific Research** (for each ticker traded):
+               - Recent earnings/guidance changes
+               - Analyst upgrades/downgrades
+               - Major news events or product launches
+               - Technical chart patterns and momentum
+               - Valuation changes vs. peers
+            
+            3. **Fund Manager Strategy Analysis**:
+               - How do these trades align with the fund's stated investment thesis?
+               - What does this suggest about the manager's market outlook?
+               - Are they rotating between sectors, growth vs. value, or risk-on vs. risk-off?
+               - How do these moves compare to peer funds' actions?
+            
+            4. **Market Impact & Forward-Looking Insights**:
+               - What do these trades signal about upcoming market themes?
+               - Which sectors/stocks might benefit from this rotation?
+               - What risks or opportunities does this create for retail investors?
+            
+            **OUTPUT REQUIREMENTS**:
+            Provide a structured analysis in JSON format:
+            
+            ```json
+            {{
+                "etf_ticker": "{etf_portfolio_data.etf_ticker}",
+                "analysis_date": "{target_date}",
+                "market_context": {{
+                    "key_catalysts": ["List 3-5 major market events driving decisions"],
+                    "sector_rotation_trend": "Description of current sector rotation dynamics",
+                    "macro_backdrop": "Fed policy, economic indicators, geopolitical factors"
+                }},
+                "individual_stock_analysis": [
+                    {{
+                        "ticker": "STOCK_SYMBOL",
+                        "action_taken": "BUY/SELL",
+                        "fundamental_rationale": "Why fundamentally attractive/unattractive",
+                        "technical_rationale": "Chart patterns, momentum, technical triggers",
+                        "news_catalysts": ["Recent news events affecting stock"],
+                        "analyst_sentiment": "Current Wall Street analyst consensus",
+                        "valuation_assessment": "Expensive/Fair/Cheap vs peers and history"
+                    }}
+                ],
+                "portfolio_strategy_insights": {{
+                    "manager_thesis": "What investment theme/strategy is driving these moves",
+                    "risk_positioning": "Risk-on, risk-off, or neutral positioning",
+                    "time_horizon": "Short-term tactical vs long-term strategic moves",
+                    "peer_comparison": "How these moves compare to similar funds"
+                }},
+                "forward_looking_implications": {{
+                    "sector_implications": "Which sectors likely to benefit/suffer next",
+                    "stock_opportunities": ["Specific tickers that might benefit from this rotation"],
+                    "risk_factors": ["Key risks to monitor based on these moves"],
+                    "retail_investor_takeaways": "Actionable insights for individual investors"
+                }},
+                "confidence_level": "High/Medium/Low - based on data availability and clarity of signals",
+                "data_sources": ["List of key sources used for analysis"]
+            }}
+            ```
+            
+            **IMPORTANT**: 
+            - Use **real, current data** from {target_date} and recent days
+            - Cite specific sources (earnings reports, analyst notes, news articles)
+            - Focus on **actionable insights** rather than generic commentary
+            - Explain complex institutional strategies in accessible terms
+        """
+        
+        return prompt
+
+    async def create_etf_analyst_summary(
+        self, etf_portfolio_data: ETFPortfolioData, target_date: date = date.today()
+    ):
+        """Generate comprehensive analyst summary for ETF portfolio changes."""
+        
+        prompt = self.generate_etf_analyst_summary_prompt(
+            etf_portfolio_data, 
+            target_date.strftime("%Y-%m-%d")
+        )
+        
+        # Use Perplexity for research-backed analysis with structured schema
+        response = self.ai_service.perplexity_completion(
+            prompt=prompt,
+            schema=ETFAnalystSummaryResponse,
+        )
+        
+        if not isinstance(response, ETFAnalystSummaryResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        # Translate the response if translate_service is available
+        translated_response = response
+        if self.translate_service:
+            try:
+                translated_response = self.translate_service.translate_schema(response)
+                # Keep the original ETF ticker uppercase
+                translated_response.etf_ticker = etf_portfolio_data.etf_ticker.upper()
+            except Exception as e:
+                logger.warning(f"Failed to translate ETF analyst summary: {e}")
+        
+        # Store the analyst summary in ai_analysis table
+        analyst_summary = {
+            "etf_ticker": etf_portfolio_data.etf_ticker,
+            "original_portfolio_data": etf_portfolio_data.model_dump(),
+            "analyst_summary": translated_response.model_dump(),
+            "analysis_type": "etf_analyst_summary"
+        }
+        
+        self.websearch_repository.create_analysis(
+            analysis_date=target_date,
+            analysis=analyst_summary,
+            name="etf_analyst_summary",
+        )
+        
+        return translated_response
