@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import logging
 from typing import List, Literal, Optional
+from urllib import response
 from fastapi import APIRouter, Depends
 
 from myapi.services.translate_service import TranslateService
@@ -21,10 +22,12 @@ from myapi.domain.signal.signal_schema import (
     DefaultTickers,
     DiscordMessageRequest,
     GenerateSignalResultRequest,
+    GetSignalByDateResponse,
     GetSignalByOnlyAIPromptSchema,
     GetSignalByOnlyAIRequest,
     GetSignalRequest,
     SignalBaseResponse,
+    SignalJoinTickerResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
@@ -97,6 +100,8 @@ def generate_signal_result(
     """
     LLM 쿼리를 처리하는 엔드포인트입니다.
     """
+    result = None
+
     try:
         if request.ai == "GOOGLE":
             result = ai_service.gemini_completion(
@@ -397,6 +402,8 @@ async def get_signals(
             additional_info=None,
         )
 
+        message = None
+
         try:
             message = aws_service.generate_queue_message_http(
                 body=data.model_dump_json(),
@@ -522,7 +529,7 @@ async def get_weekly_action_count(
     }
 
 
-@router.get("/date")
+@router.get("/date", response_model=GetSignalByDateResponse)
 @inject
 async def get_signal_by_date(
     date: str,
@@ -721,8 +728,7 @@ async def get_signals_by_only_ai(
 
         return {
             "status": "success",
-            "message": f"Generated {len(signals_created)} signals using {request.ai_model}",
-            "signals": signals_created,
+            "message": f"Generated signals using {request.ai_model}",
             "ai_response": results,
         }
 
