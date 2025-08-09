@@ -476,7 +476,6 @@ class SignalJoinTickerResponse(BaseModel):
         timestamp: Optional[datetime]
         probability: Optional[str] = None
         result_description: Optional[str] = None
-        report_summary: Optional[str] = None
         ai_model: Optional[str] = "OPENAI_O4MINI"
         senario: Optional[str] = None
         good_things: Optional[str] = None
@@ -581,3 +580,12 @@ class SignalValueObject(BaseModel):
         """SignalValueObject를 Signals 모델 객체로 변환"""
         data = value_object.model_dump(exclude={"id"})
         return Signals(**data)
+
+
+class GetSignalByDateResponse(BaseModel):
+    """
+    Response schema for getting signals by date.
+    Contains a list of signals for the specified date.
+    """
+
+    signals: List[SignalJoinTickerResponse]

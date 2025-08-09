@@ -61,7 +61,7 @@ variable "domain_name" {
 variable "alert_email" {
   description = "Email address for CloudWatch alarms"
   type        = string
-  default     = "admin@bamtoly.com"
+  default     = "jwisgenius@naver.com"
 }
 
 # 로컬 변수
