@@ -283,7 +283,9 @@ class SignalService:
             df.index.name = "Date"
             return df
         except Exception as e:
-            logger.warning(f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}")
+            logger.warning(
+                f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}"
+            )
             return pd.DataFrame()
 
     def _download_yf(self, ticker: str, start: date) -> pd.DataFrame:
@@ -294,14 +296,18 @@ class SignalService:
             df = (
                 yf.Ticker(ticker)
                 .history(
-                    start=start.isoformat(), end=date.today().isoformat(), auto_adjust=True
+                    start=start.isoformat(),
+                    end=date.today().isoformat(),
+                    auto_adjust=True,
                 )  # ← 여기서는 group_by 파라미터 없음
                 .drop(columns=["Dividends", "Stock Splits"], errors="ignore")
             )
             df.index.name = "Date"
             return df
         except Exception as e:
-            logger.warning(f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}")
+            logger.warning(
+                f"Failed to fetch data for ticker [Yahoo Finance]: {ticker} - {str(e)}"
+            )
             return pd.DataFrame()
 
     def _download_stooq(self, ticker: str, start: date) -> pd.DataFrame:
@@ -480,10 +486,7 @@ class SignalService:
 
         logger.warning(f"Failed to fetch data for ticker [Yahoo Finances]: {ticker}")
 
-        # fallback
-        df = self._download_stooq(ticker, start)
-
-        if df.empty:
+        if df.empty or df is None:
             logger.warning(f"Failed to fetch data for ticker: {ticker}")
             return pd.DataFrame()
 
