@@ -179,7 +179,9 @@ class MahaneyAnalysisGetRequest(BaseModel):
     tickers: Optional[List[str]] = None
     recommendation: Optional[Literal["Buy", "Sell", "Hold"]] = None
     limit: Optional[int] = None
-    sort_by: Optional[Literal["recommendation_score", "final_assessment", "stock_name"]] = "stock_name"
+    sort_by: Optional[
+        Literal["recommendation_score", "final_assessment", "stock_name"]
+    ] = "stock_name"
     sort_order: Optional[Literal["asc", "desc"]] = "asc"
 
 
@@ -206,11 +208,19 @@ class ETFPortfolioChange(BaseModel):
 class ETFPortfolioData(BaseModel):
     etf_name: str
     etf_ticker: str
+    ticker: str = Field(
+        default="", description="ETF ticker for JSON filtering"
+    )  # JSON 필터링용 필드 추가
     date: str
     total_portfolio_value: Optional[float] = None
     changes: List[ETFPortfolioChange]
     summary: str
     source_url: Optional[str] = None
+
+    def model_post_init(self, __context):
+        """ETF ticker 값을 ticker 필드에도 복사"""
+        if not self.ticker and self.etf_ticker:
+            self.ticker = self.etf_ticker.upper()
 
 
 class ETFAnalysisRequest(BaseModel):

@@ -253,9 +253,6 @@ async def get_etf_portfolio_analysis(
     request_params = ETFAnalysisGetRequest(
         target_date=target_date,
         etf_tickers=etf_ticker_list,
-        limit=limit,
-        sort_by=sort_by,
-        sort_order=sort_order,
     )
 
     return await websearch_service.get_etf_analysis_with_filters(request_params)

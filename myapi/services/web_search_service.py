@@ -432,7 +432,9 @@ class WebSearchService:
             request_params=request,
         )
 
-    def generate_etf_portfolio_prompt(self, etf_tickers: list[str], target_date: str) -> str:
+    def generate_etf_portfolio_prompt(
+        self, etf_tickers: list[str], target_date: str
+    ) -> str:
         """Generate prompt for ETF portfolio analysis."""
         if not isinstance(etf_tickers, list) or not etf_tickers:
             raise ValueError("ETF tickers must be a non-empty list.")
@@ -512,7 +514,7 @@ class WebSearchService:
             - Cite sources where possible in the summary
             - Focus on **actionable insights** about fund manager strategy
         """
-        
+
         return prompt
 
     async def create_etf_analysis(
@@ -522,7 +524,9 @@ class WebSearchService:
         if not etf_tickers:
             raise ValueError("ETF tickers list cannot be empty")
 
-        prompt = self.generate_etf_portfolio_prompt(etf_tickers, target_date.strftime("%Y-%m-%d"))
+        prompt = self.generate_etf_portfolio_prompt(
+            etf_tickers, target_date.strftime("%Y-%m-%d")
+        )
 
         response = self.ai_service.gemini_search_grounding(
             prompt=prompt,
@@ -537,12 +541,18 @@ class WebSearchService:
             if not isinstance(etf_data, ETFPortfolioData):
                 raise ValueError("Invalid ETF data format in response")
 
+            # ticker 필드 설정 (JSON 필터링용)
+            etf_data.ticker = etf_data.etf_ticker.upper()
+
             # Translate ETF analysis if translate_service is available
             translated_etf = etf_data
             if self.translate_service:
                 try:
                     translated_etf = self.translate_service.translate_schema(etf_data)
                     translated_etf.etf_ticker = etf_data.etf_ticker.upper()
+                    translated_etf.ticker = (
+                        etf_data.etf_ticker.upper()
+                    )  # ticker 필드도 설정
                 except Exception as e:
                     logger.warning(
                         f"Failed to translate ETF analysis for {etf_data.etf_ticker}: {e}"
@@ -561,7 +571,7 @@ class WebSearchService:
         self, target_date: date = date.today(), etf_tickers: Optional[list[str]] = None
     ):
         """Fetch ETF portfolio analysis for the given tickers."""
-        
+
         responses = self.websearch_repository.get_all_analyses(
             target_date=target_date,
             name="etf_portfolio_analysis",
@@ -579,24 +589,28 @@ class WebSearchService:
         self, request: ETFAnalysisGetRequest
     ) -> ETFAnalysisGetResponse:
         """Fetch ETF analysis with filtering, sorting, and pagination."""
-        
+
         # Ensure target_date is not None
         target_date = request.target_date if request.target_date else date.today()
-        
+
         # Get all ETF analyses for the date
         all_analyses = await self.get_etf_analysis(
-            target_date=target_date, 
-            etf_tickers=request.etf_tickers
+            target_date=target_date, etf_tickers=request.etf_tickers
         )
-        
+
         # Convert to ETFPortfolioData objects
-        etf_analyses = [analysis.value for analysis in all_analyses if isinstance(analysis.value, ETFPortfolioData)]
-        
+        etf_analyses = [
+            analysis.value
+            for analysis in all_analyses
+            if isinstance(analysis.value, ETFPortfolioData)
+        ]
+
         # Filter by ETF tickers if specified
         if request.etf_tickers:
             etf_tickers_upper = [ticker.upper() for ticker in request.etf_tickers]
             etf_analyses = [
-                etf for etf in etf_analyses 
+                etf
+                for etf in etf_analyses
                 if etf.etf_ticker.upper() in etf_tickers_upper
             ]
 
@@ -612,13 +626,8 @@ class WebSearchService:
                 etf_analyses.sort(key=lambda x: x.date, reverse=reverse)
             elif request.sort_by == "total_value":
                 etf_analyses.sort(
-                    key=lambda x: x.total_portfolio_value or 0, 
-                    reverse=reverse
+                    key=lambda x: x.total_portfolio_value or 0, reverse=reverse
                 )
-
-        # Apply limit
-        if request.limit and request.limit > 0:
-            etf_analyses = etf_analyses[:request.limit]
 
         return ETFAnalysisGetResponse(
             etf_analyses=etf_analyses,
@@ -629,9 +638,11 @@ class WebSearchService:
             request_params=request,
         )
 
-    def generate_etf_analyst_summary_prompt(self, etf_portfolio_data: ETFPortfolioData, target_date: str) -> str:
+    def generate_etf_analyst_summary_prompt(
+        self, etf_portfolio_data: ETFPortfolioData, target_date: str
+    ) -> str:
         """Generate prompt for deep analyst analysis of ETF portfolio changes."""
-        
+
         changes_summary = []
         for change in etf_portfolio_data.changes:
             changes_summary.append(
@@ -639,9 +650,9 @@ class WebSearchService:
                 f"at ${change.price_per_share} (${change.total_value:,.0f} total value, "
                 f"{change.percentage_of_portfolio}% of portfolio)"
             )
-        
+
         changes_text = "\n".join(changes_summary)
-        
+
         prompt = f"""
             Today is **{target_date}**.
             
@@ -727,25 +738,24 @@ class WebSearchService:
             - Focus on **actionable insights** rather than generic commentary
             - Explain complex institutional strategies in accessible terms
         """
-        
+
         return prompt
 
     async def create_etf_analyst_summary(
         self, etf_portfolio_data: ETFPortfolioData, target_date: date = date.today()
     ):
         """Generate comprehensive analyst summary for ETF portfolio changes."""
-        
+
         prompt = self.generate_etf_analyst_summary_prompt(
-            etf_portfolio_data, 
-            target_date.strftime("%Y-%m-%d")
+            etf_portfolio_data, target_date.strftime("%Y-%m-%d")
         )
-        
+
         # Use Perplexity for research-backed analysis with structured schema
         response = self.ai_service.perplexity_completion(
             prompt=prompt,
             schema=ETFAnalystSummaryResponse,
         )
-        
+
         if not isinstance(response, ETFAnalystSummaryResponse):
             raise ValueError("Invalid response format from AI service")
 
@@ -758,19 +768,19 @@ class WebSearchService:
                 translated_response.etf_ticker = etf_portfolio_data.etf_ticker.upper()
             except Exception as e:
                 logger.warning(f"Failed to translate ETF analyst summary: {e}")
-        
+
         # Store the analyst summary in ai_analysis table
         analyst_summary = {
             "etf_ticker": etf_portfolio_data.etf_ticker,
             "original_portfolio_data": etf_portfolio_data.model_dump(),
             "analyst_summary": translated_response.model_dump(),
-            "analysis_type": "etf_analyst_summary"
+            "analysis_type": "etf_analyst_summary",
         }
-        
+
         self.websearch_repository.create_analysis(
             analysis_date=target_date,
             analysis=analyst_summary,
             name="etf_analyst_summary",
         )
-        
+
         return translated_response
