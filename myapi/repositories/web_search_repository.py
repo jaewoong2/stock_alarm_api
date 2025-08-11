@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Literal, Optional, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import and_, func, case
 
 from myapi.domain.news.news_models import (
     MarketForecast,
@@ -220,18 +220,27 @@ class WebSearchResultRepository:
                 AiAnalysisModel.name == name
             )
 
-            if target_date:
-                query = query.filter(
-                    AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
-                )
-
             # tickers 파라미터가 있으면 JSON 필드에서 ticker로 필터링
             if tickers and len(tickers) > 0:
-                ticker_filters = [
-                    text("value->>'ticker' = :ticker").params(ticker=ticker)
-                    for ticker in tickers
-                ]
-                query = query.filter(or_(*ticker_filters))
+                # ETF 분석의 경우 etf_ticker 또는 ticker 필드로 필터링
+                if name == "etf_portfolio_analysis":
+                    ticker_filters = []
+                    for i, ticker in enumerate(tickers):
+                        ticker_filters.extend(
+                            [
+                                text(f"value->>'etf_ticker' = :ticker_{i}").params(
+                                    **{f"ticker_{i}": ticker}
+                                ),
+                            ]
+                        )
+                    query = query.filter(or_(*ticker_filters))
+                else:
+                    # 일반 분석의 경우 ticker 필드로 필터링
+                    ticker_filters = [
+                        text(f"value->>'ticker' = :ticker_{i}").params(**{f"ticker_{i}": ticker})
+                        for i, ticker in enumerate(tickers)
+                    ]
+                    query = query.filter(or_(*ticker_filters))
 
             if name == "signals":
                 if models:
@@ -248,6 +257,11 @@ class WebSearchResultRepository:
                     query = query.filter(
                         text("value->>'strategy' != :strategy")
                     ).params(strategy="AI_GENERATED")
+
+            if target_date:
+                query = query.filter(
+                    and_(AiAnalysisModel.date == target_date.strftime("%Y-%m-%d"))
+                )
 
             results = query.all()
 
