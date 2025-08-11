@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.domain.news.news_schema import MahaneyAnalysisRequest
+from myapi.domain.news.news_schema import MahaneyAnalysisRequest, ETFAnalysisRequest
 from myapi.services.aws_service import AwsService
 from myapi.utils.auth import verify_bearer_token
 from myapi.utils.config import Settings
@@ -64,6 +64,15 @@ def execute_batch_jobs(
             "method": "POST",
             "body": {},
             "group_id": "research",
+        },
+        {
+            "path": "news/etf/portfolio",
+            "method": "POST",
+            "body": {
+                "etf_tickers": ["ARKK", "TIMEFOLIO 미국나스닥100액티브 (426030)"],
+                "target_date": today_str,
+            },
+            "group_id": "etf-portfolio",
         },
     ]
 
