@@ -529,7 +529,7 @@ class WebSearchService:
             etf_tickers, target_date.strftime("%Y-%m-%d")
         )
 
-        response = self.ai_service.gemini_search_grounding(
+        response = self.ai_service.perplexity_completion(
             prompt=prompt,
             schema=ETFAnalysisResponse,
         )
