@@ -69,7 +69,13 @@ def execute_batch_jobs(
             "path": "news/etf/portfolio",
             "method": "POST",
             "body": {
-                "etf_tickers": ["ARKK", "TIMEFOLIO 미국나스닥100액티브 (426030)"],
+                "etf_tickers": [
+                    "ARKK",
+                    "ARKW",
+                    "BAI",
+                    "TIMEFOLIO 미국나스닥100액티브 (426030)",
+                    "KoAct 미국나스닥성장기업액티브 (0015B0)",
+                ],
                 "target_date": today_str,
             },
             "group_id": "etf-portfolio",

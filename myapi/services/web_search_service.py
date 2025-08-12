@@ -451,6 +451,7 @@ class WebSearchService:
             
             **REQUIREMENTS**:
             1. Search for the **most recent portfolio holdings changes** for each ETF as of {target_date}
+            - If Target date is not available, use the most Recent data
             2. Focus on **ACTIVE ETFs** that frequently adjust their holdings (like ARK funds, active management strategies)
             3. Identify **BUY/SELL transactions** made by the fund managers in the past 1-7 days
             4. For each transaction, explain **WHY** the fund managers made these decisions

@@ -227,9 +227,6 @@ async def create_mahaney_analysis(
 async def get_etf_portfolio_analysis(
     target_date: Optional[dt.date] = dt.date.today(),
     etf_tickers: Optional[str] = None,
-    limit: Optional[int] = None,
-    sort_by: Optional[Literal["date", "etf_name", "total_value"]] = "date",
-    sort_order: Optional[Literal["asc", "desc"]] = "desc",
     websearch_service: WebSearchService = Depends(
         Provide[Container.services.websearch_service]
     ),
