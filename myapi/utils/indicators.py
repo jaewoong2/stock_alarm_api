@@ -12,11 +12,11 @@ import mplfinance as mpf
 
 
 def calculate_moving_average(df: pd.DataFrame, window: int) -> pd.Series:
-    return df["close"].rolling(window=window).mean()
+    return df["Close"].rolling(window=window).mean()
 
 
 def calculate_rsi(df: pd.DataFrame, window: int = 14) -> pd.Series:
-    delta = df["close"].diff()
+    delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(window=window, min_periods=window).mean()
@@ -26,39 +26,154 @@ def calculate_rsi(df: pd.DataFrame, window: int = 14) -> pd.Series:
 
 
 def calculate_macd(df: pd.DataFrame, short_span=12, long_span=26, signal_span=9):
-    ema_short = df["close"].ewm(span=short_span, adjust=False).mean()
-    ema_long = df["close"].ewm(span=long_span, adjust=False).mean()
+    ema_short = df["Close"].ewm(span=short_span, adjust=False).mean()
+    ema_long = df["Close"].ewm(span=long_span, adjust=False).mean()
     macd_line = ema_short - ema_long
     signal_line = macd_line.ewm(span=signal_span, adjust=False).mean()
     return macd_line, signal_line
 
 
 def calculate_bollinger_bands(df: pd.DataFrame, window=20, num_std=2):
-    ma = df["close"].rolling(window=window).mean()
-    std = df["close"].rolling(window=window).std()
+    ma = df["Close"].rolling(window=window).mean()
+    std = df["Close"].rolling(window=window).std()
     upper_band = ma + num_std * std
     lower_band = ma - num_std * std
     return ma, upper_band, lower_band
 
 
 def calculate_atr(df: pd.DataFrame, window=14) -> pd.Series:
-    high_low = df["high"] - df["low"]
-    high_close = (df["high"] - df["close"].shift()).abs()
-    low_close = (df["low"] - df["close"].shift()).abs()
+    high_low = df["High"] - df["Low"]
+    high_close = (df["High"] - df["Close"].shift()).abs()
+    low_close = (df["Low"] - df["Close"].shift()).abs()
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = ranges.max(axis=1)
     atr = true_range.rolling(window=window, min_periods=window).mean()
     return atr
 
 
+def calculate_supertrend(df: pd.DataFrame, atr_length=10, multiplier=3.0):
+    """
+    슈퍼트렌드 지표를 계산합니다.
+    
+    Args:
+        df: OHLCV 데이터프레임 (High, Low, Close 컬럼 필요)
+        atr_length: ATR 계산 기간 (기본값: 10)
+        multiplier: ATR 배수 (기본값: 3.0)
+    
+    Returns:
+        tuple: (supertrend, trend) - 슈퍼트렌드 값과 추세 방향 (1: 상승, -1: 하락)
+    """
+    # hl2 계산 (High + Low) / 2
+    hl2 = (df["High"] + df["Low"]) / 2
+    
+    # ATR 계산
+    atr = calculate_atr(df, atr_length)
+    
+    # 기본 상하단 밴드 계산
+    basic_upper_band = hl2 + (multiplier * atr)
+    basic_lower_band = hl2 - (multiplier * atr)
+    
+    # 최종 밴드 계산을 위한 초기화
+    upper_band = pd.Series(index=df.index, dtype=float)
+    lower_band = pd.Series(index=df.index, dtype=float)
+    supertrend = pd.Series(index=df.index, dtype=float)
+    trend = pd.Series(index=df.index, dtype=int)
+    
+    # 첫 번째 값 설정
+    upper_band.iloc[0] = basic_upper_band.iloc[0]
+    lower_band.iloc[0] = basic_lower_band.iloc[0]
+    
+    # ATR가 계산되지 않은 초기 상태는 하락으로 설정
+    if pd.isna(atr.iloc[0]):
+        trend.iloc[0] = -1
+        supertrend.iloc[0] = upper_band.iloc[0]
+    else:
+        trend.iloc[0] = -1
+        supertrend.iloc[0] = upper_band.iloc[0]
+    
+    # 각 시점별로 계산
+    for i in range(1, len(df)):
+        # 최종 밴드 계산
+        if (basic_upper_band.iloc[i] < upper_band.iloc[i-1] or 
+            df["Close"].iloc[i-1] > upper_band.iloc[i-1]):
+            upper_band.iloc[i] = basic_upper_band.iloc[i]
+        else:
+            upper_band.iloc[i] = upper_band.iloc[i-1]
+            
+        if (basic_lower_band.iloc[i] > lower_band.iloc[i-1] or 
+            df["Close"].iloc[i-1] < lower_band.iloc[i-1]):
+            lower_band.iloc[i] = basic_lower_band.iloc[i]
+        else:
+            lower_band.iloc[i] = lower_band.iloc[i-1]
+        
+        # 추세 결정
+        if pd.isna(atr.iloc[i]):
+            trend.iloc[i] = -1
+        elif supertrend.iloc[i-1] == upper_band.iloc[i-1]:
+            trend.iloc[i] = 1 if df["Close"].iloc[i] > upper_band.iloc[i] else -1
+        else:
+            trend.iloc[i] = -1 if df["Close"].iloc[i] < lower_band.iloc[i] else 1
+        
+        # 슈퍼트렌드 값 설정
+        supertrend.iloc[i] = lower_band.iloc[i] if trend.iloc[i] == 1 else upper_band.iloc[i]
+    
+    return supertrend, trend
+
+
+def check_supertrend_signals(df: pd.DataFrame, atr_length=10, multiplier=3.0):
+    """
+    슈퍼트렌드 매수/매도 신호를 확인합니다.
+    
+    Args:
+        df: OHLCV 데이터프레임
+        atr_length: ATR 계산 기간
+        multiplier: ATR 배수
+    
+    Returns:
+        dict: 슈퍼트렌드 신호 정보
+    """
+    supertrend, trend = calculate_supertrend(df, atr_length, multiplier)
+    
+    # 추세 변화 감지
+    trend_change = trend.diff()
+    
+    # 현재 추세와 신호
+    current_trend = trend.iloc[-1] if len(trend) > 0 else 0
+    current_supertrend = supertrend.iloc[-1] if len(supertrend) > 0 else 0
+    current_close = df["Close"].iloc[-1] if len(df) > 0 else 0
+    
+    # 최근 신호 확인 (마지막 몇 개 바에서)
+    buy_signal = False
+    sell_signal = False
+    
+    if len(trend_change) > 1:
+        # 하락에서 상승으로 전환 (매수 신호)
+        if trend_change.iloc[-1] == 2:  # -1에서 1로 변화
+            buy_signal = True
+        # 상승에서 하락으로 전환 (매도 신호)
+        elif trend_change.iloc[-1] == -2:  # 1에서 -1로 변화
+            sell_signal = True
+    
+    return {
+        "supertrend": current_supertrend,
+        "trend": current_trend,
+        "close": current_close,
+        "buy_signal": buy_signal,
+        "sell_signal": sell_signal,
+        "atr_length": atr_length,
+        "multiplier": multiplier,
+        "triggered": buy_signal or sell_signal
+    }
+
+
 def calculate_volatility_from_df(candles_df: pd.DataFrame) -> float:
     """
-    candles_df의 'close' 가격을 이용하여 로그 수익률 기반 변동성을 계산합니다.
+    candles_df의 'Close' 가격을 이용하여 로그 수익률 기반 변동성을 계산합니다.
     """
     candles_df = candles_df.copy()
-    candles_df["close"] = candles_df["close"].astype(float)
+    candles_df["Close"] = candles_df["Close"].astype(float)
     # 로그 수익률 계산 (첫 행은 NaN)
-    log_close = pd.Series(np.log(candles_df["close"].astype(float)))
+    log_close = pd.Series(np.log(candles_df["Close"].astype(float)))
     candles_df["log_return"] = log_close.diff()
     # 표본 표준편차에 기간 스케일 적용 (예시: N = 데이터 길이 - 1)
     volatility = candles_df["log_return"].std() * np.sqrt(len(candles_df) - 1)
@@ -69,10 +184,10 @@ def compute_atr(df: pd.DataFrame, period=14):
     """
     ATR (Average True Range)를 계산합니다.
     """
-    df["previous_close"] = df["close"].shift(1)
-    df["high_low"] = df["high"] - df["low"]
-    df["high_pc"] = abs(df["high"] - df["previous_close"])
-    df["low_pc"] = abs(df["low"] - df["previous_close"])
+    df["previous_close"] = df["Close"].shift(1)
+    df["high_low"] = df["High"] - df["Low"]
+    df["high_pc"] = abs(df["High"] - df["previous_close"])
+    df["low_pc"] = abs(df["Low"] - df["previous_close"])
     df["tr"] = df[["high_low", "high_pc", "low_pc"]].max(axis=1)
     df["atr"] = df["tr"].rolling(window=period).mean()  # 단순 이동평균 방식
     return df
@@ -82,10 +197,10 @@ def compute_adx(df, period=14):
     """
     ADX (Average Directional Index)를 계산합니다.
     """
-    df["previous_high"] = df["high"].shift(1)
-    df["previous_low"] = df["low"].shift(1)
-    df["up_move"] = df["high"] - df["previous_high"]
-    df["down_move"] = df["previous_low"] - df["low"]
+    df["previous_high"] = df["High"].shift(1)
+    df["previous_low"] = df["Low"].shift(1)
+    df["up_move"] = df["High"] - df["previous_high"]
+    df["down_move"] = df["previous_low"] - df["Low"]
 
     # +DM와 -DM 계산
     df["+dm"] = np.where(
@@ -217,8 +332,8 @@ def plot_with_indicators(df: pd.DataFrame, length: int):
 
     fig = mpf.plot(df, **mpf_kwargs, returnfig=True)
     # 범례 추가
-    max_price = df["high"].max()
-    min_price = df["low"].min()
+    max_price = df["High"].max()
+    min_price = df["Low"].min()
     ax = fig[0].get_axes()[0]
     ax.annotate(
         f"Max: {max_price:.2f}",

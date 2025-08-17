@@ -22,6 +22,7 @@ from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.translate_service import TranslateService
 from myapi.utils.config import Settings
+from myapi.utils.indicators import check_supertrend_signals
 from myapi.domain.signal.signal_schema import (
     Article,
     SignalPromptData,
@@ -1030,6 +1031,42 @@ class SignalService:
                         ),
                         "vol_rel20": round(vol_rel, 2) if vol_rel else None,
                         "pivot_high": pivot_high,
+                    },
+                )
+            )
+
+        # SUPERTREND_BUY 신호 확인
+        if "SUPERTREND_BUY" in strategies:
+            supertrend_signals = check_supertrend_signals(df, atr_length=10, multiplier=3.0)
+            triggered = supertrend_signals["buy_signal"]
+            out.append(
+                TechnicalSignal(
+                    strategy="SUPERTREND_BUY",
+                    triggered=triggered,
+                    details={
+                        "supertrend": supertrend_signals["supertrend"],
+                        "trend": supertrend_signals["trend"],
+                        "close": supertrend_signals["close"],
+                        "atr_length": supertrend_signals["atr_length"],
+                        "multiplier": supertrend_signals["multiplier"],
+                    },
+                )
+            )
+
+        # SUPERTREND_SELL 신호 확인
+        if "SUPERTREND_SELL" in strategies:
+            supertrend_signals = check_supertrend_signals(df, atr_length=10, multiplier=3.0)
+            triggered = supertrend_signals["sell_signal"]
+            out.append(
+                TechnicalSignal(
+                    strategy="SUPERTREND_SELL",
+                    triggered=triggered,
+                    details={
+                        "supertrend": supertrend_signals["supertrend"],
+                        "trend": supertrend_signals["trend"],
+                        "close": supertrend_signals["close"],
+                        "atr_length": supertrend_signals["atr_length"],
+                        "multiplier": supertrend_signals["multiplier"],
                     },
                 )
             )

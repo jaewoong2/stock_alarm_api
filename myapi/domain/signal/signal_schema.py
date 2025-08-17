@@ -26,6 +26,8 @@ Strategy = Literal[
     "VCP_DAILY",
     "RS_SHORT",
     "RS_MID",
+    "SUPERTREND_BUY",
+    "SUPERTREND_SELL",
 ]
 
 DefaultStrategies: List[Strategy] = [
@@ -50,6 +52,8 @@ DefaultStrategies: List[Strategy] = [
     "VCP_DAILY",
     "RS_SHORT",
     "RS_MID",
+    "SUPERTREND_BUY",
+    "SUPERTREND_SELL",
 ]
 
 DefaultTickers = [
@@ -98,7 +102,6 @@ DefaultTickers = [
     "CRWD",
     "FTNT",
     "GTLB",
-    "KNBE",
     "NET",
     "OKTA",
     "PANW",
@@ -213,6 +216,10 @@ class TechnicalSignal(BaseModel):
             return "주가가 평균(20일 SMA)에서 크게 벗어났다가 다시 복귀할 때 반전 기회를 포착 가능성. (단기 변동성)"
         elif self.strategy == "BREAKOUT":
             return "주가가 최근 52주 최고가를 돌파할 때 강한 상승 모멘텀을 포착 가능성. (새로운 고점 돌파로 추가 상승)"
+        elif self.strategy == "SUPERTREND_BUY":
+            return "슈퍼트렌드 지표가 상승 추세로 전환(종가가 상단 밴드 돌파)하여 매수 신호 발생. (ATR 기반 추세 추종 지표)"
+        elif self.strategy == "SUPERTREND_SELL":
+            return "슈퍼트렌드 지표가 하락 추세로 전환(종가가 하단 밴드 하회)하여 매도 신호 발생. (ATR 기반 추세 추종 지표)"
         else:
             return "알 수 없는 전략입니다."
 
