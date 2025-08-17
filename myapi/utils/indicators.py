@@ -47,7 +47,7 @@ def calculate_atr(df: pd.DataFrame, window=14) -> pd.Series:
     low_close = (df["Low"] - df["Close"].shift()).abs()
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = ranges.max(axis=1)
-    atr = true_range.rolling(window=window, min_periods=window).mean()
+    atr = true_range.rolling(window=window, min_periods=1).mean()
     return atr
 
 
@@ -82,14 +82,8 @@ def calculate_supertrend(df: pd.DataFrame, atr_length=10, multiplier=3.0):
     # 첫 번째 값 설정
     upper_band.iloc[0] = basic_upper_band.iloc[0]
     lower_band.iloc[0] = basic_lower_band.iloc[0]
-    
-    # ATR가 계산되지 않은 초기 상태는 하락으로 설정
-    if pd.isna(atr.iloc[0]):
-        trend.iloc[0] = -1
-        supertrend.iloc[0] = upper_band.iloc[0]
-    else:
-        trend.iloc[0] = -1
-        supertrend.iloc[0] = upper_band.iloc[0]
+    trend.iloc[0] = -1
+    supertrend.iloc[0] = upper_band.iloc[0]
     
     # 각 시점별로 계산
     for i in range(1, len(df)):
@@ -107,9 +101,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_length=10, multiplier=3.0):
             lower_band.iloc[i] = lower_band.iloc[i-1]
         
         # 추세 결정
-        if pd.isna(atr.iloc[i]):
-            trend.iloc[i] = -1
-        elif supertrend.iloc[i-1] == upper_band.iloc[i-1]:
+        if supertrend.iloc[i-1] == upper_band.iloc[i-1]:
             trend.iloc[i] = 1 if df["Close"].iloc[i] > upper_band.iloc[i] else -1
         else:
             trend.iloc[i] = -1 if df["Close"].iloc[i] < lower_band.iloc[i] else 1
