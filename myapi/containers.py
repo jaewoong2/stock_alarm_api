@@ -1,6 +1,7 @@
 from dependency_injector import containers, providers
 
 from myapi.database import get_db
+from myapi.services.aws_service import AwsService
 from myapi.utils.config import Settings
 
 class ConfigModule(containers.DeclarativeContainer):
@@ -18,6 +19,8 @@ class ServiceModule(containers.DeclarativeContainer):
 
     config = providers.DependenciesContainer()
     repositories = providers.DependenciesContainer()
+
+    aws_service = providers.Factory(AwsService, settings=config.config)
 
 class Container(containers.DeclarativeContainer):
     """Application container."""

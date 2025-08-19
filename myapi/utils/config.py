@@ -10,7 +10,16 @@ class Settings(BaseSettings):
         extra="allow",
     )
 
-    DATABASE_URL: str = "sqlite:///:memory:"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_DEFAULT_REGION: str = "ap-northeast-2"
+    AWS_S3_ACCESS_KEY_ID: str = ""
+    AWS_S3_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_DEFAULT_REGION: str = "ap-northeast-2"
+
+    DATABASE_URL: str = (
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
+    )
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
