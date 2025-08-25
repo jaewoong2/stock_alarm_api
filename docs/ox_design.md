@@ -18,10 +18,14 @@
 - **Time Zone**: KST 기준 운영
 - **외부 API**: 종가 데이터 제공 API (Alpha Vantage, Yahoo Finance 등)
 
-### 1.3 세션 모델 (2-Phase)
+### 1.3 세션 모델 (단순화)
 
-- `PREDICT`: 시장 종료 후 → 다음 개장 직전 (예측 접수)
-- `SETTLE`: 장 마감 후 EOD 확정 → 정산/포인트 지급
+**기본 원칙**: 하루를 단순하게 3단계로 구분
+- `OPEN`: 예측 접수 가능 (미국 장 마감 후 ~ 다음 개장 30분 전)
+- `CLOSED`: 예측 마감 (미국 장 개장 30분 전 ~ 장 마감)
+- `SETTLING`: 정산 중 (장 마감 ~ EOD 데이터 확정 및 포인트 지급 완료)
+
+**시간 기준**: 모든 시간은 UTC로 저장하고, API 응답시에만 KST 변환
 
 ## 2. API 인터페이스 설계
 
@@ -95,44 +99,6 @@ Idempotency-Key: <uuid>
 ### 2.2 엔드포인트 명세
 
 #### 2.2.1 인증/사용자 (Auth/Users)
-
-```python
-# 일반 회원가입
-POST /v1/auth/signup
-Content-Type: application/json
-
-{
-    "email": "user@example.com",
-    "password": "password123",
-    "nickname": "user123"
-}
-
-Response 201:
-{
-    "success": true,
-    "data": {
-        "user_id": 12345,
-        "token": "jwt_token_here",
-        "nickname": "user123"
-    }
-}
-
-# 일반 로그인
-POST /v1/auth/login
-{
-    "email": "user@example.com",
-    "password": "password123"
-}
-
-Response 200:
-{
-    "success": true,
-    "data": {
-        "user_id": 12345,
-        "token": "jwt_token_here",
-        "nickname": "user123"
-    }
-}
 
 # OAuth 로그인 - Google
 GET /v1/auth/oauth/google?redirect_uri=<encoded_uri>&state=<state>
@@ -506,7 +472,7 @@ CREATE TABLE IF NOT EXISTS crypto.predictions (
     UNIQUE (trading_day, user_id, symbol)
 );
 
--- 정산 결과
+-- 정산 결과 (단순화)
 CREATE TYPE crypto.outcome AS ENUM ('UP', 'DOWN', 'VOID');
 
 CREATE TABLE IF NOT EXISTS crypto.settlements (
@@ -515,9 +481,16 @@ CREATE TABLE IF NOT EXISTS crypto.settlements (
     outcome crypto.outcome NOT NULL,
     close_price numeric(18,6) NOT NULL,
     prev_close_price numeric(18,6) NOT NULL,
+    price_change_percent numeric(8,4) NOT NULL, -- 명확한 계산을 위해 추가
+    void_reason text, -- 무효 사유 (예: 거래 정지, 데이터 없음)
     computed_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (trading_day, symbol)
 );
+
+-- 정산 규칙 (단순화)
+-- UP: 종가가 전일 종가보다 0.01% 이상 상승
+-- DOWN: 종가가 전일 종가보다 0.01% 이상 하락  
+-- VOID: 가격 변동이 ±0.01% 미만이거나 데이터 없음
 
 -- EOD 가격 스냅샷 (배치로 수집)
 CREATE TABLE IF NOT EXISTS crypto.eod_prices (
@@ -530,35 +503,22 @@ CREATE TABLE IF NOT EXISTS crypto.eod_prices (
     PRIMARY KEY (asof, symbol, vendor_rev)
 );
 
--- 포인트 원장 (crypto 스키마 내)
+-- 포인트 원장 (단순화)
 CREATE TABLE IF NOT EXISTS crypto.points_ledger (
     id bigserial PRIMARY KEY,
     user_id bigint NOT NULL REFERENCES crypto.users(id),
     trading_day date,
     symbol text,
-    delta_points bigint NOT NULL,
-    reason text NOT NULL,
-    ref_type text NOT NULL,
-    ref_id text NOT NULL,
+    delta_points bigint NOT NULL, -- 양수: 획득, 음수: 사용
+    reason text NOT NULL, -- 'WIN', 'VOID_REFUND', 'REWARD_PURCHASE'
+    ref_id text NOT NULL, -- 참조 ID (중복 방지용)
     balance_after bigint NOT NULL,
     created_at timestamptz DEFAULT now(),
-    UNIQUE (ref_type, ref_id)
+    UNIQUE (ref_id) -- 멱등성 보장
 );
 
--- 포인트 보류 (Saga 중간상태)
-CREATE TYPE crypto.hold_status AS ENUM ('OPEN', 'COMMITTED', 'CANCELLED');
-
-CREATE TABLE IF NOT EXISTS crypto.points_holds (
-    id bigserial PRIMARY KEY,
-    user_id bigint NOT NULL REFERENCES crypto.users(id),
-    amount bigint NOT NULL,
-    reason text NOT NULL,
-    ref_type text NOT NULL,
-    ref_id text NOT NULL,
-    status crypto.hold_status NOT NULL DEFAULT 'OPEN',
-    created_at timestamptz DEFAULT now(),
-    UNIQUE (ref_type, ref_id)
-);
+-- 포인트 보류 시스템 제거 (MVP에서는 단순한 차감/환불로 처리)
+-- 리워드 교환시 즉시 차감, 실패시 즉시 환불
 
 -- 리워드 인벤토리 (crypto 스키마 내)
 CREATE TABLE IF NOT EXISTS crypto.rewards_inventory (
@@ -586,16 +546,15 @@ CREATE TABLE IF NOT EXISTS crypto.rewards_redemptions (
     updated_at timestamptz DEFAULT now()
 );
 
--- 사용자 제한 (슬롯/쿨다운)
-CREATE TABLE IF NOT EXISTS crypto.user_limits (
-    user_id bigint PRIMARY KEY REFERENCES crypto.users(id),
+-- 사용자 제한 (단순화)
+CREATE TABLE IF NOT EXISTS crypto.user_daily_stats (
+    user_id bigint REFERENCES crypto.users(id),
     trading_day date NOT NULL,
-    base_slots smallint NOT NULL DEFAULT 3,
-    ad_slots_used smallint NOT NULL DEFAULT 0,
-    ad_slots_max smallint NOT NULL DEFAULT 7,
-    used_slots smallint NOT NULL DEFAULT 0,
-    cooldown_until timestamptz,
-    updated_at timestamptz DEFAULT now()
+    predictions_made smallint NOT NULL DEFAULT 0,
+    max_predictions smallint NOT NULL DEFAULT 3, -- 고정값으로 단순화
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    PRIMARY KEY (user_id, trading_day)
 );
 
 -- 광고 해제 이력
@@ -619,14 +578,47 @@ CREATE TABLE IF NOT EXISTS crypto.rate_limits (
     PRIMARY KEY(key, window_start, window_type)
 );
 
--- 아웃박스 (이벤트 발행)
-CREATE TABLE IF NOT EXISTS crypto.outbox (
+-- 아웃박스 (이벤트 발행) - MVP에서는 제거, 직접 SQS 발행
+-- CREATE TABLE IF NOT EXISTS crypto.outbox (
+--     id bigserial PRIMARY KEY,
+--     topic text NOT NULL,
+--     payload jsonb NOT NULL,
+--     published boolean NOT NULL DEFAULT false,
+--     created_at timestamptz DEFAULT now(),
+--     published_at timestamptz
+-- );
+
+-- 감사 로그 (포인트 관련 모든 작업 추적)
+CREATE TABLE IF NOT EXISTS crypto.audit_logs (
     id bigserial PRIMARY KEY,
-    topic text NOT NULL,
-    payload jsonb NOT NULL,
-    published boolean NOT NULL DEFAULT false,
-    created_at timestamptz DEFAULT now(),
-    published_at timestamptz
+    user_id bigint REFERENCES crypto.users(id),
+    action text NOT NULL, -- 'POINTS_AWARD', 'POINTS_DEDUCT', 'REWARD_REDEEM' 등
+    table_name text NOT NULL,
+    record_id text NOT NULL,
+    old_values jsonb,
+    new_values jsonb,
+    ip_address inet,
+    user_agent text,
+    created_at timestamptz DEFAULT now()
+);
+
+-- 시스템 헬스 체크
+CREATE TABLE IF NOT EXISTS crypto.system_health (
+    component text PRIMARY KEY, -- 'database', 'sqs', 'eod_api' 등
+    status text NOT NULL, -- 'healthy', 'degraded', 'down'
+    last_check timestamptz DEFAULT now(),
+    error_message text,
+    metrics jsonb
+);
+
+-- 데이터 정합성 체크 로그
+CREATE TABLE IF NOT EXISTS crypto.integrity_checks (
+    id bigserial PRIMARY KEY,
+    check_type text NOT NULL, -- 'points_sum', 'prediction_settlement_match' 등
+    trading_day date,
+    status text NOT NULL, -- 'passed', 'failed', 'warning'
+    details jsonb,
+    created_at timestamptz DEFAULT now()
 );
 
 -- 외부 API 호출 로그 (배치 서비스용)
@@ -700,10 +692,17 @@ class PointsService:
     async def get_balance(self, user_id: int) -> int
     async def get_ledger(self, user_id: int, limit: int, offset: int) -> List[PointsLedgerEntry]
     async def award_points(self, user_id: int, amount: int, reason: str, ref_type: str, ref_id: str) -> None
+    async def verify_points_integrity(self, user_id: int = None) -> IntegrityCheckResult
+    async def audit_log(self, user_id: int, action: str, details: dict) -> None
 
 class RewardsService:
     async def get_catalog(self) -> List[RewardItem]
-    async def redeem_reward(self, user_id: int, sku: str, cost_points: int) -> int  # redemption_id
+    async def redeem_reward(self, user_id: int, sku: str, cost_points: int) -> int  # 단순화된 2PC
+
+class MonitoringService:
+    async def record_business_metric(self, metric_name: str, value: float, tags: dict) -> None
+    async def get_daily_metrics(self, date: date) -> DailyMetrics
+    async def check_system_health(self) -> SystemHealthStatus
 
 class AdsService:
     async def get_ad_status(self, user_id: int) -> AdStatus
@@ -716,31 +715,17 @@ class AdsService:
 
 ```python
 SQS_QUEUES = {
-    "prediction_submit": {
-        "name": "q.prediction.submit.fifo",
-        "type": "FIFO",
-        "deduplication_scope": "queue",
-        "fifo_throughput_limit": "perQueue"
+    "eod_fetch": {
+        "name": "q.eod.fetch",
+        "type": "Standard"
     },
     "settlement_compute": {
         "name": "q.settlement.compute",
         "type": "Standard"
     },
-    "eod_fetch": {
-        "name": "q.eod.fetch",
-        "type": "Standard"
-    },
     "points_award": {
-        "name": "q.points.award.fifo",
-        "type": "FIFO"
-    },
-    "rewards_saga": {
-        "name": "q.rewards.saga",
-        "type": "Standard"
-    },
-    "outbox_publisher": {
-        "name": "q.outbox.publisher",
-        "type": "Standard"
+        "name": "q.points.award",
+        "type": "Standard"  # FIFO에서 Standard로 변경 (처리량 향상)
     }
 }
 ```
@@ -848,11 +833,11 @@ OAUTH_SECURITY = {
 ```python
 RATE_LIMITS = {
     "prediction_submit": {
-        "requests_per_minute": 10,
-        "requests_per_hour": 50
+        "requests_per_minute": 5,
+        "requests_per_hour": 30
     },
     "points_balance": {
-        "requests_per_minute": 30,
+        "requests_per_minute": 20,
         "requests_per_hour": 200
     },
     "oauth_callback": {
@@ -872,25 +857,17 @@ RATE_LIMITS = {
 
 ```python
 BATCH_SCHEDULE = {
-    "universe_selection": {
-        "time": "05:30",  # 장 마감 30분 후
-        "description": "오늘의 종목 10개 선정"
-    },
-    "session_flip_predict": {
-        "time": "06:00",  # 장 마감 1시간 후
-        "description": "예측 모드로 전환"
-    },
-    "eod_data_fetch": {
-        "time": "06:15",  # 종가 데이터 안정화 대기
-        "description": "EOD 가격 데이터 수집"
-    },
-    "settlement_compute": {
-        "time": "06:30",  # EOD 수집 완료 후
-        "description": "정산 계산 및 포인트 지급"
+    "daily_universe_and_session": {
+        "time": "05:30",  # 미국 장 마감 30분 후 (EST 기준 16:30 + 30min)
+        "description": "1) 오늘의 종목 10개 선정, 2) 세션을 OPEN으로 전환"
     },
     "prediction_cutoff": {
-        "time": "22:25",  # 개장 5분 전
-        "description": "예측 제출 마감"
+        "time": "22:00",  # 미국 장 개장 30분 전 (EST 기준 09:30 - 30min)
+        "description": "예측 제출 마감, 세션을 CLOSED로 전환"
+    },
+    "eod_and_settlement": {
+        "time": "06:00",  # 다음날 새벽 (EOD 데이터 안정화 대기)
+        "description": "1) EOD 데이터 수집, 2) 정산 실행, 3) 포인트 지급, 4) 세션을 SETTLING으로 전환"
     }
 }
 ```
