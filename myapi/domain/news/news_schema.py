@@ -289,3 +289,159 @@ class ETFAnalystSummaryResponse(BaseModel):
     forward_looking_implications: ETFForwardLookingImplications
     confidence_level: Literal["High", "Medium", "Low"]
     data_sources: List[str]
+
+
+# ---------------------- Weekly Insider Trend ----------------------
+class SourceRef(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    date: Optional[str] = None
+    confidence: Optional[float] = None  # 0.0~1.0
+
+
+class InsiderTradeItem(BaseModel):
+    ticker: str
+    insider_name: Optional[str] = None
+    insider_role: Optional[str] = None
+    action: Literal["BUY", "SELL"]
+    shares: Optional[float] = None
+    est_value: Optional[float] = None
+    rationale: Optional[str] = None
+    sources: List[str] = []
+    source_details: List[SourceRef] = []
+    source_confidence: Optional[float] = None
+    filing_url: Optional[str] = None
+    cik: Optional[str] = None
+    date: Optional[str] = None
+
+
+class InsiderTrendResponse(BaseModel):
+    items: List[InsiderTradeItem]
+    window: str
+
+
+class InsiderTrendGetRequest(BaseModel):
+    target_date: Optional[dt.date] = dt.date.today()
+    tickers: Optional[List[str]] = None
+    action: Optional[Literal["BUY", "SELL"]] = None
+    limit: Optional[int] = None
+    sort_by: Optional[Literal["date", "value"]] = None
+    sort_order: Optional[Literal["asc", "desc"]] = "desc"
+
+
+class InsiderTrendGetResponse(BaseModel):
+    items: List[InsiderTradeItem]
+    total_count: int
+    filtered_count: int
+    actual_date: Optional[dt.date] = None
+    is_exact_date_match: bool = True
+    request_params: InsiderTrendGetRequest
+
+
+# ---------------------- Analyst Price Target Weekly ----------------------
+class AnalystPTItem(BaseModel):
+    ticker: str
+    action: Literal["UP", "DOWN", "INIT", "DROP"]
+    broker: Optional[str] = None
+    broker_rating: Optional[str] = None  # Buy/Hold/Sell 등
+    old_pt: Optional[float] = None
+    new_pt: Optional[float] = None
+    consensus: Optional[float] = None
+    upside_pct: Optional[float] = None
+    rationale: Optional[str] = None
+    sources: List[str] = []
+    source_details: List[SourceRef] = []
+    impact_score: Optional[float] = None
+    date: Optional[str] = None
+    published_at: Optional[str] = None
+
+
+class AnalystPTResponse(BaseModel):
+    items: List[AnalystPTItem]
+    window: str
+
+
+class AnalystPTGetRequest(BaseModel):
+    target_date: Optional[dt.date] = dt.date.today()
+    tickers: Optional[List[str]] = None
+    action: Optional[Literal["UP", "DOWN", "INIT", "DROP"]] = None
+    limit: Optional[int] = None
+    sort_by: Optional[Literal["impact", "date"]] = None
+    sort_order: Optional[Literal["asc", "desc"]] = "desc"
+
+
+class AnalystPTGetResponse(BaseModel):
+    items: List[AnalystPTItem]
+    total_count: int
+    filtered_count: int
+    actual_date: Optional[dt.date] = None
+    is_exact_date_match: bool = True
+    request_params: AnalystPTGetRequest
+
+
+# ---------------------- ETF Weekly Flows ----------------------
+class ETFFlowItem(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    net_flow: Optional[float] = None
+    flow_1w: Optional[float] = None
+    volume_change: Optional[float] = None
+    sector: Optional[str] = None
+    themes: List[str] = []
+    sector_inferred: Optional[bool] = None
+    evidence: Optional[str] = None
+    source: Optional[str] = None
+    source_details: List[SourceRef] = []
+
+
+class ETFWeeklyFlowResponse(BaseModel):
+    items: List[ETFFlowItem]
+    window: str
+
+
+class ETFWeeklyFlowGetRequest(BaseModel):
+    target_date: Optional[dt.date] = dt.date.today()
+    provider: Optional[str] = None
+    sector_only: Optional[bool] = False
+    tickers: Optional[List[str]] = None
+
+
+class ETFWeeklyFlowGetResponse(BaseModel):
+    items: List[ETFFlowItem]
+    total_count: int
+    filtered_count: int
+    actual_date: Optional[dt.date] = None
+    is_exact_date_match: bool = True
+    request_params: ETFWeeklyFlowGetRequest
+
+
+# ---------------------- US Liquidity Weekly ----------------------
+class LiquidityPoint(BaseModel):
+    date: str
+    m2: Optional[float] = None
+    rrp: Optional[float] = None
+
+
+class LiquidityWeeklyResponse(BaseModel):
+    series_m2: List[LiquidityPoint] = []
+    series_rrp: List[LiquidityPoint] = []
+    commentary: Optional[str] = None
+    window: Optional[str] = None
+    sources: List[SourceRef] = []
+
+
+# ---------------------- Market Breadth Daily ----------------------
+class BreadthDailyPoint(BaseModel):
+    date: str
+    vix: Optional[float] = None
+    advancers: Optional[int] = None
+    decliners: Optional[int] = None
+    new_highs: Optional[int] = None
+    new_lows: Optional[int] = None
+    trin: Optional[float] = None
+
+
+class MarketBreadthResponse(BaseModel):
+    series: List[BreadthDailyPoint] = []
+    commentary: Optional[str] = None
+    sources: List[SourceRef] = []

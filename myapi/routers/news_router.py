@@ -20,6 +20,17 @@ from myapi.domain.news.news_schema import (
     ETFAnalysisGetRequest,
     ETFAnalysisGetResponse,
     ETFAnalystSummaryResponse,
+    InsiderTrendGetRequest,
+    InsiderTrendGetResponse,
+    InsiderTrendResponse,
+    AnalystPTGetRequest,
+    AnalystPTGetResponse,
+    AnalystPTResponse,
+    ETFWeeklyFlowGetRequest,
+    ETFWeeklyFlowGetResponse,
+    ETFWeeklyFlowResponse,
+    LiquidityWeeklyResponse,
+    MarketBreadthResponse,
 )
 from myapi.domain.signal.signal_schema import WebSearchTickerResponse
 from myapi.services.signal_service import SignalService
@@ -290,6 +301,215 @@ async def create_etf_portfolio_analysis(
             responses.append({"ticker": ticker, "error": str(e)})
 
     return responses
+
+
+@router.get("/insider-trend", response_model=InsiderTrendGetResponse)
+@inject
+async def get_insider_trend(
+    target_date: Optional[dt.date] = dt.date.today(),
+    tickers: Optional[str] = None,
+    action: Optional[Literal["BUY", "SELL"]] = None,
+    limit: Optional[int] = None,
+    sort_by: Optional[Literal["date", "value"]] = None,
+    sort_order: Optional[Literal["asc", "desc"]] = "desc",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    ticker_list = None
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+
+    req = InsiderTrendGetRequest(
+        target_date=target_date,
+        tickers=ticker_list,
+        action=action,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    return await websearch_service.get_insider_trend_with_filters(req)
+
+
+@router.post(
+    "/insider-trend",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=InsiderTrendResponse,
+)
+@inject
+async def create_insider_trend(
+    tickers: Optional[list[str]] = None,
+    target_date: Optional[dt.date] = dt.date.today(),
+    llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.create_insider_trend(
+        tickers=tickers, target_date=target_date, llm_policy=llm_policy
+    )
+
+
+# Analyst Price Targets
+@router.get("/analyst-price-targets", response_model=AnalystPTGetResponse)
+@inject
+async def get_analyst_price_targets(
+    target_date: Optional[dt.date] = dt.date.today(),
+    tickers: Optional[str] = None,
+    action: Optional[Literal["UP", "DOWN", "INIT", "DROP"]] = None,
+    limit: Optional[int] = None,
+    sort_by: Optional[Literal["impact", "date"]] = None,
+    sort_order: Optional[Literal["asc", "desc"]] = "desc",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    ticker_list = None
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+
+    req = AnalystPTGetRequest(
+        target_date=target_date,
+        tickers=ticker_list,
+        action=action,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    return await websearch_service.get_analyst_price_targets_with_filters(req)
+
+
+@router.post(
+    "/analyst-price-targets",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=AnalystPTResponse,
+)
+@inject
+async def create_analyst_price_targets(
+    tickers: Optional[list[str]] = None,
+    target_date: Optional[dt.date] = dt.date.today(),
+    llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.create_analyst_price_targets(
+        tickers=tickers, target_date=target_date, llm_policy=llm_policy
+    )
+
+
+# ETF Weekly Flows
+@router.get("/etf/flows", response_model=ETFWeeklyFlowGetResponse)
+@inject
+async def get_etf_flows(
+    target_date: Optional[dt.date] = dt.date.today(),
+    provider: Optional[str] = None,
+    sector_only: Optional[bool] = False,
+    tickers: Optional[str] = None,
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    ticker_list = None
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",")]
+
+    req = ETFWeeklyFlowGetRequest(
+        target_date=target_date,
+        provider=provider,
+        sector_only=sector_only,
+        tickers=ticker_list,
+    )
+
+    return await websearch_service.get_etf_weekly_flows_with_filters(req)
+
+
+@router.post(
+    "/etf/flows",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=ETFWeeklyFlowResponse,
+)
+@inject
+async def create_etf_flows(
+    universe: Optional[list[str]] = None,
+    provider: Optional[str] = None,
+    target_date: Optional[dt.date] = dt.date.today(),
+    llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.create_etf_weekly_flows(
+        universe=universe, target_date=target_date, provider=provider, llm_policy=llm_policy
+    )
+
+
+# Liquidity Weekly
+@router.get("/liquidity", response_model=LiquidityWeeklyResponse)
+@inject
+def get_liquidity(
+    target_date: Optional[dt.date] = dt.date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return websearch_service.get_liquidity_weekly(target_date)
+
+
+@router.post(
+    "/liquidity",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=LiquidityWeeklyResponse,
+)
+@inject
+async def create_liquidity(
+    target_date: Optional[dt.date] = dt.date.today(),
+    llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.create_liquidity_weekly(target_date, llm_policy)
+
+
+# Market Breadth Daily
+@router.get("/market-breadth", response_model=MarketBreadthResponse)
+@inject
+def get_market_breadth_route(
+    target_date: Optional[dt.date] = dt.date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return websearch_service.get_market_breadth(target_date)
+
+
+@router.post(
+    "/market-breadth",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=MarketBreadthResponse,
+)
+@inject
+async def create_market_breadth_route(
+    target_date: Optional[dt.date] = dt.date.today(),
+    llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    target_date = validate_date(target_date if target_date else dt.date.today())
+    return await websearch_service.create_market_breadth_daily(target_date, llm_policy)
 
 
 @router.post(

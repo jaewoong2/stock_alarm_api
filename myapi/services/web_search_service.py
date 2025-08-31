@@ -1,7 +1,9 @@
 from datetime import date, timedelta
-from typing import Literal, Optional
+from typing import Literal, Optional, List, Tuple, Any, Type
 from fastapi import HTTPException
 import logging
+import hashlib
+import json
 
 from myapi.services.translate_service import TranslateService
 
@@ -23,6 +25,22 @@ from myapi.domain.news.news_schema import (
     ETFAnalysisGetResponse,
     ETFPortfolioData,
     ETFAnalystSummaryResponse,
+    InsiderTrendResponse,
+    InsiderTradeItem,
+    InsiderTrendGetRequest,
+    InsiderTrendGetResponse,
+    AnalystPTResponse,
+    AnalystPTItem,
+    AnalystPTGetRequest,
+    AnalystPTGetResponse,
+    ETFWeeklyFlowResponse,
+    ETFFlowItem,
+    ETFWeeklyFlowGetRequest,
+    ETFWeeklyFlowGetResponse,
+    LiquidityWeeklyResponse,
+    LiquidityPoint,
+    MarketBreadthResponse,
+    BreadthDailyPoint,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -38,6 +56,152 @@ class WebSearchService:
         self.websearch_repository = websearch_repository
         self.ai_service = ai_service
         self.translate_service = translate_service
+
+    def _hash_prompt(self, prompt: str) -> str:
+        return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+
+    def _pair_results_with_models(self, results: List[Any], provenance: List[dict]) -> List[tuple[Any, str | None]]:
+        models = [p.get("model") for p in provenance if p.get("used")]
+        paired: List[tuple[Any, str | None]] = []
+        for idx, r in enumerate(results):
+            m = models[idx] if idx < len(models) else None
+            paired.append((r, m))
+        return paired
+
+    def run_llm(
+        self,
+        policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+        prompt: str = "",
+        schema: Type[Any] | None = None,
+    ) -> Tuple[List[Any], str, List[dict]]:
+        resolved = policy
+        provenance: List[dict] = []
+        results: List[Any] = []
+
+        if policy == "AUTO":
+            resolved = "FALLBACK"
+
+        prompt_hash = self._hash_prompt(prompt)
+
+        def call_perplexity() -> Any:
+            if schema is None:
+                raise ValueError("schema is required for perplexity_completion")
+            r = self.ai_service.perplexity_completion(prompt=prompt, schema=schema)
+            provenance.append({"model": "PERPLEXITY", "prompt_hash": prompt_hash, "used": r is not None})
+            return r
+
+        def call_gemini() -> Any:
+            if schema is None:
+                raise ValueError("schema is required for gemini_search_grounding")
+            r = self.ai_service.gemini_search_grounding(prompt=prompt, schema=schema)
+            provenance.append({"model": "GEMINI", "prompt_hash": prompt_hash, "used": r is not None})
+            return r
+
+        try:
+            if resolved == "GEMINI":
+                r = call_gemini()
+                if r is not None:
+                    results.append(r)
+            elif resolved == "PERPLEXITY":
+                r = call_perplexity()
+                if r is not None:
+                    results.append(r)
+            elif resolved == "BOTH":
+                r1 = call_perplexity()
+                r2 = call_gemini()
+                if r1 is not None:
+                    results.append(r1)
+                if r2 is not None:
+                    results.append(r2)
+            elif resolved == "FALLBACK":
+                try:
+                    r = call_perplexity()
+                    if r is not None:
+                        results.append(r)
+                    else:
+                        raise ValueError("Empty response")
+                except Exception:
+                    r2 = call_gemini()
+                    if r2 is not None:
+                        results.append(r2)
+            elif resolved == "HYBRID":
+                r1 = None
+                try:
+                    r1 = call_perplexity()
+                except Exception:
+                    pass
+                r2 = None
+                try:
+                    r2 = call_gemini()
+                except Exception:
+                    pass
+                if r1 is not None:
+                    results.append(r1)
+                if r2 is not None:
+                    results.append(r2)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LLM invocation failed: {e}")
+
+        return results, resolved, provenance
+
+    def _merge_results(self, schema: Any, results: List[Any]) -> Any:
+        if not results:
+            return None
+        # If results are same type and have 'items', union items by JSON string
+        try:
+            first = results[0]
+            if hasattr(first, "items"):
+                seen = set()
+                merged_items = []
+                for r in results:
+                    try:
+                        for it in getattr(r, "items", []) or []:
+                            key = json.dumps(it.model_dump(mode="json"), sort_keys=True, ensure_ascii=False)
+                            if key not in seen:
+                                seen.add(key)
+                                merged_items.append(it)
+                    except Exception:
+                        continue
+                window = getattr(first, "window", None)
+                try:
+                    return schema(items=merged_items, window=window)
+                except Exception:
+                    return first
+            # LiquidityWeeklyResponse: merge series
+            if hasattr(first, "series_m2") and hasattr(first, "series_rrp"):
+                def merge_series(attr):
+                    seen_dates = set()
+                    out = []
+                    for r in results:
+                        for p in getattr(r, attr, []) or []:
+                            d = getattr(p, "date", None)
+                            if d and d not in seen_dates:
+                                seen_dates.add(d)
+                                out.append(p)
+                    out.sort(key=lambda x: getattr(x, "date", ""))
+                    return out
+
+                return schema(
+                    series_m2=merge_series("series_m2"),
+                    series_rrp=merge_series("series_rrp"),
+                    commentary=getattr(first, "commentary", None),
+                    window=getattr(first, "window", None),
+                )
+            # MarketBreadthResponse: merge series
+            if hasattr(first, "series"):
+                seen_dates = set()
+                out = []
+                for r in results:
+                    for p in getattr(r, "series", []) or []:
+                        d = getattr(p, "date", None)
+                        if d and d not in seen_dates:
+                            seen_dates.add(d)
+                            out.append(p)
+                out.sort(key=lambda x: getattr(x, "date", ""))
+                return schema(series=out, commentary=getattr(first, "commentary", None))
+        except Exception:
+            return results[0]
+        return results[0]
 
     def _build_prompt(
         self, today: str, source: Literal["Major", "Minor"] = "Major"
@@ -331,6 +495,36 @@ class WebSearchService:
 
         return prompt
 
+    def generate_insider_trend_prompt(self, tickers: list[str] | None, target_date: str) -> str:
+        ticker_list = ", ".join(sorted(set([t.upper() for t in tickers])) ) if tickers else "ALL"
+        return f"""
+        Today is {target_date}.
+        Task: Summarize insider transactions (SEC Form 4 or equivalent) in the last 7 days for tickers [{ticker_list}].
+        RULES:
+        - STRICT JSON ONLY (no prose). Use the exact keys below.
+        - Include ≥2 credible sources per item with confidence 0.0~1.0.
+        - Uppercase tickers. Use null when unknown.
+        SCHEMA:
+        {{
+          "items": [{{
+            "ticker": "AAPL",
+            "insider_name": "John Doe",
+            "insider_role": "CEO",
+            "action": "BUY",
+            "shares": 15000,
+            "est_value": 2550000.0,
+            "rationale": "Open market purchase after earnings beat",
+            "sources": ["SEC Form 4", "Bloomberg"],
+            "source_details": [{{"name": "SEC Form 4", "url": "https://...", "date": "{target_date}", "confidence": 0.95}}],
+            "source_confidence": 0.9,
+            "filing_url": "https://sec.gov/...",
+            "cik": "0000320193",
+            "date": "{target_date}"
+          }}],
+          "window": "YYYY-MM-DD~YYYY-MM-DD"
+        }}
+        """
+
     async def create_mahaney_analysis(
         self, tickers: list[str], target_date: date = date.today()
     ):
@@ -567,6 +761,532 @@ class WebSearchService:
             )
 
         return response
+
+    async def create_insider_trend(
+        self,
+        tickers: list[str] | None,
+        target_date: date = date.today(),
+        llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    ) -> InsiderTrendResponse:
+        prompt = self.generate_insider_trend_prompt(tickers, target_date.strftime("%Y-%m-%d"))
+        results, resolved_policy, provenance = self.run_llm(llm_policy, prompt, InsiderTrendResponse)
+
+        if not results or not isinstance(results[0], InsiderTrendResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        if llm_policy == "BOTH" and len(results) > 1:
+            # Store each model's items separately
+            window = getattr(results[0], "window", None)
+            for res, model in self._pair_results_with_models(results, provenance):
+                for item in res.items:
+                    payload = {
+                        "ai_model": model,
+                        "llm_policy": resolved_policy,
+                        "prompt_hash": self._hash_prompt(prompt),
+                        "provenance": provenance,
+                        "window": window,
+                        "ticker": item.ticker.upper() if item.ticker else None,
+                        "item": item.model_dump(),
+                    }
+                    self.websearch_repository.create_analysis(
+                        analysis_date=target_date,
+                        analysis=payload,
+                        name="insider_trend_weekly",
+                    )
+            # Return first for response
+            return results[0]
+
+        response: InsiderTrendResponse = (
+            self._merge_results(InsiderTrendResponse, results)
+            if llm_policy == "HYBRID" and len(results) >= 1
+            else results[0]
+        )
+
+        if self.translate_service:
+            try:
+                response = self.translate_service.translate_schema(response)
+            except Exception as e:
+                logger.warning(f"Failed to translate insider trend: {e}")
+
+        window = response.window
+
+        for item in response.items:
+            payload = {
+                "ai_model": "HYBRID" if llm_policy == "HYBRID" and len(results) > 1 else ("PERPLEXITY" if resolved_policy in ("PERPLEXITY", "FALLBACK") else "GEMINI"),
+                "llm_policy": resolved_policy,
+                "prompt_hash": self._hash_prompt(prompt),
+                "provenance": provenance,
+                "window": window,
+                "ticker": item.ticker.upper() if item.ticker else None,
+                "item": item.model_dump(),
+            }
+            self.websearch_repository.create_analysis(
+                analysis_date=target_date,
+                analysis=payload,
+                name="insider_trend_weekly",
+            )
+
+        return response
+
+    async def get_insider_trend_with_filters(
+        self, request: InsiderTrendGetRequest
+    ) -> InsiderTrendGetResponse:
+        target_date = request.target_date if request.target_date else date.today()
+
+        analyses = self.websearch_repository.get_all_analyses(
+            target_date=target_date,
+            name="insider_trend_weekly",
+            item_schema=None,
+            tickers=request.tickers,
+        )
+
+        items: List[InsiderTradeItem] = []
+        for a in analyses:
+            v = a.value
+            item = v.get("item") if isinstance(v, dict) else None
+            if not item:
+                continue
+            try:
+                it = InsiderTradeItem.model_validate(item)
+            except Exception:
+                continue
+            if request.action and it.action != request.action:
+                continue
+            items.append(it)
+
+        # sorting
+        if request.sort_by == "value":
+            items.sort(key=lambda x: (x.est_value or 0), reverse=(request.sort_order == "desc"))
+        elif request.sort_by == "date":
+            items.sort(key=lambda x: (x.date or ""), reverse=(request.sort_order == "desc"))
+
+        # limit
+        if request.limit is not None:
+            items = items[: max(0, int(request.limit))]
+
+        filtered_count = len(items)
+        total_count = filtered_count
+
+        return InsiderTrendGetResponse(
+            items=items,
+            total_count=total_count,
+            filtered_count=filtered_count,
+            actual_date=target_date,
+            is_exact_date_match=True,
+            request_params=request,
+        )
+
+    # ---------------------- Analyst Price Targets (Weekly) ----------------------
+    def generate_analyst_pt_prompt(self, tickers: list[str] | None, target_date: str) -> str:
+        ticker_list = ", ".join(sorted(set([t.upper() for t in tickers])) ) if tickers else "ALL"
+        return f"""
+        Today is {target_date}.
+        Task: For [{ticker_list}], summarize last 7 days analyst PT changes (UP/DOWN/INIT/DROP) with broker, rating, old/new PT, consensus, rationale and publish dates.
+        RULES:
+        - STRICT JSON ONLY. Use exact keys as below. Uppercase tickers.
+        - Include upside_pct = (new_pt/current_price - 1) if available; otherwise null.
+        - Provide ≥2 sources with confidence.
+        SCHEMA:
+        {{
+          "items": [{{
+            "ticker": "MSFT",
+            "action": "UP",
+            "broker": "Morgan Stanley",
+            "broker_rating": "Overweight",
+            "old_pt": 400.0,
+            "new_pt": 450.0,
+            "consensus": 430.0,
+            "upside_pct": 0.05,
+            "rationale": "AI revenue acceleration, Copilot monetization",
+            "sources": ["Morgan Stanley note", "WSJ"],
+            "source_details": [{{"name": "MS note", "url": "https://...", "date": "{target_date}", "confidence": 0.9}}],
+            "impact_score": 0.12,
+            "date": "{target_date}",
+            "published_at": "{target_date}"
+          }}],
+          "window": "YYYY-MM-DD~YYYY-MM-DD"
+        }}
+        """
+
+    async def create_analyst_price_targets(
+        self,
+        tickers: list[str] | None,
+        target_date: date = date.today(),
+        llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    ) -> AnalystPTResponse:
+        prompt = self.generate_analyst_pt_prompt(tickers, target_date.strftime("%Y-%m-%d"))
+        results, resolved_policy, provenance = self.run_llm(llm_policy, prompt, AnalystPTResponse)
+
+        if not results or not isinstance(results[0], AnalystPTResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        if llm_policy == "BOTH" and len(results) > 1:
+            window = getattr(results[0], "window", None)
+            for res, model in self._pair_results_with_models(results, provenance):
+                for item in res.items:
+                    payload = {
+                        "ai_model": model,
+                        "llm_policy": resolved_policy,
+                        "prompt_hash": self._hash_prompt(prompt),
+                        "provenance": provenance,
+                        "window": window,
+                        "ticker": item.ticker.upper() if item.ticker else None,
+                        "item": item.model_dump(),
+                    }
+                    self.websearch_repository.create_analysis(
+                        analysis_date=target_date,
+                        analysis=payload,
+                        name="analyst_price_targets_weekly",
+                    )
+            return results[0]
+
+        response: AnalystPTResponse = (
+            self._merge_results(AnalystPTResponse, results)
+            if llm_policy == "HYBRID" and len(results) >= 1
+            else results[0]
+        )
+
+        if self.translate_service:
+            try:
+                response = self.translate_service.translate_schema(response)
+            except Exception as e:
+                logger.warning(f"Failed to translate analyst PT: {e}")
+
+        window = response.window
+
+        for item in response.items:
+            payload = {
+                "ai_model": "HYBRID" if llm_policy == "HYBRID" and len(results) > 1 else ("PERPLEXITY" if resolved_policy in ("PERPLEXITY", "FALLBACK") else "GEMINI"),
+                "llm_policy": resolved_policy,
+                "prompt_hash": self._hash_prompt(prompt),
+                "provenance": provenance,
+                "window": window,
+                "ticker": item.ticker.upper() if item.ticker else None,
+                "item": item.model_dump(),
+            }
+            self.websearch_repository.create_analysis(
+                analysis_date=target_date,
+                analysis=payload,
+                name="analyst_price_targets_weekly",
+            )
+
+        return response
+
+    async def get_analyst_price_targets_with_filters(
+        self, request: AnalystPTGetRequest
+    ) -> AnalystPTGetResponse:
+        target_date = request.target_date if request.target_date else date.today()
+
+        analyses = self.websearch_repository.get_all_analyses(
+            target_date=target_date,
+            name="analyst_price_targets_weekly",
+            item_schema=None,
+            tickers=request.tickers,
+        )
+
+        items: List[AnalystPTItem] = []
+        for a in analyses:
+            v = a.value
+            item = v.get("item") if isinstance(v, dict) else None
+            if not item:
+                continue
+            try:
+                it = AnalystPTItem.model_validate(item)
+            except Exception:
+                continue
+            if request.action and it.action != request.action:
+                continue
+            items.append(it)
+
+        # sorting
+        def impact(it: AnalystPTItem) -> float:
+            try:
+                if getattr(it, "impact_score", None) is not None:
+                    return float(it.impact_score or 0.0)
+                if it.action in ("UP", "DOWN") and it.old_pt and it.new_pt and it.old_pt != 0:
+                    return abs((it.new_pt - it.old_pt) / it.old_pt)
+                if it.action in ("INIT", "DROP"):
+                    base = 0.3
+                    if it.consensus and it.new_pt and it.consensus != 0:
+                        base += abs((it.new_pt - it.consensus) / it.consensus)
+                    return base
+            except Exception:
+                return 0.0
+            return 0.0
+
+        if request.sort_by == "impact":
+            items.sort(key=lambda x: impact(x), reverse=(request.sort_order == "desc"))
+        elif request.sort_by == "date":
+            items.sort(key=lambda x: (x.date or ""), reverse=(request.sort_order == "desc"))
+
+        # limit
+        if request.limit is not None:
+            items = items[: max(0, int(request.limit))]
+
+        filtered_count = len(items)
+        total_count = filtered_count
+
+        return AnalystPTGetResponse(
+            items=items,
+            total_count=total_count,
+            filtered_count=filtered_count,
+            actual_date=target_date,
+            is_exact_date_match=True,
+            request_params=request,
+        )
+
+    # ---------------------- ETF Weekly Flows ----------------------
+    def generate_etf_weekly_flows_prompt(self, universe: list[str] | None, target_date: str, provider: str | None = None) -> str:
+        uni = ", ".join(sorted(set([t.upper() for t in universe])) ) if universe else "ALL"
+        return f"""
+        Today is {target_date}.
+        Task: Provide weekly ETF flows summary for [{uni}] including top net inflow/outflow, volume change leaders, and sector/theme grouping.
+        If data provider is specified use it as primary reference: {provider or "AUTO"}.
+        RULES:
+        - STRICT JSON ONLY. Use exact keys as below.
+        - Include sector_inferred/evidence when sector is inferred by LLM.
+        - Provide source_details with confidence for each item.
+        JSON format:
+        {{
+          "items": [{{
+            "ticker": "QQQ",
+            "name": "Invesco QQQ Trust",
+            "net_flow": 1500000000.0,
+            "flow_1w": 2200000000.0,
+            "volume_change": 0.35,
+            "sector": "Technology",
+            "themes": ["AI", "Megacap Growth"],
+            "sector_inferred": false,
+            "evidence": null,
+            "source": "ProviderX",
+            "source_details": [{{"name": "ProviderX", "url": "https://...", "date": "{target_date}", "confidence": 0.9}}]
+          }}],
+          "window": "YYYY-MM-DD~YYYY-MM-DD"
+        }}
+        """
+
+    async def create_etf_weekly_flows(
+        self,
+        universe: list[str] | None,
+        target_date: date = date.today(),
+        provider: str | None = None,
+        llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    ) -> ETFWeeklyFlowResponse:
+        prompt = self.generate_etf_weekly_flows_prompt(universe, target_date.strftime("%Y-%m-%d"), provider)
+        results, resolved_policy, provenance = self.run_llm(llm_policy, prompt, ETFWeeklyFlowResponse)
+
+        if not results or not isinstance(results[0], ETFWeeklyFlowResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        if llm_policy == "BOTH" and len(results) > 1:
+            window = getattr(results[0], "window", None)
+            for res, model in self._pair_results_with_models(results, provenance):
+                for item in res.items:
+                    payload = {
+                        "ai_model": model,
+                        "llm_policy": resolved_policy,
+                        "prompt_hash": self._hash_prompt(prompt),
+                        "provenance": provenance,
+                        "window": window,
+                        "provider": provider,
+                        "ticker": item.ticker.upper() if item.ticker else None,
+                        "item": item.model_dump(),
+                    }
+                    self.websearch_repository.create_analysis(
+                        analysis_date=target_date,
+                        analysis=payload,
+                        name="etf_flows_weekly",
+                    )
+            return results[0]
+
+        response: ETFWeeklyFlowResponse = (
+            self._merge_results(ETFWeeklyFlowResponse, results)
+            if llm_policy == "HYBRID" and len(results) >= 1
+            else results[0]
+        )
+
+        if self.translate_service:
+            try:
+                response = self.translate_service.translate_schema(response)
+            except Exception as e:
+                logger.warning(f"Failed to translate ETF flows: {e}")
+
+        window = response.window
+
+        for item in response.items:
+            payload = {
+                "ai_model": "HYBRID" if len(results) > 1 and llm_policy in ("BOTH", "HYBRID") else ("PERPLEXITY" if resolved_policy in ("PERPLEXITY", "FALLBACK") else "GEMINI"),
+                "llm_policy": resolved_policy,
+                "prompt_hash": self._hash_prompt(prompt),
+                "provenance": provenance,
+                "window": window,
+                "provider": provider,
+                "ticker": item.ticker.upper() if item.ticker else None,
+                "item": item.model_dump(),
+            }
+            self.websearch_repository.create_analysis(
+                analysis_date=target_date,
+                analysis=payload,
+                name="etf_flows_weekly",
+            )
+
+        return response
+
+    async def get_etf_weekly_flows_with_filters(
+        self, request: ETFWeeklyFlowGetRequest
+    ) -> ETFWeeklyFlowGetResponse:
+        target_date = request.target_date if request.target_date else date.today()
+
+        analyses = self.websearch_repository.get_all_analyses(
+            target_date=target_date,
+            name="etf_flows_weekly",
+            item_schema=None,
+            tickers=request.tickers,
+        )
+
+        items: List[ETFFlowItem] = []
+        for a in analyses:
+            v = a.value
+            item = v.get("item") if isinstance(v, dict) else None
+            if not item:
+                continue
+            try:
+                it = ETFFlowItem.model_validate(item)
+            except Exception:
+                continue
+            if request.provider and isinstance(v, dict) and v.get("provider") and v.get("provider") != request.provider:
+                continue
+            if request.sector_only and not (it.sector or (it.themes and len(it.themes) > 0)):
+                continue
+            items.append(it)
+
+        filtered_count = len(items)
+        total_count = filtered_count
+
+        return ETFWeeklyFlowGetResponse(
+            items=items,
+            total_count=total_count,
+            filtered_count=filtered_count,
+            actual_date=target_date,
+            is_exact_date_match=True,
+            request_params=request,
+        )
+
+    # ---------------------- Liquidity Weekly ----------------------
+    def generate_liquidity_weekly_prompt(self, target_date: str) -> str:
+        return f"""
+        Today is {target_date}.
+        Summarize US liquidity weekly with M2 and Reverse Repo (RRP) time series for recent 4-8 weeks and concise commentary.
+        RULES: STRICT JSON ONLY. Use primary sources (FRED/NYFRB) and include sources list with confidence.
+        JSON:
+        {{
+          "series_m2": [{{"date": "YYYY-MM-DD", "m2": 0}}],
+          "series_rrp": [{{"date": "YYYY-MM-DD", "rrp": 0}}],
+          "commentary": "",
+          "window": "YYYY-MM-DD~YYYY-MM-DD",
+          "sources": [{{"name": "FRED", "url": "https://fred.stlouisfed.org/...", "date": "{target_date}", "confidence": 0.95}}]
+        }}
+        """
+
+    async def create_liquidity_weekly(
+        self,
+        target_date: date = date.today(),
+        llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    ) -> LiquidityWeeklyResponse:
+        prompt = self.generate_liquidity_weekly_prompt(target_date.strftime("%Y-%m-%d"))
+        results, resolved_policy, provenance = self.run_llm(llm_policy, prompt, LiquidityWeeklyResponse)
+
+        if not results or not isinstance(results[0], LiquidityWeeklyResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        response: LiquidityWeeklyResponse = (
+            self._merge_results(LiquidityWeeklyResponse, results)
+            if llm_policy == "HYBRID" and len(results) >= 1
+            else results[0]
+        )
+        if self.translate_service:
+            try:
+                response = self.translate_service.translate_schema(response)
+            except Exception as e:
+                logger.warning(f"Failed to translate liquidity weekly: {e}")
+
+        # Store as a single snapshot for the day
+        self.websearch_repository.create_analysis(
+            analysis_date=target_date,
+            analysis=response.model_dump(),
+            name="us_liquidity_weekly",
+        )
+
+        return response
+
+    def get_liquidity_weekly(self, target_date: date = date.today()) -> LiquidityWeeklyResponse:
+        cached = self.websearch_repository.get_analysis_by_date(
+            target_date, name="us_liquidity_weekly", schema=None
+        )
+        if cached and cached.value:
+            try:
+                return LiquidityWeeklyResponse.model_validate(cached.value)
+            except Exception:
+                pass
+        return LiquidityWeeklyResponse(series_m2=[], series_rrp=[], commentary=None)
+
+    # ---------------------- Market Breadth Daily ----------------------
+    def generate_market_breadth_prompt(self, target_date: str) -> str:
+        return f"""
+        Today is {target_date}.
+        Provide daily market breadth core metrics (VIX, advancers/decliners, new highs/lows, TRIN) and short commentary.
+        RULES: STRICT JSON ONLY. Include sources with confidence.
+        JSON:
+        {{
+          "series": [{{
+             "date": "YYYY-MM-DD", "vix": 0, "advancers": 0, "decliners": 0, "new_highs": 0, "new_lows": 0, "trin": 0
+          }}],
+          "commentary": "",
+          "sources": [{{"name": "CBOE", "url": "https://...", "date": "{target_date}", "confidence": 0.9}}]
+        }}
+        """
+
+    async def create_market_breadth_daily(
+        self,
+        target_date: date = date.today(),
+        llm_policy: Literal["AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"] = "AUTO",
+    ) -> MarketBreadthResponse:
+        prompt = self.generate_market_breadth_prompt(target_date.strftime("%Y-%m-%d"))
+        results, resolved_policy, provenance = self.run_llm(llm_policy, prompt, MarketBreadthResponse)
+
+        if not results or not isinstance(results[0], MarketBreadthResponse):
+            raise ValueError("Invalid response format from AI service")
+
+        response: MarketBreadthResponse = (
+            self._merge_results(MarketBreadthResponse, results)
+            if llm_policy == "HYBRID" and len(results) >= 1
+            else results[0]
+        )
+
+        if self.translate_service:
+            try:
+                response = self.translate_service.translate_schema(response)
+            except Exception as e:
+                logger.warning(f"Failed to translate market breadth: {e}")
+
+        self.websearch_repository.create_analysis(
+            analysis_date=target_date,
+            analysis=response.model_dump(),
+            name="market_breadth_daily",
+        )
+
+        return response
+
+    def get_market_breadth(self, target_date: date = date.today()) -> MarketBreadthResponse:
+        cached = self.websearch_repository.get_analysis_by_date(
+            target_date, name="market_breadth_daily", schema=None
+        )
+        if cached and cached.value:
+            try:
+                return MarketBreadthResponse.model_validate(cached.value)
+            except Exception:
+                pass
+        return MarketBreadthResponse(series=[], commentary=None)
 
     async def get_etf_analysis(
         self, target_date: date = date.today(), etf_tickers: Optional[list[str]] = None

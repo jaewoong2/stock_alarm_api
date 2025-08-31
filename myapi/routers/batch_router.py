@@ -80,6 +80,55 @@ def execute_batch_jobs(
             },
             "group_id": "etf-portfolio",
         },
+        {
+            "path": "news/insider-trend",
+            "method": "POST",
+            "body": {
+                "tickers": None,
+                "target_date": today_str,
+                "llm_policy": "AUTO",
+            },
+            "group_id": "insider-trend",
+        },
+        {
+            "path": "news/analyst-price-targets",
+            "method": "POST",
+            "body": {
+                "tickers": None,
+                "target_date": today_str,
+                "llm_policy": "AUTO",
+            },
+            "group_id": "analyst-pt",
+        },
+        {
+            "path": "news/etf/flows",
+            "method": "POST",
+            "body": {
+                "universe": None,
+                "provider": None,
+                "target_date": today_str,
+                "llm_policy": "AUTO",
+            },
+            "group_id": "etf-flows",
+        },
+        {
+            "path": "news/liquidity",
+            "method": "POST",
+            "body": {
+                "target_date": today_str,
+                "llm_policy": "AUTO",
+            },
+            "group_id": "liquidity",
+        },
+        {
+            "path": "news/market-breadth",
+            "method": "POST",
+            "body": {
+                "target_date": today_str,
+                "llm_policy": "AUTO",
+            },
+            "group_id": "breadth",
+        },
     ]
 
     # 티커를 5개씩 분할하여 translate/signals 작업 추가
