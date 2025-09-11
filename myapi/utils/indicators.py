@@ -11,11 +11,11 @@ matplotlib.use(
 import mplfinance as mpf
 
 
-def calculate_moving_average(df: pd.DataFrame, window: int) -> pd.Series:
+def calculate_moving_average(df: pd.DataFrame, window: int):
     return df["Close"].rolling(window=window).mean()
 
 
-def calculate_rsi(df: pd.DataFrame, window: int = 14) -> pd.Series:
+def calculate_rsi(df: pd.DataFrame, window: int = 14):
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -41,7 +41,7 @@ def calculate_bollinger_bands(df: pd.DataFrame, window=20, num_std=2):
     return ma, upper_band, lower_band
 
 
-def calculate_atr(df: pd.DataFrame, window=14) -> pd.Series:
+def calculate_atr(df: pd.DataFrame, window=14):
     high_low = df["High"] - df["Low"]
     high_close = (df["High"] - df["Close"].shift()).abs()
     low_close = (df["Low"] - df["Close"].shift()).abs()
@@ -54,90 +54,96 @@ def calculate_atr(df: pd.DataFrame, window=14) -> pd.Series:
 def calculate_supertrend(df: pd.DataFrame, atr_length=10, multiplier=3.0):
     """
     슈퍼트렌드 지표를 계산합니다.
-    
+
     Args:
         df: OHLCV 데이터프레임 (High, Low, Close 컬럼 필요)
         atr_length: ATR 계산 기간 (기본값: 10)
         multiplier: ATR 배수 (기본값: 3.0)
-    
+
     Returns:
         tuple: (supertrend, trend) - 슈퍼트렌드 값과 추세 방향 (1: 상승, -1: 하락)
     """
     # hl2 계산 (High + Low) / 2
     hl2 = (df["High"] + df["Low"]) / 2
-    
+
     # ATR 계산
     atr = calculate_atr(df, atr_length)
-    
+
     # 기본 상하단 밴드 계산
     basic_upper_band = hl2 + (multiplier * atr)
     basic_lower_band = hl2 - (multiplier * atr)
-    
+
     # 최종 밴드 계산을 위한 초기화
     upper_band = pd.Series(index=df.index, dtype=float)
     lower_band = pd.Series(index=df.index, dtype=float)
     supertrend = pd.Series(index=df.index, dtype=float)
     trend = pd.Series(index=df.index, dtype=int)
-    
+
     # 첫 번째 값 설정
     upper_band.iloc[0] = basic_upper_band.iloc[0]
     lower_band.iloc[0] = basic_lower_band.iloc[0]
     trend.iloc[0] = -1
     supertrend.iloc[0] = upper_band.iloc[0]
-    
+
     # 각 시점별로 계산
     for i in range(1, len(df)):
         # 최종 밴드 계산
-        if (basic_upper_band.iloc[i] < upper_band.iloc[i-1] or 
-            df["Close"].iloc[i-1] > upper_band.iloc[i-1]):
+        if (
+            basic_upper_band.iloc[i] < upper_band.iloc[i - 1]
+            or df["Close"].iloc[i - 1] > upper_band.iloc[i - 1]
+        ):
             upper_band.iloc[i] = basic_upper_band.iloc[i]
         else:
-            upper_band.iloc[i] = upper_band.iloc[i-1]
-            
-        if (basic_lower_band.iloc[i] > lower_band.iloc[i-1] or 
-            df["Close"].iloc[i-1] < lower_band.iloc[i-1]):
+            upper_band.iloc[i] = upper_band.iloc[i - 1]
+
+        if (
+            basic_lower_band.iloc[i] > lower_band.iloc[i - 1]
+            or df["Close"].iloc[i - 1] < lower_band.iloc[i - 1]
+        ):
             lower_band.iloc[i] = basic_lower_band.iloc[i]
         else:
-            lower_band.iloc[i] = lower_band.iloc[i-1]
-        
+            lower_band.iloc[i] = lower_band.iloc[i - 1]
+
         # 추세 결정
-        if supertrend.iloc[i-1] == upper_band.iloc[i-1]:
+        if supertrend.iloc[i - 1] == upper_band.iloc[i - 1]:
             trend.iloc[i] = 1 if df["Close"].iloc[i] > upper_band.iloc[i] else -1
         else:
             trend.iloc[i] = -1 if df["Close"].iloc[i] < lower_band.iloc[i] else 1
-        
+
         # 슈퍼트렌드 값 설정
-        supertrend.iloc[i] = lower_band.iloc[i] if trend.iloc[i] == 1 else upper_band.iloc[i]
-    
+        supertrend.iloc[i] = (
+            lower_band.iloc[i] if trend.iloc[i] == 1 else upper_band.iloc[i]
+        )
+
     return supertrend, trend
 
 
 def check_supertrend_signals(df: pd.DataFrame, atr_length=10, multiplier=3.0):
     """
     슈퍼트렌드 매수/매도 신호를 확인합니다.
-    
+
     Args:
         df: OHLCV 데이터프레임
         atr_length: ATR 계산 기간
         multiplier: ATR 배수
-    
+
     Returns:
         dict: 슈퍼트렌드 신호 정보
     """
     supertrend, trend = calculate_supertrend(df, atr_length, multiplier)
-    
+
     # 추세 변화 감지
     trend_change = trend.diff()
-    
+
     # 현재 추세와 신호
     current_trend = trend.iloc[-1] if len(trend) > 0 else 0
     current_supertrend = supertrend.iloc[-1] if len(supertrend) > 0 else 0
     current_close = df["Close"].iloc[-1] if len(df) > 0 else 0
-    
+
     # 최근 신호 확인 (마지막 몇 개 바에서)
     buy_signal = False
     sell_signal = False
-    
+
     if len(trend_change) > 1:
         # 하락에서 상승으로 전환 (매수 신호)
         if trend_change.iloc[-1] == 2:  # -1에서 1로 변화
@@ -145,7 +151,7 @@ def check_supertrend_signals(df: pd.DataFrame, atr_length=10, multiplier=3.0):
         # 상승에서 하락으로 전환 (매도 신호)
         elif trend_change.iloc[-1] == -2:  # 1에서 -1로 변화
             sell_signal = True
-    
+
     return {
         "supertrend": current_supertrend,
         "trend": current_trend,
@@ -154,7 +160,7 @@ def check_supertrend_signals(df: pd.DataFrame, atr_length=10, multiplier=3.0):
         "sell_signal": sell_signal,
         "atr_length": atr_length,
         "multiplier": multiplier,
-        "triggered": buy_signal or sell_signal
+        "triggered": buy_signal or sell_signal,
     }
 
 
