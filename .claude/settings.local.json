@@ -9,7 +9,8 @@
       "mcp__serena__search_for_pattern",
       "mcp__serena__find_symbol",
       "mcp__serena__create_text_file",
-      "mcp__serena__replace_regex"
+      "mcp__serena__replace_regex",
+      "WebFetch(domain:finance.yahoo.com)"
     ]
   },
   "enableAllProjectMcpServers": true,
