@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Literal, Optional, Any
+from typing import List, Literal, Optional, Any, Union
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, case
 
@@ -40,8 +40,16 @@ class WebSearchResultRepository:
             query = self.db_session.query(WebSearchResult).filter(
                 WebSearchResult.result_type == result_type
             )
+
             if ticker != "" and ticker is not None:
-                query = query.filter(WebSearchResult.ticker == ticker)
+
+                tickers = ticker.split(",")
+
+                if tickers and len(tickers) > 1:
+                    query = query.filter(WebSearchResult.ticker.in_(tickers))
+                elif isinstance(ticker, str) and ticker.strip() != "":
+                    ticker = ticker.strip().upper()
+                    query = query.filter(WebSearchResult.ticker == ticker)
 
             if start_date:
                 query = query.filter(WebSearchResult.created_at >= start_date)
@@ -51,7 +59,25 @@ class WebSearchResultRepository:
 
             query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
 
-            return query.all()
+            result = query.all()
+
+            if len(result) == 0:
+                if result_type == "ticker" and ticker:
+                    query = self.db_session.query(WebSearchResult).filter(
+                        WebSearchResult.result_type == result_type
+                    )
+
+                    if tickers and len(tickers) > 0:
+                        query = query.filter(WebSearchResult.ticker.in_(tickers))
+                    else:
+                        ticker = ticker.strip().upper()
+                        query = query.filter(WebSearchResult.ticker == ticker)
+
+                    query = query.order_by(WebSearchResult.created_at.desc()).limit(30)
+
+                    result = query.all()
+
+            return result
         except Exception as e:
             self.db_session.rollback()
             raise e
@@ -237,7 +263,9 @@ class WebSearchResultRepository:
                 else:
                     # 일반 분석의 경우 ticker 필드로 필터링
                     ticker_filters = [
-                        text(f"value->>'ticker' = :ticker_{i}").params(**{f"ticker_{i}": ticker})
+                        text(f"value->>'ticker' = :ticker_{i}").params(
+                            **{f"ticker_{i}": ticker}
+                        )
                         for i, ticker in enumerate(tickers)
                     ]
                     query = query.filter(or_(*ticker_filters))
