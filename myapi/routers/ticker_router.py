@@ -39,7 +39,7 @@ async def get_ticker_by_symbol(
     symbol: str,
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
-    if hasattr(ticker_service, 'get_ticker_by_symbol_async'):
+    if hasattr(ticker_service, "get_ticker_by_symbol_async"):
         ticker = await ticker_service.get_ticker_by_symbol_async(symbol)
     else:
         ticker = ticker_service.get_ticker_by_symbol(symbol)
@@ -72,7 +72,6 @@ def delete_ticker(
     return {"message": "Ticker deleted successfully"}
 
 
-# 새로운 엔드포인트: 특정 날짜의 티커 정보 조회
 @router.get("/by-date", response_model=TickerResponse)
 @inject
 def get_ticker_by_date(
@@ -98,7 +97,7 @@ async def get_ticker_changes(
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
     # 심볼이 존재하는지 확인
-    if hasattr(ticker_service, 'get_ticker_by_symbol_async'):
+    if hasattr(ticker_service, "get_ticker_by_symbol_async"):
         ticker = await ticker_service.get_ticker_by_symbol_async(query.symbol)
     else:
         ticker = ticker_service.get_ticker_by_symbol(query.symbol)
@@ -108,8 +107,10 @@ async def get_ticker_changes(
         )
 
     # 날짜 리스트에 대한 변화율 조회
-    if hasattr(ticker_service, 'get_ticker_changes_async'):
-        changes = await ticker_service.get_ticker_changes_async(query.symbol, query.dates)
+    if hasattr(ticker_service, "get_ticker_changes_async"):
+        changes = await ticker_service.get_ticker_changes_async(
+            query.symbol, query.dates
+        )
     else:
         changes = ticker_service.get_ticker_changes(query.symbol, query.dates)
     if not changes:
@@ -126,7 +127,7 @@ async def get_ticker(
     ticker_id: int,
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
-    if hasattr(ticker_service, 'get_ticker_async'):
+    if hasattr(ticker_service, "get_ticker_async"):
         ticker = await ticker_service.get_ticker_async(ticker_id)
     else:
         ticker = ticker_service.get_ticker(ticker_id)
@@ -149,14 +150,14 @@ async def create_ticker(
     ticker: TickerCreate,
     ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
 ):
-    if hasattr(ticker_service, 'get_ticker_by_symbol_async'):
+    if hasattr(ticker_service, "get_ticker_by_symbol_async"):
         existing = await ticker_service.get_ticker_by_symbol_async(ticker.symbol)
     else:
         existing = ticker_service.get_ticker_by_symbol(ticker.symbol)
     if existing:
         raise HTTPException(status_code=400, detail="Symbol already registered")
 
-    if hasattr(ticker_service, 'create_ticker_async'):
+    if hasattr(ticker_service, "create_ticker_async"):
         return await ticker_service.create_ticker_async(ticker)
     else:
         return ticker_service.create_ticker(ticker)
@@ -176,7 +177,7 @@ async def get_latest_tickers_with_changes(
     """
     try:
         # 비동기 메서드 사용 (있다면) 또는 기존 메서드 사용
-        if hasattr(ticker_service, 'get_latest_tickers_with_changes_async'):
+        if hasattr(ticker_service, "get_latest_tickers_with_changes_async"):
             tickers = await ticker_service.get_latest_tickers_with_changes_async()
         else:
             tickers = ticker_service.get_latest_tickers_with_changes()
@@ -186,8 +187,9 @@ async def get_latest_tickers_with_changes(
 
         # 병렬로 시그널 정보 조회 - 배치 처리로 N+1 쿼리 문제 해결
         import asyncio
+
         signal_tasks = []
-        
+
         for ticker in tickers:
             if ticker.date:
                 yesterday = ticker.date - timedelta(days=1)
@@ -203,7 +205,9 @@ async def get_latest_tickers_with_changes(
 
             # 시그널 정보를 티커에 매핑
             for i, ticker in enumerate(tickers):
-                if i < len(signal_results) and not isinstance(signal_results[i], Exception):
+                if i < len(signal_results) and not isinstance(
+                    signal_results[i], Exception
+                ):
                     signals = signal_results[i]
                     if signals and isinstance(signals, list) and len(signals) > 0:
                         ticker.signal = signals[0].model_dump()
@@ -287,9 +291,11 @@ def get_signal_accuracy(
             raise HTTPException(status_code=404, detail="등록된 티커가 없습니다")
 
         # 시그널 정확도 조회
-        _signals = db_signal_service.get_all_signals(GetSignalRequest())  # 사용하지 않으므로 _로 표시
+        _signals = db_signal_service.get_all_signals(
+            GetSignalRequest()
+        )  # 사용하지 않으므로 _로 표시
         _tickers = ticker_service.get_all_tickers()  # 사용하지 않으므로 _로 표시
-        
+
         # TODO: 실제 시그널 정확도 계산 로직 구현 필요
         return []
 
@@ -352,5 +358,3 @@ def get_tickers_ordered_by(
     )
 
     return response
-
-
