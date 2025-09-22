@@ -56,211 +56,112 @@ DefaultStrategies: List[Strategy] = [
     "SUPERTREND_SELL",
 ]
 
-DefaultTickers = [
-    "CRWV",
-    "SPY",
-    "QQQ",
-    "AMAT",
-    "AMD",
-    "ANET",
-    "ASML",
-    "AVGO",
-    "COHR",
-    "GFS",
-    "KLAC",
-    "MRVL",
-    "MU",
-    "NVDA",
-    "NVMI",
-    "ONTO",
-    "SMCI",
-    "STX",
-    "TSM",
-    "VRT",
-    "WDC",
-    "AXON",
-    "LMT",
-    "NOC",
-    "RCAT",
-    "AFRM",
-    "APP",
-    "COIN",
-    "HOOD",
-    "IREN",
-    "MQ",
-    "MSTR",
-    "SOFI",
-    "TOST",
-    "CEG",
-    "FSLR",
-    "LNG",
-    "NRG",
-    "OKLO",
-    "PWR",
-    "SMR",
-    "VST",
-    "CRWD",
-    "FTNT",
-    "GTLB",
-    "NET",
-    "OKTA",
-    "PANW",
-    "S",
-    "TENB",
-    "ZS",
-    "AAPL",
-    "ADBE",
-    "ADSK",
-    "AI",
-    "AMZN",
-    "ASAN",
-    "BILL",
-    "CRM",
-    "DDOG",
-    "DOCN",
-    "GOOGL",
-    "HUBS",
-    "META",
-    "MNDY",
-    "MSFT",
-    "NOW",
-    "PCOR",
-    "PLTR",
-    "SNOW",
-    "VEEV",
-    "IONQ",
-    "QBTS",
-    "RGTI",
-    "PL",
-    "RKLB",
-    "LUNR",
-    "ACHR",
-    "ARBE",
-    "JOBY",
-    "TSLA",
-    "UBER",
-    "ORCL",
-    "CFLT",
-    "CRNC",
-    "DXCM",
-    "INTU",
-    "IOT",
-    "LRCX",
-    "NFLX",
-    "PODD",
-    "PSTG",
-    "RBLX",
-    "RDDT",
-    "SERV",
-    "SHOP",
-    "SOUN",
-    "TDOC",
-    "PATH",
-    "DXYZ",
-    "NKE",
-]
-# * CRWV: CoreWeave, Inc.
-#    * SPY: SPDR S&P 500 ETF Trust
-#    * QQQ: Invesco QQQ Trust, Series 1
-#    * AMAT: Applied Materials, Inc.
-#    * AMD: Advanced Micro Devices, Inc.
-#    * ANET: Arista Networks, Inc.
-#    * ASML: ASML Holding N.V.
-#    * AVGO: Broadcom Inc.
-#    * COHR: Coherent Corp.
-#    * GFS: GlobalFoundries Inc.
-#    * KLAC: KLA Corporation
-#    * MRVL: Marvell Technology, Inc.
-#    * MU: Micron Technology, Inc.
-#    * NVDA: NVIDIA Corporation
-#    * NVMI: Nova Ltd.
-#    * ONTO: Onto Innovation Inc.
-#    * SMCI: Super Micro Computer, Inc.
-#    * STX: Seagate Technology Holdings plc
-#    * TSM: Taiwan Semiconductor Manufacturing Company Limited
-#    * VRT: Vertiv Holdings Co
-#    * WDC: Western Digital Corporation
-#    * AXON: Axon Enterprise, Inc.
-#    * LMT: Lockheed Martin Corporation
-#    * NOC: Northrop Grumman Corporation
-#    * RCAT: Red Cat Holdings, Inc.
-#    * AFRM: Affirm Holdings, Inc.
-#    * APP: AppLovin Corporation
-#    * COIN: Coinbase Global, Inc.
-#    * HOOD: Robinhood Markets, Inc.
-#    * IREN: Iris Energy Limited
-#    * MQ: Marqeta, Inc.
-#    * MSTR: MicroStrategy Incorporated
-#    * SOFI: SoFi Technologies, Inc.
-#    * TOST: Toast, Inc.
-#    * CEG: Constellation Energy Corporation
-#    * FSLR: First Solar, Inc.
-#    * LNG: Cheniere Energy, Inc.
-#    * NRG: NRG Energy, Inc.
-#    * OKLO: Oklo Inc.
-#    * PWR: Quanta Services, Inc.
-#    * SMR: NuScale Power Corporation
-#    * VST: Vistra Corp.
-#    * CRWD: CrowdStrike Holdings, Inc.
-#    * FTNT: Fortinet, Inc.
-#    * GTLB: GitLab Inc.
-#    * NET: Cloudflare, Inc.
-#    * OKTA: Okta, Inc.
-#    * PANW: Palo Alto Networks, Inc.
-#    * S: SentinelOne, Inc.
-#    * TENB: Tenable Holdings, Inc.
-#    * ZS: Zscaler, Inc.
-#    * AAPL: Apple Inc.
-#    * ADBE: Adobe Inc.
-#    * ADSK: Autodesk, Inc.
-#    * AI: C3.ai, Inc.
-#    * AMZN: Amazon.com, Inc.
-#    * ASAN: Asana, Inc.
-#    * BILL: BILL Holdings, Inc.
-#    * CRM: Salesforce, Inc.
-#    * DDOG: Datadog, Inc.
-#    * DOCN: DigitalOcean Holdings, Inc.
-#    * GOOGL: Alphabet Inc.
-#    * HUBS: HubSpot, Inc.
-#    * META: Meta Platforms, Inc.
-#    * MNDY: monday.com Ltd.
-#    * MSFT: Microsoft Corporation
-#    * NOW: ServiceNow, Inc.
-#    * PCOR: Procore Technologies, Inc.
-#    * PLTR: Palantir Technologies Inc.
-#    * SNOW: Snowflake Inc.
-#    * VEEV: Veeva Systems Inc.
-#    * IONQ: IonQ, Inc.
-#    * QBTS: D-Wave Quantum Inc.
-#    * RGTI: Rigetti Computing, Inc.
-#    * PL: Planet Labs PBC
-#    * RKLB: Rocket Lab USA, Inc.
-#    * LUNR: Intuitive Machines, Inc.
-#    * ACHR: Archer Aviation Inc.
-#    * ARBE: Arbe Robotics Ltd.
-#    * JOBY: Joby Aviation, Inc.
-#    * TSLA: Tesla, Inc.
-#    * UBER: Uber Technologies, Inc.
-#    * ORCL: Oracle Corporation
-#    * CFLT: Confluent, Inc.
-#    * CRNC: Cerence Inc.
-#    * DXCM: DexCom, Inc.
-#    * INTU: Intuit Inc.
-#    * IOT: Samsara Inc.
-#    * LRCX: Lam Research Corporation
-#    * NFLX: Netflix, Inc.
-#    * PODD: Insulet Corporation
-#    * PSTG: Pure Storage, Inc.
-#    * RBLX: Roblox Corporation
-#    * RDDT: Reddit, Inc.
-#    * SERV: ServiceMaster Global Holdings, Inc.
-#    * SHOP: Shopify Inc.
-#    * SOUN: SoundHound AI, Inc.
-#    * TDOC: Teladoc Health, Inc.
-#    * PATH: UiPath Inc.
-#    * DXYZ: Destiny Tech100 Inc.
-#    * NKE: NIKE, Inc.
+# Mapping used when we need the human readable name for a ticker symbol.
+DefaultTickerNames: Dict[str, str] = {
+    "CRWV": "CoreWeave, Inc.",
+    "SPY": "SPDR S&P 500 ETF Trust",
+    "QQQ": "Invesco QQQ Trust, Series 1",
+    "AMAT": "Applied Materials, Inc.",
+    "AMD": "Advanced Micro Devices, Inc.",
+    "ANET": "Arista Networks, Inc.",
+    "ASML": "ASML Holding N.V.",
+    "AVGO": "Broadcom Inc.",
+    "COHR": "Coherent Corp.",
+    "GFS": "GlobalFoundries Inc.",
+    "KLAC": "KLA Corporation",
+    "MRVL": "Marvell Technology, Inc.",
+    "MU": "Micron Technology, Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "NVMI": "Nova Ltd.",
+    "ONTO": "Onto Innovation Inc.",
+    "SMCI": "Super Micro Computer, Inc.",
+    "STX": "Seagate Technology Holdings plc",
+    "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
+    "VRT": "Vertiv Holdings Co",
+    "WDC": "Western Digital Corporation",
+    "AXON": "Axon Enterprise, Inc.",
+    "LMT": "Lockheed Martin Corporation",
+    "NOC": "Northrop Grumman Corporation",
+    "RCAT": "Red Cat Holdings, Inc.",
+    "AFRM": "Affirm Holdings, Inc.",
+    "APP": "AppLovin Corporation",
+    "COIN": "Coinbase Global, Inc.",
+    "HOOD": "Robinhood Markets, Inc.",
+    "IREN": "Iris Energy Limited",
+    "MQ": "Marqeta, Inc.",
+    "MSTR": "MicroStrategy Incorporated",
+    "SOFI": "SoFi Technologies, Inc.",
+    "TOST": "Toast, Inc.",
+    "CEG": "Constellation Energy Corporation",
+    "FSLR": "First Solar, Inc.",
+    "LNG": "Cheniere Energy, Inc.",
+    "NRG": "NRG Energy, Inc.",
+    "OKLO": "Oklo Inc.",
+    "PWR": "Quanta Services, Inc.",
+    "SMR": "NuScale Power Corporation",
+    "VST": "Vistra Corp.",
+    "CRWD": "CrowdStrike Holdings, Inc.",
+    "FTNT": "Fortinet, Inc.",
+    "GTLB": "GitLab Inc.",
+    "NET": "Cloudflare, Inc.",
+    "OKTA": "Okta, Inc.",
+    "PANW": "Palo Alto Networks, Inc.",
+    "S": "SentinelOne, Inc.",
+    "TENB": "Tenable Holdings, Inc.",
+    "ZS": "Zscaler, Inc.",
+    "AAPL": "Apple Inc.",
+    "ADBE": "Adobe Inc.",
+    "ADSK": "Autodesk, Inc.",
+    "AI": "C3.ai, Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "ASAN": "Asana, Inc.",
+    "BILL": "BILL Holdings, Inc.",
+    "CRM": "Salesforce, Inc.",
+    "DDOG": "Datadog, Inc.",
+    "DOCN": "DigitalOcean Holdings, Inc.",
+    "GOOGL": "Alphabet Inc.",
+    "HUBS": "HubSpot, Inc.",
+    "META": "Meta Platforms, Inc.",
+    "MNDY": "monday.com Ltd.",
+    "MSFT": "Microsoft Corporation",
+    "NOW": "ServiceNow, Inc.",
+    "PCOR": "Procore Technologies, Inc.",
+    "PLTR": "Palantir Technologies Inc.",
+    "SNOW": "Snowflake Inc.",
+    "VEEV": "Veeva Systems Inc.",
+    "IONQ": "IonQ, Inc.",
+    "QBTS": "D-Wave Quantum Inc.",
+    "RGTI": "Rigetti Computing, Inc.",
+    "PL": "Planet Labs PBC",
+    "RKLB": "Rocket Lab USA, Inc.",
+    "LUNR": "Intuitive Machines, Inc.",
+    "ACHR": "Archer Aviation Inc.",
+    "ARBE": "Arbe Robotics Ltd.",
+    "JOBY": "Joby Aviation, Inc.",
+    "TSLA": "Tesla, Inc.",
+    "UBER": "Uber Technologies, Inc.",
+    "ORCL": "Oracle Corporation",
+    "CFLT": "Confluent, Inc.",
+    "CRNC": "Cerence Inc.",
+    "DXCM": "DexCom, Inc.",
+    "INTU": "Intuit Inc.",
+    "IOT": "Samsara Inc.",
+    "LRCX": "Lam Research Corporation",
+    "NFLX": "Netflix, Inc.",
+    "PODD": "Insulet Corporation",
+    "PSTG": "Pure Storage, Inc.",
+    "RBLX": "Roblox Corporation",
+    "RDDT": "Reddit, Inc.",
+    "SERV": "ServiceMaster Global Holdings, Inc.",
+    "SHOP": "Shopify Inc.",
+    "SOUN": "SoundHound AI, Inc.",
+    "TDOC": "Teladoc Health, Inc.",
+    "PATH": "UiPath Inc.",
+    "DXYZ": "Destiny Tech100 Inc.",
+    "NKE": "NIKE, Inc.",
+}
 
+DefaultTickers = list(DefaultTickerNames.keys())
 
 class SignalPassAIInQuery(BaseModel):
     """

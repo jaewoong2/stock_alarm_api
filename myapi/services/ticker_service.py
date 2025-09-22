@@ -11,6 +11,7 @@ from myapi.domain.ticker.ticker_schema import (
     TickerUpdate,
     TickerChangeResponse,
 )
+from myapi.domain.signal.signal_schema import DefaultTickerNames
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.ticker_repository import TickerRepository
 from myapi.services.signal_service import SignalService
@@ -375,9 +376,10 @@ class TickerService:
                         ticker, record_date
                     )
                     try:
+                        ticker_name = DefaultTickerNames.get(ticker, ticker)
                         ticker_data = TickerCreate(
                             symbol=ticker,
-                            name=ticker,  # 향후 회사명 추가 필요 시 수정
+                            name=ticker_name,
                             price=float(row["Close"]),
                             open_price=float(row["Open"]),
                             high_price=float(row["High"]),
