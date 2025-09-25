@@ -347,12 +347,25 @@ class TickerService:
             )
 
             if dataframe.empty:
-                raise ValueError(
-                    f"No data found for ticker {ticker} in the specified date range."
+                print(
+                    f"No OHLCV data found for ticker {ticker} in the specified date range."
                 )
+                return {
+                    "ticker": ticker,
+                    "total": 0,
+                    "created": 0,
+                    "updated": 0,
+                    "skipped": 0,
+                }
 
             # 통계 추적을 위한 카운터 초기화
-            stats = {"total": len(dataframe), "created": 0, "updated": 0, "skipped": 0}
+            stats = {
+                "ticker": ticker,
+                "total": len(dataframe),
+                "created": 0,
+                "updated": 0,
+                "skipped": 0,
+            }
 
             # 데이터 벌크 처리를 위한 배치 크기 설정
             BATCH_SIZE = 100
@@ -426,7 +439,7 @@ class TickerService:
 
     def get_all_ticker_name(self):
         """
-        모든 티커의 이름을 가져옵니다.
+        등록된 모든 티커의 고유 심볼 목록을 반환합니다.
         """
         tickers = self.ticker_repository.get_all_ticker_name()
         return tickers

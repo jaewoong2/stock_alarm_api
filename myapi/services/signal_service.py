@@ -2,16 +2,24 @@ from datetime import date, timedelta, timezone
 import datetime
 from email.utils import parsedate_to_datetime
 import html
+import os
+from pathlib import Path
 from io import BytesIO
 import logging
 import re
 from tracemalloc import start
-from typing import List, Literal, Optional, Sequence, Union
+from typing import Any, List, Literal, Optional, Sequence, Union, cast
 import aiohttp
 import cloudscraper
 import pandas as pd
 import pdfplumber
 import yfinance as yf
+NUMBA_CACHE_DIR = os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
+try:
+    Path(NUMBA_CACHE_DIR).mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
 import pandas_ta as ta
 import requests
 import datetime as dt
@@ -38,6 +46,37 @@ from myapi.domain.news.news_schema import (
 from myapi.domain.news.news_models import WebSearchResult
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_to_datetime(value: Any) -> Optional[datetime.datetime]:
+    """Best-effort conversion of mixed index values into naive datetimes."""
+    if value is None:
+        return None
+
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.to_pydatetime()
+
+    if isinstance(value, datetime.datetime):
+        return value
+
+    if isinstance(value, date) and not isinstance(value, datetime.datetime):
+        return datetime.datetime.combine(value, datetime.datetime.min.time())
+
+    try:
+        ts = pd.Timestamp(value)
+    except (ValueError, TypeError):
+        return None
+
+    if bool(pd.isna(ts)):
+        return None
+
+    result = ts.to_pydatetime()
+    if isinstance(result, datetime.datetime):
+        return result
+
+    return None
 
 
 def safe_float(val):
@@ -87,6 +126,19 @@ def flatten_price_columns(df: pd.DataFrame, ticker: str | None = None) -> pd.Dat
     return df
 
 
+def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Ensure technical indicator outputs use single-level string column names."""
+    if isinstance(frame.columns, pd.MultiIndex):
+        frame = frame.copy()
+        frame.columns = [
+            "_".join(
+                [str(part) for part in parts if part not in (None, "")]
+            )
+            for parts in frame.columns.to_list()
+        ]
+    return frame
+
+
 class SignalService:
     def __init__(
         self,
@@ -134,8 +186,14 @@ class SignalService:
         if df.empty:
             return False
 
-        df["SMA20"] = ta.sma(df["Close"], length=20)
-        return bool((df["Close"].iloc[-1] > df["SMA20"].iloc[-1])[index_ticker])
+        close_data = cast(pd.Series, df["Close"])
+        sma20_data = ta.sma(close=close_data, length=20)
+        df["SMA20"] = sma20_data
+
+        comparison: Any = close_data.iloc[-1] > sma20_data.iloc[-1]
+        if isinstance(comparison, pd.Series):
+            return bool(comparison.get(index_ticker, False))
+        return bool(comparison)
 
     def rs_ok(self, ticker: str, benchmark="SPY", lookback_weeks=13) -> bool:
         """종목 상대강도 필터: 최근 13주 수익률 랭크가 상위 30%면 True"""
@@ -431,12 +489,21 @@ class SignalService:
         try:
             # If spy_df is not provided, download it
             if spy_df is None:
-                start_date = df.index.min()
-                end_date = df.index.max() + timedelta(days=1)
+                start_raw = df.index.min()
+                end_raw = df.index.max()
+
+                start_dt = _coerce_to_datetime(start_raw)
+                end_dt = _coerce_to_datetime(end_raw)
+
+                if start_dt is None or end_dt is None:
+                    return df
+
+                end_dt = end_dt + timedelta(days=1)
+
                 spy_df = yf.download(
                     "SPY",
-                    start=start_date.strftime("%Y-%m-%d"),
-                    end=end_date.strftime("%Y-%m-%d"),
+                    start=start_dt.strftime("%Y-%m-%d"),
+                    end=end_dt.strftime("%Y-%m-%d"),
                     auto_adjust=True,
                     progress=False,
                 )
@@ -470,7 +537,9 @@ class SignalService:
         if start is not None and end is not None:
             # Convert date objects to datetime objects
             start_dt = datetime.datetime.combine(start, datetime.datetime.min.time())
-            end_dt = datetime.datetime.combine(end, datetime.datetime.min.time())
+            end_dt = datetime.datetime.combine(
+                end + timedelta(days=1), datetime.datetime.min.time()
+            )
             df = self._download_yfinance(ticker=ticker, start=start_dt, end=end_dt)
 
             if not df.empty:
@@ -496,69 +565,93 @@ class SignalService:
 
     def add_indicators(self, df: pd.DataFrame, spy_df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
+        close_series = cast(pd.Series, df["Close"])
+        high_series = cast(pd.Series, df["High"])
+        low_series = cast(pd.Series, df["Low"])
+        volume_series = cast(pd.Series, df["Volume"])
+
         # 기존 지표
-        df["SMA5"] = ta.sma(df.Close, 5)
-        df["SMA10"] = ta.sma(df["Close"], length=10)
-        df["SMA20"] = ta.sma(df.Close, 20)
-        df["SMA50"] = ta.sma(df["Close"], length=50)
-        df["SMA200"] = ta.sma(df["Close"], length=200)  # 추가: 장기 추세
+        df["SMA5"] = ta.sma(close=close_series, length=5)
+        df["SMA10"] = ta.sma(close=close_series, length=10)
+        df["SMA20"] = ta.sma(close=close_series, length=20)
+        df["SMA50"] = ta.sma(close=close_series, length=50)
+        df["SMA200"] = ta.sma(close=close_series, length=200)  # 추가: 장기 추세
 
-        df["VOL20"] = df.Volume.rolling(20).mean()
-        df["VOL_Z"] = (df.Volume - df.VOL20) / df.Volume.rolling(20).std()
-        df["VOL_PCTL60"] = df.Volume.rank(pct=True, method="max")
-        df["VolumeSpike"] = df["Volume"] > df["VOL20"] * 2
-        df["VolumeSpikeStrength"] = df["Volume"] / df["VOL20"]  # 급등 강도
+        df["VOL20"] = volume_series.rolling(20).mean()
+        df["VOL_Z"] = (volume_series - df.VOL20) / volume_series.rolling(20).std()
+        df["VOL_PCTL60"] = volume_series.rank(pct=True, method="max")
+        df["VolumeSpike"] = volume_series > df["VOL20"] * 2
+        df["VolumeSpikeStrength"] = volume_series / df["VOL20"]  # 급등 강도
 
-        df["RSI14"] = ta.rsi(df["Close"], length=14)
+        df["RSI14"] = ta.rsi(close=close_series, length=14)
         df["ATR14"] = ta.atr(
-            df["High"], df["Low"], df["Close"], length=14
+            high=high_series, low=low_series, close=close_series, length=14
         )  # 추가: 변동성
 
-        stoch = ta.stoch(df["High"], df["Low"], df["Close"], k=14, d=3, smooth_k=3)
+        stoch = ta.stoch(
+            high=high_series, low=low_series, close=close_series, k=14, d=3, smooth_k=3
+        )
 
         if stoch is not None:
+            stoch = _flatten_columns(stoch)
             df = pd.concat([df, stoch], axis=1)  # 추가: Stochastic Oscillator
 
-        bb = ta.bbands(df["Close"], length=20, std=2)
+        bb = ta.bbands(close=close_series, length=20, std=cast(Any, 2.0))
         if bb is not None:
+            bb = _flatten_columns(bb)
             df = pd.concat([df, bb], axis=1)
 
-        macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
+        macd = ta.macd(close=close_series, fast=12, slow=26, signal=9)
         if macd is not None:
+            macd = _flatten_columns(macd)
             df = pd.concat([df, macd], axis=1)
 
         # 추가: VWAP와 ROC
         # df["VWAP"] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
-        df["ROC5"] = ta.roc(df.Close, length=5)
+        df["ROC5"] = ta.roc(close=close_series, length=5)
 
         # ────────── 신규 ‘추세’ 지표 ──────────
         # ① ADX(+DI/-DI) – 추세 강도
-        df = pd.concat(
-            [df, ta.adx(df.High, df.Low, df.Close, length=14)], axis=1
-        )  # ADX_14, DMP_14, DMN_14
+        adx = ta.adx(high=high_series, low=low_series, close=close_series, length=14)
+        if adx is not None:
+            adx = _flatten_columns(adx)
+            df = pd.concat([df, adx], axis=1)  # ADX_14, DMP_14, DMN_14
 
         # ② SuperTrend (ATR 기반 추세 필터) – ta 패키지에 존재
-        df = pd.concat(
-            [df, ta.supertrend(df.High, df.Low, df.Close, length=10, multiplier=3)],
-            axis=1,
+        supertrend = ta.supertrend(
+            high=high_series,
+            low=low_series,
+            close=close_series,
+            length=10,
+            multiplier=cast(Any, 3.0),
         )
+        if supertrend is not None:
+            supertrend = _flatten_columns(supertrend)
+            df = pd.concat([df, supertrend], axis=1)
         # 컬럼: SUPERT_10_3.0, SUPERTd_10_3.0 (direction)
 
         # ③ Donchian Channel(20) – 추세 돌파용
         donch = ta.donchian(
-            df.High, df.Low, length=20
+            high=high_series, low=low_series, length=cast(Any, 20)
         )  # DONCHU_20, DONCHL_20, DONCHM_20
-        df = pd.concat([df, donch], axis=1)
+        if donch is not None:
+            donch = _flatten_columns(donch)
+            df = pd.concat([df, donch], axis=1)
 
         # ④ 이동평균 기울기(∇) – SMA50 기울기
         df["SMA50_SLOPE"] = df["SMA50"].diff()
 
         df["VWAP"] = ta.vwap(
-            df["High"], df["Low"], df["Close"], df["Volume"]
+            high=high_series, low=low_series, close=close_series, volume=volume_series
         )  # 장중 기준선
-        df["RSI5"] = ta.rsi(df["Close"], length=5)  # 단기 RSI
+        df["RSI5"] = ta.rsi(close=close_series, length=5)  # 단기 RSI
         # 볼린저 밴드 폭 (%)
-        df["BB_WIDTH"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["Close"]
+        upper_col = next((col for col in df.columns if col.endswith("BBU_20_2.0")), None)
+        lower_col = next((col for col in df.columns if col.endswith("BBL_20_2.0")), None)
+        if upper_col and lower_col:
+            df["BB_WIDTH"] = (df[upper_col] - df[lower_col]) / df["Close"]
+        else:
+            df["BB_WIDTH"] = pd.Series(index=df.index, dtype=float)
 
         df["AVG_VOL20"] = df["Volume"].rolling(20).mean()
         df["LIQUIDITY_FILTER"] = df["AVG_VOL20"] > 500000  # 최소 거래량 기준
@@ -572,8 +665,8 @@ class SignalService:
         df["ATR_RATIO"] = df["ATR14"] / avg_atr20
 
         # 초단기 모멘텀
-        df["ROC1"] = ta.roc(df["Close"], length=1)
-        df["ROC3"] = ta.roc(df["Close"], length=3)
+        df["ROC1"] = ta.roc(close=close_series, length=1)
+        df["ROC3"] = ta.roc(close=close_series, length=3)
 
         # ─── 캔들 패턴 예: 상승장악(Engulfing) ────────────
         df["BULL_ENGULF"] = (
@@ -583,7 +676,7 @@ class SignalService:
         )
 
         # (신규) 장기 추세용 SMA150 ─ VCP 필터에서 사용
-        df["SMA150"] = ta.sma(df["Close"], length=150)
+        df["SMA150"] = ta.sma(close=close_series, length=150)
 
         # (신규) VCP 보조지표 -------------------------------
         long_win, short_win = 20, 5  # ‘긴 변동성’/‘짧은 변동성’ 구간
@@ -633,7 +726,15 @@ class SignalService:
         gap_pct = df["GAP_PCT"].iloc[-1]
         roc1, roc3 = df["ROC1"].iloc[-1], df["ROC3"].iloc[-1]
         atr_ratio = df["ATR_RATIO"].iloc[-1]
-        vol_ratio20 = df["Volume"].iloc[-1] / df["Volume"].rolling(20).mean().iloc[-1]
+
+        volume_series = cast(pd.Series, df["Volume"])
+        current_volume = float(volume_series.iloc[-1])
+        rolling_volume = cast(pd.Series, volume_series.rolling(20).mean())
+        avg_volume = float(rolling_volume.iloc[-1]) if len(rolling_volume) else 0.0
+        if avg_volume == 0.0 or pd.isna(avg_volume):
+            vol_ratio20 = 0.0
+        else:
+            vol_ratio20 = current_volume / avg_volume
         bb_width = df["BB_WIDTH"].iloc[-1]
 
         # 전일(shift 1) high·volume·close

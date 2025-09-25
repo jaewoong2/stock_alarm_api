@@ -6,7 +6,7 @@ from typing import List, Literal, Optional
 from datetime import datetime, timedelta
 import datetime as dt
 
-from myapi.utils.date_utils import validate_date
+from myapi.utils.date_utils import validate_date, get_latest_market_date
 
 from dependency_injector.wiring import inject, Provide
 
@@ -231,13 +231,15 @@ def update_ticker_informations(
     try:
         results = []
 
+        market_reference_date = get_latest_market_date()
+
         if request.start_date and request.end_date:
-            start_date, end_date = (
-                datetime.strptime(request.start_date, "%Y-%m-%d"),
-                datetime.strptime(request.end_date, "%Y-%m-%d"),
+            start_date = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+            end_date = validate_date(
+                datetime.strptime(request.end_date, "%Y-%m-%d").date()
             )
         else:
-            end_date = datetime.now()
+            end_date = market_reference_date
             start_date = end_date - timedelta(days=7)
 
         tickers = ticker_service.get_all_ticker_name()

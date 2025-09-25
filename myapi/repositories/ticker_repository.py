@@ -99,15 +99,20 @@ class TickerRepository:
 
     def get_all_ticker_name(self):
         """
-        모든 티커의 심볼과 이름 조회
-        중복 네임 제외
+        모든 티커의 고유 심볼 목록을 반환합니다.
+        중복 심볼은 제거됩니다.
         """
         if isinstance(self.db_session, AsyncSession):
             # AsyncSession에서는 동기 메서드를 호출할 수 없으므로 빈 리스트 반환
             return []
         else:
-            results = self.db_session.query(Ticker).distinct(Ticker.name).all()
-            return [str(result.name) for result in results]
+            results = (
+                self.db_session.query(Ticker.symbol)
+                .distinct(Ticker.symbol)
+                .order_by(Ticker.symbol)
+                .all()
+            )
+            return [str(result[0]) for result in results]
 
     def list(self) -> List[Ticker]:
         if isinstance(self.db_session, AsyncSession):

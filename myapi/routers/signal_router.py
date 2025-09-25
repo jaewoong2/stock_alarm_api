@@ -10,7 +10,7 @@ from myapi.utils.auth import verify_bearer_token
 from datetime import timedelta
 
 from myapi.utils.config import Settings
-from myapi.utils.date_utils import validate_date
+from myapi.utils.date_utils import validate_date, get_latest_market_date
 
 from dependency_injector.wiring import inject, Provide
 
@@ -177,10 +177,10 @@ def llm_query(
     """
 
     pdf_report, summary, web_search_gemini_result = None, None, None
+    market_reference_date = get_latest_market_date()
 
     try:
-        today = dt.date.today()
-        today_YYYY_MM_DD = today.strftime("%Y-%m-%d")
+        today_YYYY_MM_DD = market_reference_date.strftime("%Y-%m-%d")
         web_search_gemini_result = ai_service.gemini_search_grounding(
             prompt=signal_service.generate_web_search_prompt(
                 req.ticker, today_YYYY_MM_DD
@@ -259,7 +259,9 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(google_result),
             message_group_id="google",
-            message_deduplication_id=req.ticker + "google" + str(dt.date.today()),
+            message_deduplication_id=req.ticker
+            + "google"
+            + market_reference_date.isoformat(),
         )
 
     except Exception as e:
@@ -285,7 +287,9 @@ def llm_query(
             queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
             message_body=json.dumps(openai_result),
             message_group_id="openai",
-            message_deduplication_id=req.ticker + "openai" + str(dt.date.today()),
+            message_deduplication_id=req.ticker
+            + "openai"
+            + market_reference_date.isoformat(),
         )
 
     except Exception as e:
@@ -307,7 +311,8 @@ async def get_signals(
     settings: Settings = Depends(Provide[Container.config.config]),
 ):
     START_DAYS_BACK: int = 400
-    run_date = dt.date.today()
+    market_reference_date = get_latest_market_date()
+    run_date = market_reference_date
     tickers = req.tickers or DefaultTickers
     strategies = DefaultStrategies
 
@@ -422,7 +427,7 @@ async def get_signals(
                 message_group_id="signal",
                 message_deduplication_id=report.ticker
                 + "signal"
-                + str(dt.date.today()),
+                + market_reference_date.isoformat(),
             )
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
@@ -500,7 +505,7 @@ async def get_today_signals_by_ticker(
 @inject
 async def get_weekly_action_count(
     tickers: Optional[str] = None,
-    reference_date: Optional[dt.date] = dt.date.today(),
+    reference_date: Optional[dt.date] = None,
     action: Literal["Buy", "Sell"] = "Buy",
     order_by: Optional[Literal["counts"]] = None,
     limit: int = 10,
@@ -516,9 +521,9 @@ async def get_weekly_action_count(
         else DefaultTickers
     )
 
-    reference_date = validate_date(
-        reference_date if reference_date else dt.date.today()
-    )
+    market_reference_date = get_latest_market_date()
+    selected_reference_date = reference_date or market_reference_date
+    reference_date = validate_date(selected_reference_date)
 
     result = await db_signal_service.get_weekly_action_counts(
         ticker_list, reference_date, action, order_by, limit
@@ -579,13 +584,15 @@ async def get_signals_by_only_ai(
     try:
         # 티커 목록 설정 (없으면 기본 티커 사용)
         tickers = request.tickers if request.tickers else DefaultTickers
-        date_str = (
-            request.date.strftime("%Y-%m-%d")
-            if request.date
-            else dt.date.today().strftime("%Y-%m-%d")
-        )
 
-        logger.info(f"Generating AI signals for {len(tickers)} tickers on {date_str}")
+        market_reference_date = get_latest_market_date()
+        target_date = request.date or market_reference_date
+        target_date = validate_date(target_date)
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        logger.info(
+            f"Generating AI signals for {len(tickers)} tickers on {date_str}"
+        )
 
         # AI 모델을 사용하여 시그널 생성
         prompt = f"""

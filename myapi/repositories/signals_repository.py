@@ -16,6 +16,19 @@ from myapi.domain.signal.signal_schema import (
     SignalValueObject,
 )
 from myapi.domain.ticker.ticker_model import Ticker
+from myapi.utils.date_utils import (
+    get_current_kst_date,
+    get_current_kst_datetime,
+    to_kst_naive,
+)
+
+
+def _normalize_to_kst_naive(value: datetime) -> datetime:
+    """Convert aware datetimes to naive KST while leaving naive inputs unchanged."""
+
+    if value.tzinfo is None:
+        return value
+    return to_kst_naive(value)
 
 
 class SignalsRepository:
@@ -59,6 +72,7 @@ class SignalsRepository:
             signals_models = []
             for signal_vo in signals_vo_list:
                 # SignalValueObject를 Signals 모델로 변환
+                source_timestamp = signal_vo.timestamp or get_current_kst_datetime()
                 signal_model = Signals(
                     ticker=signal_vo.ticker,
                     strategy=signal_vo.strategy,
@@ -67,7 +81,7 @@ class SignalsRepository:
                     take_profit=signal_vo.take_profit,
                     close_price=signal_vo.close_price,
                     action=signal_vo.action,
-                    timestamp=signal_vo.timestamp or datetime.utcnow(),
+                    timestamp=_normalize_to_kst_naive(source_timestamp),
                     probability=signal_vo.probability,
                     result_description=signal_vo.result_description,
                     report_summary=signal_vo.report_summary,
@@ -117,12 +131,15 @@ class SignalsRepository:
         good_things: Optional[str] = None,  # 좋은 점
         bad_things: Optional[str] = None,  # 나쁜 점
         chart_pattern: Optional[ChartPattern] = None,  # 차트 패턴 정보
+        timestamp: Optional[datetime] = None,
     ) -> SignalBaseResponse:
         """
         새로운 신호를 생성합니다.
         """
         self._ensure_valid_session()
         try:
+            source_timestamp = timestamp or get_current_kst_datetime()
+
             signal = Signals(
                 ticker=ticker,
                 entry_price=entry_price,
@@ -130,7 +147,7 @@ class SignalsRepository:
                 take_profit=take_profit,
                 close_price=close_price,
                 action=action,
-                timestamp=datetime.utcnow(),
+                timestamp=_normalize_to_kst_naive(source_timestamp),
                 probability=probability,
                 result_description=result_description,
                 strategy=strategy,  # 전략 정보 추가
@@ -155,8 +172,11 @@ class SignalsRepository:
     def get_ticker(self) -> List[str]:
         """ """
         self._ensure_valid_session()
-        signals = self.db_session.query(Signals).filter(
-            Signals.timestamp == datetime.utcnow().date()
+        today_kst = get_current_kst_date()
+        signals = (
+            self.db_session.query(Signals)
+            .filter(func.date(Signals.timestamp) == today_kst)
+            .all()
         )
         return [str(signal.ticker) for signal in signals]
 
@@ -165,7 +185,7 @@ class SignalsRepository:
         오늘의 티커를 가져옵니다.
         """
         self._ensure_valid_session()
-        today = datetime.utcnow().date()
+        today = get_current_kst_date()
         signals = (
             self.db_session.query(Signals)
             .filter(func.date(Signals.timestamp) == today)
@@ -359,12 +379,13 @@ class SignalsRepository:
         특정 날짜 범위 내의 신호를 가져옵니다.
         """
         self._ensure_valid_session()
-        if end_date is None:
-            end_date = datetime.utcnow()
+        start_dt = _normalize_to_kst_naive(start_date)
+        end_source = end_date or get_current_kst_datetime()
+        end_dt = _normalize_to_kst_naive(end_source)
 
         signals = (
             self.db_session.query(Signals)
-            .filter(Signals.timestamp.between(start_date, end_date))
+            .filter(Signals.timestamp.between(start_dt, end_dt))
             .order_by(desc(Signals.timestamp))
         )
 
@@ -552,7 +573,8 @@ class SignalsRepository:
         최근 n일 동안의 신호를 가져옵니다.
         """
         self._ensure_valid_session()
-        start_date = datetime.utcnow() - timedelta(days=days)
+        reference_now = get_current_kst_datetime()
+        start_date = _normalize_to_kst_naive(reference_now - timedelta(days=days))
 
         signals = (
             self.db_session.query(Signals)

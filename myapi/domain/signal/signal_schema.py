@@ -1,7 +1,11 @@
 from myapi.domain.signal.signal_models import Signals
 from pydantic import BaseModel, Field
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import List, Dict, Literal, Optional
+from zoneinfo import ZoneInfo
+
+
+KST = ZoneInfo("Asia/Seoul")
 
 
 Strategy = Literal[
@@ -355,7 +359,7 @@ class SignalBase(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     action: str  # "buy" or "sell" or "hold"
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(KST))
     probability: Optional[str] = None
     result_description: Optional[str] = None
     report_summary: Optional[str] = None
@@ -405,7 +409,7 @@ class SignalUpdate(BaseModel):
 
 
 # models.py
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Literal, List
 from pydantic import BaseModel, Field
 
@@ -593,7 +597,7 @@ class SignalValueObject(BaseModel):
     take_profit: Optional[float] = None
     close_price: Optional[float] = None
     action: Literal["buy", "sell", "hold"]
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(KST))
     probability: Optional[str] = None
     result_description: Optional[str] = None
     report_summary: Optional[str] = None
@@ -615,6 +619,9 @@ class SignalValueObject(BaseModel):
     def to_orm(cls, value_object) -> Signals:
         """SignalValueObject를 Signals 모델 객체로 변환"""
         data = value_object.model_dump(exclude={"id"})
+        timestamp = data.get("timestamp")
+        if isinstance(timestamp, datetime) and timestamp.tzinfo is not None:
+            data["timestamp"] = timestamp.astimezone(KST).replace(tzinfo=None)
         return Signals(**data)
 
 

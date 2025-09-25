@@ -14,6 +14,7 @@ from myapi.domain.signal.signal_schema import (
     SignalValueObject,
 )
 from myapi.services.translate_service import TranslateService
+from myapi.utils.date_utils import get_current_kst_datetime
 
 
 class DBSignalService:
@@ -392,7 +393,9 @@ class DBSignalService:
         오늘 생성된 신호들을 조회합니다.
         """
         try:
-            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = get_current_kst_datetime().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             tomorrow = today + timedelta(days=1)
             return self.repository.get_signals_by_date_range(
                 start_date=today, end_date=tomorrow, action=action

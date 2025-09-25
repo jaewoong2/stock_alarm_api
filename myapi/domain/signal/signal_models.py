@@ -1,6 +1,16 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, JSON
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from myapi.database import Base
+
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def _now_kst_naive() -> datetime:
+    """Return current time in Asia/Seoul without tzinfo for DB storage."""
+
+    return datetime.now(KST).replace(tzinfo=None)
 
 
 class Signals(Base):
@@ -15,7 +25,7 @@ class Signals(Base):
     take_profit = Column(Float, nullable=True)
     close_price = Column(Float, nullable=True)  # 거래 종료 가격
     action = Column(String)  # "buy" or "sell"
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=_now_kst_naive)
     probability = Column(String, nullable=True)  # 확률
     result_description = Column(String, nullable=True)  # 결과 설명
     report_summary = Column(String, nullable=True)  # 보고서 요약

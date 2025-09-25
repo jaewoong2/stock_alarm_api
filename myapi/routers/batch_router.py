@@ -1,14 +1,14 @@
-import datetime as dt
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
-from myapi.domain.news.news_schema import MahaneyAnalysisRequest, ETFAnalysisRequest
+from myapi.domain.news.news_schema import MahaneyAnalysisRequest
 from myapi.services.aws_service import AwsService
 from myapi.utils.auth import verify_bearer_token
 from myapi.utils.config import Settings
 from myapi.domain.signal.signal_schema import DefaultTickers
+from myapi.utils.date_utils import get_latest_market_date
 
 router = APIRouter(
     prefix="/batch",
@@ -28,7 +28,8 @@ def execute_batch_jobs(
 
     # SQS FIFO 큐 URL (실제 환경에 맞게 수정 필요)
     queue_url = "https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo"
-    today_str = dt.date.today().isoformat()
+    market_date = get_latest_market_date()
+    market_date_str = market_date.isoformat()
 
     # 호출할 API 엔드포인트 목록
     jobs = [
@@ -76,7 +77,7 @@ def execute_batch_jobs(
                     "TIMEFOLIO 미국나스닥100액티브 (426030)",
                     "KoAct 미국나스닥성장기업액티브 (0015B0)",
                 ],
-                "target_date": today_str,
+                "target_date": market_date_str,
             },
             "group_id": "etf-portfolio",
         },
@@ -85,7 +86,7 @@ def execute_batch_jobs(
             "method": "POST",
             "body": {
                 "tickers": None,
-                "target_date": today_str,
+                "target_date": market_date_str,
                 "llm_policy": "AUTO",
             },
             "group_id": "insider-trend",
@@ -95,7 +96,7 @@ def execute_batch_jobs(
             "method": "POST",
             "body": {
                 "tickers": None,
-                "target_date": today_str,
+                "target_date": market_date_str,
                 "llm_policy": "AUTO",
             },
             "group_id": "analyst-pt",
@@ -106,7 +107,7 @@ def execute_batch_jobs(
             "body": {
                 "universe": None,
                 "provider": None,
-                "target_date": today_str,
+                "target_date": market_date_str,
                 "llm_policy": "AUTO",
             },
             "group_id": "etf-flows",
@@ -115,7 +116,7 @@ def execute_batch_jobs(
             "path": "news/liquidity",
             "method": "POST",
             "body": {
-                "target_date": today_str,
+                "target_date": market_date_str,
                 "llm_policy": "AUTO",
             },
             "group_id": "liquidity",
@@ -124,7 +125,7 @@ def execute_batch_jobs(
             "path": "news/market-breadth",
             "method": "POST",
             "body": {
-                "target_date": today_str,
+                "target_date": market_date_str,
                 "llm_policy": "AUTO",
             },
             "group_id": "breadth",
@@ -172,7 +173,7 @@ def execute_batch_jobs(
             )
 
             # 고유한 중복 제거 ID 생성 (경로 + 날짜)
-            deduplication_id = f"{job['path'].replace('/', '-')}-{today_str}"
+            deduplication_id = f"{job['path'].replace('/', '-')}-{market_date_str}"
 
             # SQS FIFO 큐에 메시지 전송
             response = aws_service.send_sqs_fifo_message(
@@ -207,7 +208,8 @@ def create_mahaney_analysis_batch(
 
     # SQS FIFO 큐 URL (실제 환경에 맞게 수정 필요)
     queue_url = "https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo"
-    today_str = dt.date.today().strftime("%Y%m%d")
+    market_date = get_latest_market_date()
+    market_date_str = market_date.strftime("%Y%m%d")
 
     # 티커 목록을 10개씩 분할
     ticker_chunks = [
@@ -222,13 +224,13 @@ def create_mahaney_analysis_batch(
                 path="news/tech-stock/analysis",
                 method="POST",
                 body=MahaneyAnalysisRequest(
-                    tickers=chunk, target_date=dt.date.today()
+                    tickers=chunk, target_date=market_date
                 ).model_dump_json(),
                 auth_token=settings.auth_token,
             )
 
             # 고유한 중복 제거 ID 생성 (경로 + 날짜 + 청크 인덱스)
-            deduplication_id = f"newstechstockanalysis{today_str}{i}"
+            deduplication_id = f"newstechstockanalysis{market_date_str}{i}"
 
             # SQS FIFO 큐에 메시지 전송
             response = aws_service.send_sqs_fifo_message(
