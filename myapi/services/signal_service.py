@@ -8,6 +8,7 @@ from io import BytesIO
 import logging
 import re
 from tracemalloc import start
+from collections.abc import Mapping
 from typing import Any, List, Literal, Optional, Sequence, Union, cast
 import aiohttp
 import cloudscraper
@@ -31,6 +32,7 @@ from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.translate_service import TranslateService
 from myapi.utils.config import Settings
 from myapi.utils.indicators import check_supertrend_signals
+from myapi.utils.yfinance_cache import configure_yfinance_cache, safe_get_ticker_info
 from myapi.domain.signal.signal_schema import (
     Article,
     SignalPromptData,
@@ -46,6 +48,8 @@ from myapi.domain.news.news_schema import (
 from myapi.domain.news.news_models import WebSearchResult
 
 logger = logging.getLogger(__name__)
+
+configure_yfinance_cache()
 
 
 def _coerce_to_datetime(value: Any) -> Optional[datetime.datetime]:
@@ -140,6 +144,14 @@ def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 class SignalService:
+    @staticmethod
+    def _first_present(data: Mapping[str, Any], keys: Sequence[str]) -> Any:
+        for key in keys:
+            val = data.get(key)
+            if val not in (None, ""):
+                return val
+        return None
+
     def __init__(
         self,
         settings: Settings,
@@ -460,7 +472,7 @@ class SignalService:
     def _calculate_fcf_yield(self, tk: yf.Ticker) -> float | None:
         try:
             cashflow = tk.get_cash_flow(freq="yearly")
-            info = tk.info or tk.fast_info or {}
+            info = safe_get_ticker_info(tk, ("marketCap",))
             market_cap = info.get("marketCap")
             if isinstance(cashflow, pd.DataFrame) and market_cap:
                 fcf = (
@@ -1176,8 +1188,11 @@ class SignalService:
 
     def fetch_fundamentals(self, ticker: str) -> FundamentalData:
         tk = yf.Ticker(ticker)
-        info = tk.info or tk.fast_info or {}
-        trailing_pe = info.get("peTrailing") or info.get("trailingPE")
+        info = safe_get_ticker_info(tk)
+        trailing_pe = self._first_present(
+            info,
+            ("peTrailing", "trailingPE", "peRatio", "trailingPe"),
+        )
         eps_surprise_pct = self._latest_eps_surprise_pct(tk)
         revenue_growth = self._revenue_yoy_growth(tk)
         roe = self._calculate_roe(tk)  # 추가

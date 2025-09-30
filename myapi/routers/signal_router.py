@@ -587,6 +587,11 @@ async def get_signals_by_only_ai(
 
         market_reference_date = get_latest_market_date()
         target_date = request.date or market_reference_date
+        
+        # Convert target_date to date object if it's datetime
+        if isinstance(target_date, dt.datetime):
+            target_date = target_date.date()
+        
         target_date = validate_date(target_date)
         date_str = target_date.strftime("%Y-%m-%d")
 

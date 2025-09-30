@@ -7,6 +7,7 @@ import yfinance
 from myapi.domain.signal.signal_schema import DefaultTickers
 from myapi.utils.auth import create_access_token
 from myapi.utils.config import get_settings
+from myapi.utils.yfinance_cache import configure_yfinance_cache, safe_get_ticker_info
 import os
 import requests
 from typing import Iterable, Dict, Optional
@@ -14,6 +15,8 @@ from typing import Iterable, Dict, Optional
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 security = HTTPBasic()
+
+configure_yfinance_cache()
 
 
 @router.post("/token")
@@ -134,7 +137,7 @@ def get_ticker_logo_yahoo(ticker: str):
     """Yahoo Finance에서 로고 URL 가져오기"""
     try:
         stock = yfinance.Ticker(ticker)
-        info = stock.info
+        info = safe_get_ticker_info(stock, ("logo_url",))
         return info.get("logo_url", None)
     except Exception as e:
         print(f"[ERROR] {ticker}: Yahoo Finance API error → {e}")
