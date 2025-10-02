@@ -241,7 +241,7 @@ class WebSearchService:
             start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
             end_date = today.strftime("%Y-%m-%d")
 
-            cached = await self.websearch_repository.get_by_date(
+            cached = self.websearch_repository.get_by_date(
                 start_date_yyyymmdd=start_date,
                 end_date_yyyymmdd=end_date,
                 source=source,
@@ -282,7 +282,7 @@ class WebSearchService:
             if not isinstance(response, MarketForecastResponse):
                 raise ValueError("Invalid response format from AI service")
 
-            await self.websearch_repository.create(
+            self.websearch_repository.create(
                 MarketForecast(
                     date_yyyymmdd=end_date,
                     outlook=response.outlook,

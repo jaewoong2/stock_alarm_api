@@ -128,7 +128,7 @@ class WebSearchResultRepository:
             self.db_session.rollback()
             raise e
 
-    async def create(self, forecast: MarketForecast):
+    def create(self, forecast: MarketForecast):
         try:
             self.db_session.add(forecast)
             self.db_session.commit()
@@ -149,20 +149,13 @@ class WebSearchResultRepository:
             self.db_session.rollback()
             raise e
 
-    async def get_by_date(
+    def get_by_date(
         self,
         start_date_yyyymmdd: str,
         end_date_yyyymmdd: str,
         source: Literal["Major", "Minor"],
     ):
         try:
-            # result = (
-            #     self.db_session.query(MarketForecast)
-            #     .filter(MarketForecast.date_yyyymmdd == date_yyyymmdd)
-            #     .filter(MarketForecast.source == source)
-            #     .first()
-            # )
-
             response = (
                 self.db_session.query(MarketForecast)
                 .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
