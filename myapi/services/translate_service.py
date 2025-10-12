@@ -636,12 +636,151 @@ class TranslateService:
             logger.error(f"JSON 번역 중 오류 발생: {e}")
             return json_data
 
-    def translate_schema(self, schema_instance: T) -> T:
+    def _collect_translatable_strings(
+        self, schema_instance: BaseModel, path: str = ""
+    ) -> dict[str, str]:
+        """
+        스키마에서 번역 가능한 모든 문자열을 수집합니다.
+
+        Returns:
+            {path: text} 형태의 딕셔너리
+        """
+        texts = {}
+
+        for field_name, field_info in schema_instance.model_fields.items():
+            field_value = getattr(schema_instance, field_name, None)
+            current_path = f"{path}.{field_name}" if path else field_name
+
+            if field_value is None:
+                continue
+
+            # 문자열 필드
+            if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
+                if field_value.strip() and not self._should_skip_translation(field_name, field_value):
+                    texts[current_path] = field_value
+
+            # 중첩 모델
+            elif hasattr(field_value, "model_fields") and isinstance(field_value, BaseModel):
+                nested_texts = self._collect_translatable_strings(field_value, current_path)
+                texts.update(nested_texts)
+
+            # 리스트
+            elif isinstance(field_value, list) and field_value:
+                for idx, item in enumerate(field_value):
+                    item_path = f"{current_path}[{idx}]"
+                    if isinstance(item, BaseModel):
+                        nested_texts = self._collect_translatable_strings(item, item_path)
+                        texts.update(nested_texts)
+                    elif isinstance(item, str) and item.strip() and not self._should_skip_translation(field_name, item):
+                        texts[item_path] = item
+
+        return texts
+
+    def _translate_batch(self, texts: dict[str, str]) -> dict[str, str]:
+        """
+        여러 텍스트를 한 번의 API 호출로 배치 번역합니다.
+
+        Args:
+            texts: {path: text} 딕셔너리
+
+        Returns:
+            {path: translated_text} 딕셔너리
+        """
+        if not texts:
+            return {}
+
+        logger.info(f"배치 번역 시작: {len(texts)}개 텍스트")
+
+        # JSON 형태로 모든 텍스트를 묶어서 한 번에 번역
+        batch_json = json.dumps(texts, ensure_ascii=False, indent=2)
+
+        try:
+            prompt = f"""Translate the following JSON object values from English to Korean.
+Keep the JSON structure intact, only translate the VALUES (not the keys).
+
+Rules:
+- Preserve financial terms (S&P 500, NASDAQ, CEO, ROE, ROIC, etc.)
+- Keep numbers, percentages, dates unchanged
+- Keep ticker symbols (AAPL, TSLA, etc.) unchanged
+- Keep URLs unchanged
+- Use professional financial Korean
+- Output ONLY the translated JSON, no explanations
+
+Input JSON:
+{batch_json}
+
+Translated JSON:"""
+
+            # AIService의 completion 메서드 사용
+            response_text = self.ai_service.completion(
+                system_prompt="You are a professional translator. Translate JSON values to Korean.",
+                prompt=prompt,
+                chat_model=ChatModel.GPT_4O_MINI,
+            )
+
+            if response_text is None:
+                raise ValueError("Translation response is empty.")
+
+            # JSON 파싱
+            try:
+                # 응답에서 JSON 부분 추출
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    translations = json.loads(json_match.group())
+                else:
+                    raise ValueError("No JSON found in response")
+            except Exception as parse_error:
+                logger.error(f"JSON 파싱 실패: {parse_error}, 응답: {response_text[:200]}")
+                raise
+
+            logger.info(f"배치 번역 완료: {len(translations)}개 텍스트")
+            return translations
+
+        except Exception as e:
+            logger.error(f"배치 번역 실패, 개별 번역으로 폴백: {e}")
+            # 실패시 개별 번역으로 폴백
+            return {path: self._translate_text_with_aws(text) for path, text in texts.items()}
+
+    def _apply_translations(
+        self, schema_instance: T, translations: dict[str, str], path: str = ""
+    ) -> T:
+        """
+        번역된 텍스트를 스키마에 적용합니다.
+        """
+        for field_name, field_info in schema_instance.model_fields.items():
+            field_value = getattr(schema_instance, field_name, None)
+            current_path = f"{path}.{field_name}" if path else field_name
+
+            if field_value is None:
+                continue
+
+            # 문자열 필드
+            if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
+                if current_path in translations:
+                    setattr(schema_instance, field_name, translations[current_path])
+
+            # 중첩 모델
+            elif hasattr(field_value, "model_fields") and isinstance(field_value, BaseModel):
+                self._apply_translations(field_value, translations, current_path)
+
+            # 리스트
+            elif isinstance(field_value, list) and field_value:
+                for idx, item in enumerate(field_value):
+                    item_path = f"{current_path}[{idx}]"
+                    if isinstance(item, BaseModel):
+                        self._apply_translations(item, translations, item_path)
+                    elif isinstance(item, str) and item_path in translations:
+                        field_value[idx] = translations[item_path]
+
+        return schema_instance
+
+    def translate_schema(self, schema_instance: T, use_batch: bool = True) -> T:
         """
         Pydantic Schema의 str/text 타입 필드들을 번역하여 동일한 스키마로 반환합니다.
 
         Args:
             schema_instance: 번역할 Pydantic 모델 인스턴스
+            use_batch: 배치 번역 사용 여부 (기본값: True, 토큰 절약)
 
         Returns:
             번역된 필드들을 포함한 동일한 타입의 스키마 인스턴스
@@ -649,55 +788,64 @@ class TranslateService:
         Example:
             news_schema = NewsSchema(title="Hello", content="World", author="John")
             translated = translate_service.translate_schema(news_schema)
-            # translated.title, content, author가 한국어로 번역됨
+            # 1번의 API 호출로 모든 필드 번역 완료!
         """
         try:
             # 원본 스키마를 딥 카피
             translated_data = schema_instance.model_copy(deep=True)
 
-            # 스키마의 모든 필드를 확인
-            for field_name, field_info in schema_instance.model_fields.items():
-                field_value = getattr(schema_instance, field_name, None)
+            if use_batch:
+                # 배치 번역: 모든 텍스트를 수집 → 1번 API 호출 → 적용
+                logger.info(f"{type(schema_instance).__name__} 배치 번역 시작")
 
-                # 값이 None이면 건너뛰기
-                if field_value is None:
-                    continue
+                # 1. 번역 가능한 모든 텍스트 수집
+                texts_to_translate = self._collect_translatable_strings(translated_data)
+                logger.info(f"수집된 텍스트: {len(texts_to_translate)}개")
 
-                # str 타입 필드만 번역 (날짜, URL, 티커 제외)
-                if self._is_string_field(field_info.annotation) and isinstance(
-                    field_value, str
-                ):
-                    if field_value.strip() and not self._should_skip_translation(
-                        field_name, field_value
-                    ):  # 번역 제외 조건 추가
-                        logger.debug(f"번역 중: {field_name} = {field_value[:50]}...")
-                        translated_value = self._translate_text_with_aws(field_value)
-                        setattr(translated_data, field_name, translated_value)
-                        logger.debug(
-                            f"번역 완료: {field_name} = {translated_value[:50]}..."
-                        )
+                # 2. 한 번에 배치 번역
+                if texts_to_translate:
+                    translations = self._translate_batch(texts_to_translate)
 
-                # 중첩된 Pydantic 모델인 경우 재귀적으로 번역
-                elif hasattr(field_value, "model_fields") and isinstance(
-                    field_value, BaseModel
-                ):
-                    logger.debug(f"중첩 모델 번역 중: {field_name}")
-                    translated_nested = self.translate_schema(field_value)
-                    setattr(translated_data, field_name, translated_nested)
+                    # 3. 번역 결과 적용
+                    self._apply_translations(translated_data, translations)
 
-                # 리스트 안에 Pydantic 모델이 있는 경우
-                elif isinstance(field_value, list) and field_value:
-                    translated_list = []
-                    for item in field_value:
-                        if isinstance(item, BaseModel):
-                            translated_list.append(self.translate_schema(item))
-                        elif isinstance(item, str) and item.strip():
-                            translated_list.append(self._translate_text_with_aws(item))
-                        else:
-                            translated_list.append(item)
-                    setattr(translated_data, field_name, translated_list)
+                logger.info(f"{type(schema_instance).__name__} 배치 번역 완료 (API 호출 1회)")
+            else:
+                # 기존 방식: 개별 번역 (토큰 낭비)
+                logger.warning(f"{type(schema_instance).__name__} 개별 번역 사용 (비권장)")
 
-            logger.info(f"{type(schema_instance).__name__} 스키마 번역 완료")
+                for field_name, field_info in schema_instance.model_fields.items():
+                    field_value = getattr(schema_instance, field_name, None)
+
+                    if field_value is None:
+                        continue
+
+                    if self._is_string_field(field_info.annotation) and isinstance(
+                        field_value, str
+                    ):
+                        if field_value.strip() and not self._should_skip_translation(
+                            field_name, field_value
+                        ):
+                            translated_value = self._translate_text_with_aws(field_value)
+                            setattr(translated_data, field_name, translated_value)
+
+                    elif hasattr(field_value, "model_fields") and isinstance(
+                        field_value, BaseModel
+                    ):
+                        translated_nested = self.translate_schema(field_value, use_batch=False)
+                        setattr(translated_data, field_name, translated_nested)
+
+                    elif isinstance(field_value, list) and field_value:
+                        translated_list = []
+                        for item in field_value:
+                            if isinstance(item, BaseModel):
+                                translated_list.append(self.translate_schema(item, use_batch=False))
+                            elif isinstance(item, str) and item.strip():
+                                translated_list.append(self._translate_text_with_aws(item))
+                            else:
+                                translated_list.append(item)
+                        setattr(translated_data, field_name, translated_list)
+
             return translated_data
 
         except Exception as e:

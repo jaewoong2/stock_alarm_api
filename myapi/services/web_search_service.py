@@ -41,6 +41,9 @@ from myapi.domain.news.news_schema import (
     LiquidityPoint,
     MarketBreadthResponse,
     BreadthDailyPoint,
+    FundamentalAnalysisResponse,
+    FundamentalAnalysisGetRequest,
+    FundamentalAnalysisGetResponse,
 )
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -297,7 +300,7 @@ class WebSearchService:
                 detail=f"Internal server error while creating market forecast: {str(e)}",
             )
 
-        cached = await self.websearch_repository.get_by_date(
+        cached = self.websearch_repository.get_by_date(
             start_date_yyyymmdd=start_date,
             end_date_yyyymmdd=end_date,
             source=source,
@@ -1505,3 +1508,240 @@ class WebSearchService:
         )
 
         return translated_response
+
+    # ---------------------- Fundamental Analysis ----------------------
+    def generate_fundamental_analysis_prompt(self, ticker: str, target_date: str) -> str:
+        """Generate comprehensive institutional-grade fundamental analysis prompt"""
+        return f"""Today is {target_date}. You are a veteran equity research analyst from Goldman Sachs with 15+ years experience.
+
+Conduct a comprehensive fundamental analysis for {ticker}. Use REAL, CURRENT data (most recent quarterly/annual filings).
+
+ANALYSIS SECTIONS:
+
+1. NARRATIVE & VISION
+- Dominant market narrative driving {ticker}
+- Vision status: Strong/Moderate/Weak/Dead
+- 3-7 key narrative drivers
+- Market sentiment: Very Bullish/Bullish/Neutral/Bearish/Very Bearish
+- Sentiment reasoning & narrative shift risks
+
+2. SECTOR & COMPETITIVE POSITION
+- Sector name, YTD return vs S&P 500
+- 3-5 key sector catalysts & headwinds
+- Market share (%) & trend
+- Top 3-5 competitors
+- Competitive advantages & threats
+- Moat rating: Wide/Narrow/None
+- Peer comparison vs top 3-5 competitors
+
+3. PRODUCT & INNOVATION
+- Recent product launches (6-12 months)
+- Pipeline strength: Strong/Moderate/Weak
+- R&D spending (% of revenue)
+- Innovation score: Leader/Fast Follower/Laggard
+- Key patents/tech
+
+4. MARKET OPPORTUNITY
+- TAM & SAM (in billions USD)
+- Market growth rate (CAGR %)
+- Company penetration (%)
+- Expansion opportunities
+- Geographic breakdown
+
+5. FINANCIALS (Use Q4 2024/FY 2024 data)
+GROWTH: Revenue YoY/QoQ/3yr CAGR, EPS YoY/3yr CAGR, guidance, earnings surprises
+PROFITABILITY: Gross/Operating/Net margins, margin trend, ROE/ROIC/ROA
+BALANCE SHEET: Debt-to-Equity, Net Debt, Current/Quick ratios, Cash, Debt maturity
+CASH FLOW: FCF, FCF yield, Operating CF, CapEx, FCF conversion rate
+VALUATION: P/E, Forward P/E, PEG, P/S, P/B, EV/EBITDA, vs peers, vs historical, fair value
+
+6. MANAGEMENT
+- CEO name, tenure, background
+- Quality score: Excellent/Good/Average/Poor
+- Key strengths (3-5) & concerns (3-5)
+- Execution track record
+- Capital allocation score: Excellent/Good/Average/Poor
+- Insider ownership (%) & recent activity
+
+7. RISKS
+- Regulatory, competitive, execution, macro, financial risks (3-5 each)
+- Overall risk score: Low/Medium/High/Very High
+- 2-3 black swan scenarios
+
+8. CATALYSTS
+- Near-term (0-3mo), medium-term (3-12mo), long-term (12mo+) catalysts
+- Earnings date, product launches, regulatory milestones
+
+9. RECOMMENDATION
+- Rating: Strong Buy/Buy/Hold/Sell/Strong Sell
+- Target price, current price, upside/downside %
+- Conviction: Very High/High/Medium/Low
+- Time horizon: Short/Medium/Long-term
+- 5-7 bullish & bearish factors
+- Base/Bull/Bear case scenarios
+- Ideal entry point, stop-loss
+
+10. SUMMARY
+- Executive summary (5-7 sentences)
+- Investment thesis (3-4 paragraphs)
+- 5-7 key takeaways
+
+OUTPUT: Return JSON matching FundamentalAnalysisResponse schema with ALL fields populated. Use specific numbers, dates, names. Cite 2-3 sources per section. If data unavailable, use null.
+"""
+
+    async def create_fundamental_analysis(
+        self, ticker: str, target_date: date = date.today()
+    ) -> FundamentalAnalysisResponse:
+        """Create comprehensive fundamental analysis for a ticker using OpenAI"""
+        ticker = ticker.upper()
+
+        prompt = self.generate_fundamental_analysis_prompt(
+            ticker, target_date.strftime("%Y-%m-%d")
+        )
+
+        try:
+            # Use OpenAI for analysis (can also use Perplexity for research-backed analysis)
+            response = self.ai_service.perplexity_completion(
+                prompt=prompt,
+                schema=FundamentalAnalysisResponse,
+            )
+
+            if not isinstance(response, FundamentalAnalysisResponse):
+                raise ValueError("Invalid response format from AI service")
+
+            # Translate if translate_service is available
+            translated_response = response
+            if self.translate_service:
+                try:
+                    translated_response = self.translate_service.translate_schema(response)
+                    # Keep ticker uppercase
+                    translated_response.ticker = ticker
+                except Exception as e:
+                    logger.warning(f"Failed to translate fundamental analysis for {ticker}: {e}")
+
+            # Store in ai_analysis table with proper JSON encoding
+            try:
+                # model_dump_json()으로 직렬화하여 ensure_ascii=False 적용
+                analysis_json_str = translated_response.model_dump_json(exclude_none=True)
+                # JSON 문자열을 다시 dict로 변환하여 저장
+                analysis_dict = json.loads(analysis_json_str)
+
+                # 데이터 크기 체크
+                data_size = len(analysis_json_str)
+                logger.info(f"Fundamental analysis data size: {data_size} bytes ({data_size/1024:.2f} KB)")
+
+                if data_size > 1000000:  # 1MB 이상이면 경고
+                    logger.warning(f"Large analysis data detected: {data_size/1024:.2f} KB")
+
+                self.websearch_repository.create_analysis(
+                    analysis_date=target_date,
+                    analysis=analysis_dict,
+                    name="fundamental_analysis",
+                )
+
+                logger.info(f"Successfully stored fundamental analysis for {ticker}")
+            except Exception as db_error:
+                logger.error(f"Failed to store analysis in database: {db_error}")
+                # DB 저장 실패해도 응답은 반환
+                logger.warning(f"Returning analysis without database storage for {ticker}")
+
+            return translated_response
+
+        except Exception as e:
+            logger.error(f"Failed to create fundamental analysis for {ticker}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create fundamental analysis: {str(e)}"
+            )
+
+    async def get_fundamental_analysis(
+        self,
+        ticker: str,
+        target_date: date = date.today(),
+        force_refresh: bool = False,
+        analysis_request: bool = True,
+    ) -> FundamentalAnalysisGetResponse:
+        """
+        Get fundamental analysis for a ticker with 1-month caching
+
+        Cache Logic:
+        - If analysis exists and is less than 30 days old: return cached
+        - If analysis is older than 30 days or force_refresh=True: create new analysis
+        - If no analysis exists: create new analysis
+
+        Parameters
+        ----------
+        analysis_request: bool
+            When False, skip generating new analysis and read from cache only.
+        """
+        ticker = ticker.upper()
+
+        cached_response: FundamentalAnalysisGetResponse | None = None
+        cached_days_old: int | None = None
+
+        cached_analysis = self.websearch_repository.get_analysis_by_date(
+            target_date, name="fundamental_analysis", schema=None
+        )
+
+        if cached_analysis and cached_analysis.value:
+            try:
+                cached_value = cached_analysis.value
+                cached_ticker = ""
+
+                if isinstance(cached_value, dict):
+                    cached_ticker = cached_value.get("ticker", "").upper()
+
+                if cached_ticker == ticker:
+                    try:
+                        cached_date = date.fromisoformat(str(cached_analysis.date))
+                    except Exception:
+                        cached_date = target_date
+
+                    try:
+                        analysis_model = FundamentalAnalysisResponse.model_validate(
+                            cached_value
+                        )
+                        days_old = (target_date - cached_date).days
+                        if days_old < 0:
+                            days_old = 0
+
+                        cached_days_old = days_old
+                        cached_response = FundamentalAnalysisGetResponse(
+                            analysis=analysis_model,
+                            is_cached=True,
+                            cache_date=cached_date,
+                            days_until_expiry=max(0, 30 - days_old),
+                        )
+                    except Exception as parse_error:
+                        logger.warning(
+                            f"Failed to validate cached fundamental analysis for {ticker}: {parse_error}"
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to parse cached fundamental analysis: {e}")
+
+        if not analysis_request:
+            if cached_response:
+                return cached_response
+            raise HTTPException(
+                status_code=404,
+                detail=f"Fundamental analysis for {ticker} not found in cache",
+            )
+
+        if (
+            not force_refresh
+            and cached_response
+            and cached_days_old is not None
+            and cached_days_old < 30
+        ):
+            return cached_response
+
+        # No valid cache found or force_refresh - create new analysis
+        logger.info(f"Creating new fundamental analysis for {ticker}")
+        analysis = await self.create_fundamental_analysis(ticker, target_date)
+
+        return FundamentalAnalysisGetResponse(
+            analysis=analysis,
+            is_cached=False,
+            cache_date=target_date,
+            days_until_expiry=30,
+        )

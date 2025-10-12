@@ -31,6 +31,9 @@ from myapi.domain.news.news_schema import (
     ETFWeeklyFlowResponse,
     LiquidityWeeklyResponse,
     MarketBreadthResponse,
+    FundamentalAnalysisGetRequest,
+    FundamentalAnalysisGetResponse,
+    FundamentalAnalysisResponse,
 )
 from myapi.domain.signal.signal_schema import WebSearchTickerResponse
 from myapi.services.signal_service import SignalService
@@ -706,3 +709,85 @@ async def create_etf_signal_pipeline(
             "analysis_date": target_date,
             "pipeline_status": "failed",
         }
+
+
+# ---------------------- Fundamental Analysis ----------------------
+@router.get("/fundamental-analysis", response_model=FundamentalAnalysisGetResponse)
+@inject
+async def get_fundamental_analysis(
+    ticker: str,
+    force_refresh: bool = False,
+    analysis_request: bool = True,
+    target_date: Optional[dt.date] = dt.date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    """
+    티커에 대한 종합적인 펀더멘탈 분석을 조회합니다.
+
+    **캐싱 로직**:
+    - DB에 해당 티커 분석이 존재하지 않으면: 새로 분석 생성 후 응답
+    - 티커 분석이 존재하면:
+      - 30일 이내 데이터: 캐시된 분석 응답
+      - 30일 이상 경과: 새로 분석 생성 후 응답
+    - force_refresh=True: 캐시 무시하고 새로 분석 생성
+
+    **분석 내용**:
+    1. 네러티브 및 비전 분석 (검색 기반)
+    2. 섹터 분석 및 현황 (검색 기반)
+    3. 펀더멘탈 지표 (성장률, 수익성, 부채비율 등) (검색 기반)
+    4. 경영진 분석 (CEO, 인사이더 거래 등) (검색 기반)
+    5. AI 기반 투자 추천 (OpenAI)
+
+    :param ticker: 분석할 티커 심볼
+    :param force_refresh: 캐시 무시하고 새로 생성 여부
+    :param analysis_request: True이면 분석을 수행하고 False이면 DB 캐시만 조회
+    :param target_date: 분석 기준 날짜
+    :return: 펀더멘탈 분석 결과 (캐시 메타데이터 포함)
+    """
+    target_date = validate_date(target_date if target_date else dt.date.today())
+
+    return await websearch_service.get_fundamental_analysis(
+        ticker=ticker.upper(),
+        target_date=target_date,
+        force_refresh=force_refresh,
+        analysis_request=analysis_request,
+    )
+
+
+@router.post(
+    "/fundamental-analysis",
+    dependencies=[Depends(verify_bearer_token)],
+    response_model=FundamentalAnalysisResponse,
+)
+@inject
+async def create_fundamental_analysis(
+    ticker: str,
+    target_date: Optional[dt.date] = dt.date.today(),
+    websearch_service: WebSearchService = Depends(
+        Provide[Container.services.websearch_service]
+    ),
+):
+    """
+    티커에 대한 펀더멘탈 분석을 강제로 새로 생성합니다.
+
+    **이 엔드포인트는 인증이 필요합니다 (Bearer Token)**
+
+    분석 내용:
+    1. 네러티브 및 비전 분석
+    2. 섹터 분석 및 현황
+    3. 펀더멘탈 지표 (성장률, 수익성, 부채비율 등)
+    4. 경영진 분석
+    5. AI 기반 투자 추천
+
+    :param ticker: 분석할 티커 심볼
+    :param target_date: 분석 기준 날짜
+    :return: 새로 생성된 펀더멘탈 분석 결과
+    """
+    target_date = validate_date(target_date if target_date else dt.date.today())
+
+    return await websearch_service.create_fundamental_analysis(
+        ticker=ticker.upper(),
+        target_date=target_date,
+    )

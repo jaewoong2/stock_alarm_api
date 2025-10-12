@@ -2,6 +2,7 @@ from dependency_injector import containers, providers
 
 from myapi.database import get_db
 from myapi.repositories.signals_repository import SignalsRepository
+from myapi.repositories.ticker_reference_repository import TickerReferenceRepository
 from myapi.repositories.ticker_repository import TickerRepository
 from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
@@ -9,6 +10,7 @@ from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
 from myapi.services.discord_service import DiscordService
 from myapi.services.signal_service import SignalService
+from myapi.services.ticker_reference_service import TickerReferenceService
 from myapi.services.ticker_service import TickerService
 from myapi.services.web_search_service import WebSearchService
 from myapi.services.translate_service import TranslateService
@@ -28,6 +30,9 @@ class RepositoryModule(containers.DeclarativeContainer):
     get_db = providers.Resource(get_db)
     signals_repository = providers.Factory(SignalsRepository, db_session=get_db)
     ticker_repository = providers.Factory(TickerRepository, db_session=get_db)
+    ticker_reference_repository = providers.Factory(
+        TickerReferenceRepository, db_session=get_db
+    )
     web_search_repository = providers.Factory(
         WebSearchResultRepository, db_session=get_db
     )
@@ -63,6 +68,10 @@ class ServiceModule(containers.DeclarativeContainer):
         ticker_repository=repositories.ticker_repository,
         signals_repository=repositories.signals_repository,
         signals_service=signal_service,
+    )
+    ticker_reference_service = providers.Factory(
+        TickerReferenceService,
+        repository=repositories.ticker_reference_repository,
     )
 
     websearch_service = providers.Factory(

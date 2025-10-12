@@ -445,3 +445,246 @@ class MarketBreadthResponse(BaseModel):
     series: List[BreadthDailyPoint] = []
     commentary: Optional[str] = None
     sources: List[SourceRef] = []
+
+
+# ---------------------- Fundamental Analysis ----------------------
+class CompetitivePosition(BaseModel):
+    """Competitive positioning analysis"""
+
+    market_share: Optional[float] = None
+    market_share_trend: Optional[str] = None
+    key_competitors: List[str] = []
+    competitive_advantages: List[str] = []
+    competitive_threats: List[str] = []
+    moat_rating: Literal["Wide", "Narrow", "None"]
+    moat_explanation: str
+
+
+class ProductInnovation(BaseModel):
+    """Product and innovation pipeline"""
+
+    recent_product_launches: List[str] = []
+    pipeline_strength: Literal["Strong", "Moderate", "Weak"]
+    rd_spending: Optional[float] = None  # R&D as % of revenue
+    innovation_score: Literal["Leader", "Fast Follower", "Laggard"]
+    key_patents_or_tech: List[str] = []
+    product_cycle_stage: str
+
+
+class MarketOpportunity(BaseModel):
+    """TAM and growth opportunity"""
+
+    total_addressable_market: Optional[float] = None  # in billions
+    serviceable_addressable_market: Optional[float] = None
+    market_growth_rate: Optional[float] = None  # CAGR %
+    company_penetration: Optional[float] = None  # % of TAM
+    expansion_opportunities: List[str] = []
+    geographic_breakdown: Optional[str] = None
+
+
+class NarrativeVisionAnalysis(BaseModel):
+    """Current narrative and vision driving the stock"""
+
+    key_narrative: str
+    vision_status: Literal["Strong", "Moderate", "Weak", "Dead"]
+    narrative_drivers: List[str]
+    vision_sustainability: str
+    narrative_shift_risks: List[str] = []
+    market_sentiment: Literal[
+        "Very Bullish", "Bullish", "Neutral", "Bearish", "Very Bearish"
+    ]
+    sentiment_reasoning: str
+    sources: List[SourceRef] = []
+
+
+class SectorAnalysis(BaseModel):
+    """Sector performance and positioning"""
+
+    sector_name: str
+    sector_performance: str
+    sector_ytd_return: Optional[float] = None
+    rotation_trend: str
+    key_catalysts: List[str]
+    key_headwinds: List[str] = []
+    relative_strength: Literal["Leading", "In-line", "Lagging"]
+    peer_comparison: Optional[str] = None  # vs top 3-5 peers
+    sector_outlook: str
+    sources: List[SourceRef] = []
+
+
+class GrowthMetrics(BaseModel):
+    """Detailed growth analysis"""
+
+    revenue_growth_yoy: Optional[float] = None
+    revenue_growth_qoq: Optional[float] = None
+    revenue_growth_3yr_cagr: Optional[float] = None
+    eps_growth_yoy: Optional[float] = None
+    eps_growth_3yr_cagr: Optional[float] = None
+    revenue_guidance: Optional[str] = None
+    earnings_surprise_history: Optional[str] = None  # Last 4 quarters
+
+
+class ProfitabilityMetrics(BaseModel):
+    """Profitability and margin analysis"""
+
+    gross_margin: Optional[float] = None
+    operating_margin: Optional[float] = None
+    net_margin: Optional[float] = None
+    margin_trend: Optional[str] = None  # Expanding/Stable/Contracting
+    roe: Optional[float] = None
+    roic: Optional[float] = None
+    roa: Optional[float] = None
+
+
+class BalanceSheetMetrics(BaseModel):
+    """Balance sheet health"""
+
+    debt_to_equity: Optional[float] = None
+    net_debt: Optional[float] = None
+    current_ratio: Optional[float] = None
+    quick_ratio: Optional[float] = None
+    cash_and_equivalents: Optional[float] = None
+    total_debt: Optional[float] = None
+    debt_maturity_profile: Optional[str] = None
+    interest_coverage: Optional[float] = None
+
+
+class CashFlowMetrics(BaseModel):
+    """Cash flow analysis"""
+
+    free_cash_flow: Optional[float] = None
+    fcf_yield: Optional[float] = None
+    operating_cash_flow: Optional[float] = None
+    capex: Optional[float] = None
+    fcf_conversion_rate: Optional[float] = None  # FCF / Net Income
+    cash_flow_trend: Optional[str] = None
+
+
+class ValuationMetrics(BaseModel):
+    """Valuation analysis"""
+
+    pe_ratio: Optional[float] = None
+    forward_pe: Optional[float] = None
+    peg_ratio: Optional[float] = None
+    price_to_sales: Optional[float] = None
+    price_to_book: Optional[float] = None
+    ev_to_ebitda: Optional[float] = None
+    valuation_vs_peers: Optional[str] = None
+    valuation_vs_historical: Optional[str] = None
+    fair_value_estimate: Optional[float] = None
+
+
+class FundamentalMetrics(BaseModel):
+    """Comprehensive fundamental metrics"""
+
+    growth: GrowthMetrics
+    profitability: ProfitabilityMetrics
+    balance_sheet: BalanceSheetMetrics
+    cash_flow: CashFlowMetrics
+    valuation: ValuationMetrics
+    sources: List[SourceRef] = []
+
+
+class ManagementAnalysis(BaseModel):
+    """Management quality and execution"""
+
+    ceo_name: Optional[str] = None
+    ceo_tenure: Optional[str] = None
+    ceo_background: Optional[str] = None
+    management_quality_score: Literal["Excellent", "Good", "Average", "Poor"]
+    key_strengths: List[str]
+    key_concerns: List[str]
+    execution_track_record: str
+    capital_allocation_score: Literal["Excellent", "Good", "Average", "Poor"]
+    insider_ownership: Optional[float] = None
+    recent_insider_activity: Optional[str] = None
+    compensation_alignment: Optional[str] = None
+    board_quality: Optional[str] = None
+    sources: List[SourceRef] = []
+
+
+class RiskAnalysis(BaseModel):
+    """Comprehensive risk assessment"""
+
+    regulatory_risks: List[str] = []
+    competitive_risks: List[str] = []
+    execution_risks: List[str] = []
+    macro_risks: List[str] = []
+    financial_risks: List[str] = []
+    overall_risk_score: Literal["Low", "Medium", "High", "Very High"]
+    black_swan_scenarios: List[str] = []
+
+
+class CatalystAnalysis(BaseModel):
+    """Upcoming catalysts and events"""
+
+    near_term_catalysts: List[str] = []  # 0-3 months
+    medium_term_catalysts: List[str] = []  # 3-12 months
+    long_term_catalysts: List[str] = []  # 12+ months
+    earnings_date: Optional[str] = None
+    product_launches: List[str] = []
+    regulatory_milestones: List[str] = []
+
+
+class InvestmentRecommendation(BaseModel):
+    """AI-powered investment recommendation"""
+
+    rating: Literal["Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"]
+    target_price: Optional[float] = None
+    current_price: Optional[float] = None
+    upside_downside: Optional[float] = None
+    time_horizon: Literal["Short-term", "Medium-term", "Long-term"]
+    conviction_level: Literal["Very High", "High", "Medium", "Low"]
+    key_bullish_factors: List[str]
+    key_bearish_factors: List[str]
+    base_case_scenario: str
+    bull_case_scenario: str
+    bear_case_scenario: str
+    risk_level: Literal["Low", "Medium", "High", "Very High"]
+    confidence_level: Literal["High", "Medium", "Low"]
+    ideal_entry_point: Optional[str] = None
+    stop_loss_suggestion: Optional[float] = None
+
+
+class FundamentalAnalysisResponse(BaseModel):
+    """Complete fundamental analysis response"""
+
+    ticker: str
+    company_name: str
+    industry: Optional[str] = None
+    analysis_date: str
+
+    # Core Analysis Sections
+    narrative_vision: NarrativeVisionAnalysis
+    sector_analysis: SectorAnalysis
+    competitive_position: CompetitivePosition
+    product_innovation: ProductInnovation
+    market_opportunity: MarketOpportunity
+    fundamental_metrics: FundamentalMetrics
+    management_analysis: ManagementAnalysis
+    risk_analysis: RiskAnalysis
+    catalyst_analysis: CatalystAnalysis
+    recommendation: InvestmentRecommendation
+
+    # Summary
+    executive_summary: str
+    investment_thesis: str
+    key_takeaways: List[str]
+    last_updated: str
+
+
+class FundamentalAnalysisGetRequest(BaseModel):
+    """Request parameters for getting fundamental analysis"""
+
+    ticker: str
+    force_refresh: bool = False  # Force new analysis even if cached
+    analysis_request: bool = False  # Whether to trigger a fresh analysis when needed
+
+
+class FundamentalAnalysisGetResponse(BaseModel):
+    """Response for fundamental analysis with cache metadata"""
+
+    analysis: FundamentalAnalysisResponse
+    is_cached: bool
+    cache_date: Optional[dt.date] = None
+    days_until_expiry: Optional[int] = None

@@ -15,6 +15,7 @@ import cloudscraper
 import pandas as pd
 import pdfplumber
 import yfinance as yf
+
 NUMBA_CACHE_DIR = os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
 try:
     Path(NUMBA_CACHE_DIR).mkdir(parents=True, exist_ok=True)
@@ -135,9 +136,7 @@ def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if isinstance(frame.columns, pd.MultiIndex):
         frame = frame.copy()
         frame.columns = [
-            "_".join(
-                [str(part) for part in parts if part not in (None, "")]
-            )
+            "_".join([str(part) for part in parts if part not in (None, "")])
             for parts in frame.columns.to_list()
         ]
     return frame
@@ -201,7 +200,8 @@ class SignalService:
         close_data = cast(pd.Series, df["Close"])
         sma20_data = ta.sma(close=close_data, length=20)
         df["SMA20"] = sma20_data
-
+        if sma20_data is None or sma20_data.empty:
+            return False
         comparison: Any = close_data.iloc[-1] > sma20_data.iloc[-1]
         if isinstance(comparison, pd.Series):
             return bool(comparison.get(index_ticker, False))
@@ -658,8 +658,12 @@ class SignalService:
         )  # 장중 기준선
         df["RSI5"] = ta.rsi(close=close_series, length=5)  # 단기 RSI
         # 볼린저 밴드 폭 (%)
-        upper_col = next((col for col in df.columns if col.endswith("BBU_20_2.0")), None)
-        lower_col = next((col for col in df.columns if col.endswith("BBL_20_2.0")), None)
+        upper_col = next(
+            (col for col in df.columns if col.endswith("BBU_20_2.0")), None
+        )
+        lower_col = next(
+            (col for col in df.columns if col.endswith("BBL_20_2.0")), None
+        )
         if upper_col and lower_col:
             df["BB_WIDTH"] = (df[upper_col] - df[lower_col]) / df["Close"]
         else:

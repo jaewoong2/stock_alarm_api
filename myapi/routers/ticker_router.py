@@ -11,6 +11,9 @@ from myapi.utils.date_utils import validate_date, get_latest_market_date
 from dependency_injector.wiring import inject, Provide
 
 from myapi.containers import Container
+from myapi.domain.ticker.ticker_reference_schema import (
+    TickerReferenceLookupResponse,
+)
 from myapi.domain.signal.signal_schema import DefaultTickers, GetSignalRequest
 from myapi.domain.ticker.ticker_schema import (
     SignalAccuracyResponse,
@@ -24,6 +27,7 @@ from myapi.domain.ticker.ticker_schema import (
     UpdateTickerRequest,
 )
 from myapi.services.db_signal_service import DBSignalService
+from myapi.services.ticker_reference_service import TickerReferenceService
 from myapi.services.ticker_service import TickerService
 from myapi.utils.utils import get_prev_date
 
@@ -46,6 +50,24 @@ async def get_ticker_by_symbol(
     if ticker is None:
         raise HTTPException(status_code=404, detail="Ticker not found")
     return ticker
+
+
+@router.get(
+    "/lookup/{query}",
+    response_model=TickerReferenceLookupResponse,
+    summary="Lookup ticker metadata from reference table",
+)
+@inject
+def lookup_ticker_reference(
+    query: str,
+    limit: int = Query(10, ge=1, le=50),
+    ticker_reference_service: TickerReferenceService = Depends(
+        Provide[Container.services.ticker_reference_service]
+    ),
+):
+    """Return best matches for a ticker symbol or company name."""
+
+    return ticker_reference_service.lookup(query, limit)
 
 
 @router.put("/{ticker_id}", response_model=TickerResponse)

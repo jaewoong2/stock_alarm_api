@@ -581,24 +581,50 @@ class WebSearchResultRepository:
         name: str = "market_analysis",
     ) -> AiAnalysisVO:
         """Store analysis data for a given date and type."""
+        import time
 
-        try:
-            db_obj = AiAnalysisModel(
-                date=analysis_date.strftime("%Y-%m-%d"),
-                name=name,
-                value=analysis,
-            )
+        max_retries = 3
+        retry_delay = 1  # seconds
 
-            self.db_session.add(db_obj)
-            self.db_session.commit()
-            self.db_session.refresh(db_obj)
+        for attempt in range(max_retries):
+            try:
+                # 연결 상태 확인 및 재연결
+                try:
+                    self.db_session.execute("SELECT 1")
+                except Exception:
+                    logger.warning("Database connection lost, attempting to reconnect...")
+                    self.db_session.rollback()
+                    self.db_session.close()
+                    # Session은 자동으로 재생성됨
 
-            return AiAnalysisVO(
-                id=self.safe_convert(db_obj.id),
-                date=str(db_obj.date),
-                name=str(db_obj.name),
-                value=analysis,
-            )
-        except Exception as e:
-            self.db_session.rollback()
-            raise e
+                db_obj = AiAnalysisModel(
+                    date=analysis_date.strftime("%Y-%m-%d"),
+                    name=name,
+                    value=analysis,
+                )
+
+                self.db_session.add(db_obj)
+                self.db_session.commit()
+                self.db_session.refresh(db_obj)
+
+                logger.info(f"Successfully stored {name} analysis (attempt {attempt + 1}/{max_retries})")
+
+                return AiAnalysisVO(
+                    id=self.safe_convert(db_obj.id),
+                    date=str(db_obj.date),
+                    name=str(db_obj.name),
+                    value=analysis,
+                )
+            except Exception as e:
+                self.db_session.rollback()
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Failed to store analysis (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Failed to store analysis after {max_retries} attempts: {e}")
+                    raise e
