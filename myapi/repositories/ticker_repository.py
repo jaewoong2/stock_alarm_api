@@ -119,7 +119,11 @@ class TickerRepository:
             # AsyncSession에서는 동기 메서드를 호출할 수 없으므로 빈 리스트 반환
             return []
         else:
-            return self.db_session.query(Ticker).all()
+            try:
+                return self.db_session.query(Ticker).all()
+            except Exception as e:
+                self.db_session.rollback()
+                raise e
 
     def update(self, ticker_id: int, ticker: TickerUpdate) -> Optional[Ticker]:
         db_ticker = self.get(ticker_id)
@@ -230,7 +234,11 @@ class TickerRepository:
         elif direction == "down":
             query = query.filter(Ticker.close_price < Ticker.open_price)
 
-        results = query.all()
+        try:
+            results = query.all()
+        except Exception as e:
+            self.db_session.rollback()
+            raise e
 
         # 결과를 티커별, 날짜별로 그룹화 (dict 사용)
         movements_by_ticker_date = {}
@@ -381,7 +389,12 @@ class TickerRepository:
         query = query.limit(limit)
 
         # 쿼리 실행 및 결과 변환
-        results = query.all()
+        try:
+            results = query.all()
+        except Exception as e:
+            # 쿼리 실행 실패 시 세션 롤백
+            self.db_session.rollback()
+            raise e
 
         # 결과를 TickerChangeResponse 객체로 변환
         ticker_changes = []

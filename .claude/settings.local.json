@@ -11,7 +11,9 @@
       "mcp__serena__create_text_file",
       "mcp__serena__replace_regex",
       "WebFetch(domain:finance.yahoo.com)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(python -m pytest tests/ -v -k test_ticker)",
+      "Bash(lsof:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
