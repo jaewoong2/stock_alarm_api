@@ -4,6 +4,7 @@ from sqlalchemy import func, select, and_, nullslast
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import desc
 
 from myapi.domain.ticker.ticker_model import Ticker
 from myapi.domain.ticker.ticker_schema import (
@@ -412,18 +413,24 @@ class TickerRepository:
                     low_price=row.low_price,
                     close_price=row.close_price,
                     volume=row.volume,
-                    close_change=float(row.close_change)
-                    if row.close_change is not None
-                    else None,
-                    open_change=float(row.open_change)
-                    if row.open_change is not None
-                    else None,
-                    price_change=float(row.price_change)
-                    if row.price_change is not None
-                    else None,
-                    volume_change=float(row.volume_change)
-                    if row.volume_change is not None
-                    else None,
+                    close_change=(
+                        float(row.close_change)
+                        if row.close_change is not None
+                        else None
+                    ),
+                    open_change=(
+                        float(row.open_change) if row.open_change is not None else None
+                    ),
+                    price_change=(
+                        float(row.price_change)
+                        if row.price_change is not None
+                        else None
+                    ),
+                    volume_change=(
+                        float(row.volume_change)
+                        if row.volume_change is not None
+                        else None
+                    ),
                 )
             )
 
