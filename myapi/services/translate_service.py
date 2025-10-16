@@ -1,7 +1,7 @@
 import datetime
 import json
 import re
-from typing import List, Any, Optional, TypeVar, Union
+from typing import List, Any, Optional, TypeVar, Union, Iterable
 import boto3
 import logging
 from pydantic import BaseModel
@@ -105,6 +105,32 @@ class TranslateService:
         if not response or not response.strip():
             return response
 
+        # 우선 전체 응답이 이미 번역문이라면 그대로 반환
+        cleaned_response = response.strip()
+        if re.search(r"[가-힣]", cleaned_response):
+            korean_lines = []
+            for raw_line in cleaned_response.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                for marker in ("Translation:", "번역:", "KOREAN TRANSLATION:"):
+                    if line.startswith(marker):
+                        line = line[len(marker) :].strip()
+                if not line:
+                    continue
+                # 안내 문구는 건너뛰고, 실제 번역 문장만 수집
+                if line.lower().startswith(
+                    ("here", "to translate", "the translation", "breakdown")
+                ):
+                    continue
+                if re.search(r"[가-힣]", line):
+                    korean_lines.append(line.strip(" '\""))
+
+            if korean_lines:
+                return "\n".join(korean_lines).strip()
+
+            return cleaned_response
+
         # "Translation:" 이후의 모든 텍스트 가져오기
         markers = ["Translation:", "번역:", "KOREAN TRANSLATION:"]
         for marker in markers:
@@ -198,18 +224,20 @@ class TranslateService:
         try:
             # 개선된 번역 프롬프트
             prompt = f"""
-            Translate the following English text to Korean. Keep it natural and concise.
+            Translate the following English text to Korean while preserving the original meaning and detail.
 
             Rules:
             - Preserve financial terms (S&P 500, NASDAQ, TSLA, AAPL, etc.)
             - Keep numbers, percentages, dates unchanged
-            - Use professional tone for financial content
-            - Output only the Korean translation
-            - Avoid unnecessary explanations or context
+            - Maintain bullet points, lists, and line breaks when present
+            - Use a professional tone appropriate for financial content
+            - Do not summarise or shorten; keep comparable length to the source
+            - Remove only obvious duplicated filler phrases
+            - Output only the Korean translation with no extra commentary
             - If the text is already in Korean or too short, return it unchanged
-            - If the text contains repetitive phrases, clean them up
 
-            Text: {text.strip()}
+            Text:
+            {text.strip()}
 
             Translation:
             """
@@ -267,44 +295,29 @@ class TranslateService:
             return text
 
     def _translate_signal(self, signal: SignalValueObject) -> SignalValueObject:
-        translated_signal = signal.model_copy(deep=True)
+        include_paths = {
+            "result_description",
+            "report_summary",
+            "senario",
+            "good_things",
+            "bad_things",
+            "chart_pattern.description",
+        }
 
-        if translated_signal.result_description:
-            translated_signal.result_description = self._translate_text_with_aws(
-                translated_signal.result_description
-            )
-        if translated_signal.report_summary:
-            translated_signal.report_summary = self._translate_text_with_aws(
-                translated_signal.report_summary
-            )
-        if translated_signal.senario:
-            translated_signal.senario = self._translate_text_with_aws(
-                translated_signal.senario
-            )
-        if translated_signal.good_things:
-            translated_signal.good_things = self._translate_text_with_aws(
-                translated_signal.good_things
-            )
-        if translated_signal.bad_things:
-            translated_signal.bad_things = self._translate_text_with_aws(
-                translated_signal.bad_things
-            )
-
-        # chart_pattern 안전하게 처리
-        if translated_signal.chart_pattern:
-            if (
-                hasattr(translated_signal.chart_pattern, "description")
-                and translated_signal.chart_pattern.description
-            ):
-                translated_signal.chart_pattern.description = (
-                    self._translate_text_with_aws(
-                        translated_signal.chart_pattern.description
-                    )
-                )
-
-        return SignalValueObject(
-            **translated_signal.model_dump(exclude_unset=True),
+        translated_signal = self.translate_schema(
+            signal,
+            use_batch=True,
+            include_paths=include_paths,
         )
+
+        # chart_pattern의 구조적 필드는 원본 값을 유지
+        if signal.chart_pattern and translated_signal.chart_pattern:
+            translated_signal.chart_pattern.name = signal.chart_pattern.name
+            translated_signal.chart_pattern.pattern_type = (
+                signal.chart_pattern.pattern_type
+            )
+
+        return translated_signal
 
     def _translate_json_recursive(self, data: Any) -> Any:
         if isinstance(data, dict):
@@ -637,7 +650,11 @@ class TranslateService:
             return json_data
 
     def _collect_translatable_strings(
-        self, schema_instance: BaseModel, path: str = ""
+        self,
+        schema_instance: BaseModel,
+        path: str = "",
+        include_paths: Optional[set[str]] = None,
+        skip_paths: Optional[set[str]] = None,
     ) -> dict[str, str]:
         """
         스키마에서 번역 가능한 모든 문자열을 수집합니다.
@@ -653,25 +670,67 @@ class TranslateService:
 
             if field_value is None:
                 continue
-
             # 문자열 필드
-            if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
-                if field_value.strip() and not self._should_skip_translation(field_name, field_value):
-                    texts[current_path] = field_value
+            if self._is_string_field(field_info.annotation) and isinstance(
+                field_value, str
+            ):
+                if (
+                    not field_value.strip()
+                    or self._should_skip_translation(field_name, field_value)
+                    or self._path_should_skip(
+                        current_path, skip_paths, allow_prefix=True
+                    )
+                    or not self._path_is_included(
+                        current_path, include_paths, allow_prefix=True
+                    )
+                ):
+                    continue
+                texts[current_path] = field_value
 
             # 중첩 모델
-            elif hasattr(field_value, "model_fields") and isinstance(field_value, BaseModel):
-                nested_texts = self._collect_translatable_strings(field_value, current_path)
+            elif hasattr(field_value, "model_fields") and isinstance(
+                field_value, BaseModel
+            ):
+                if self._path_should_skip(current_path, skip_paths):
+                    continue
+                if not self._path_has_included_descendant(current_path, include_paths):
+                    continue
+                nested_texts = self._collect_translatable_strings(
+                    field_value,
+                    current_path,
+                    include_paths,
+                    skip_paths,
+                )
                 texts.update(nested_texts)
 
             # 리스트
             elif isinstance(field_value, list) and field_value:
+                if self._path_should_skip(current_path, skip_paths):
+                    continue
+                if not self._path_has_included_descendant(current_path, include_paths):
+                    continue
                 for idx, item in enumerate(field_value):
                     item_path = f"{current_path}[{idx}]"
                     if isinstance(item, BaseModel):
-                        nested_texts = self._collect_translatable_strings(item, item_path)
+                        nested_texts = self._collect_translatable_strings(
+                            item,
+                            item_path,
+                            include_paths,
+                            skip_paths,
+                        )
                         texts.update(nested_texts)
-                    elif isinstance(item, str) and item.strip() and not self._should_skip_translation(field_name, item):
+                    elif isinstance(item, str):
+                        if (
+                            not item.strip()
+                            or self._should_skip_translation(field_name, item)
+                            or self._path_should_skip(
+                                item_path, skip_paths, allow_prefix=True
+                            )
+                            or not self._path_is_included(
+                                item_path, include_paths, allow_prefix=True
+                            )
+                        ):
+                            continue
                         texts[item_path] = item
 
         return texts
@@ -724,13 +783,15 @@ Translated JSON:"""
             # JSON 파싱
             try:
                 # 응답에서 JSON 부분 추출
-                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                json_match = re.search(r"\{[\s\S]*\}", response_text)
                 if json_match:
                     translations = json.loads(json_match.group())
                 else:
                     raise ValueError("No JSON found in response")
             except Exception as parse_error:
-                logger.error(f"JSON 파싱 실패: {parse_error}, 응답: {response_text[:200]}")
+                logger.error(
+                    f"JSON 파싱 실패: {parse_error}, 응답: {response_text[:200]}"
+                )
                 raise
 
             logger.info(f"배치 번역 완료: {len(translations)}개 텍스트")
@@ -739,10 +800,18 @@ Translated JSON:"""
         except Exception as e:
             logger.error(f"배치 번역 실패, 개별 번역으로 폴백: {e}")
             # 실패시 개별 번역으로 폴백
-            return {path: self._translate_text_with_aws(text) for path, text in texts.items()}
+            return {
+                path: self._translate_text_with_aws(text)
+                for path, text in texts.items()
+            }
 
     def _apply_translations(
-        self, schema_instance: T, translations: dict[str, str], path: str = ""
+        self,
+        schema_instance: T,
+        translations: dict[str, str],
+        path: str = "",
+        include_paths: Optional[set[str]] = None,
+        skip_paths: Optional[set[str]] = None,
     ) -> T:
         """
         번역된 텍스트를 스키마에 적용합니다.
@@ -755,32 +824,77 @@ Translated JSON:"""
                 continue
 
             # 문자열 필드
-            if self._is_string_field(field_info.annotation) and isinstance(field_value, str):
+            if self._is_string_field(field_info.annotation) and isinstance(
+                field_value, str
+            ):
+                if self._path_should_skip(
+                    current_path, skip_paths, allow_prefix=True
+                ) or not self._path_is_included(
+                    current_path, include_paths, allow_prefix=True
+                ):
+                    continue
                 if current_path in translations:
                     setattr(schema_instance, field_name, translations[current_path])
 
             # 중첩 모델
-            elif hasattr(field_value, "model_fields") and isinstance(field_value, BaseModel):
-                self._apply_translations(field_value, translations, current_path)
+            elif hasattr(field_value, "model_fields") and isinstance(
+                field_value, BaseModel
+            ):
+                if self._path_should_skip(current_path, skip_paths):
+                    continue
+                if not self._path_has_included_descendant(current_path, include_paths):
+                    continue
+                self._apply_translations(
+                    field_value,
+                    translations,
+                    current_path,
+                    include_paths,
+                    skip_paths,
+                )
 
             # 리스트
             elif isinstance(field_value, list) and field_value:
+                if self._path_should_skip(current_path, skip_paths):
+                    continue
+                if not self._path_has_included_descendant(current_path, include_paths):
+                    continue
                 for idx, item in enumerate(field_value):
                     item_path = f"{current_path}[{idx}]"
                     if isinstance(item, BaseModel):
-                        self._apply_translations(item, translations, item_path)
-                    elif isinstance(item, str) and item_path in translations:
-                        field_value[idx] = translations[item_path]
+                        self._apply_translations(
+                            item,
+                            translations,
+                            item_path,
+                            include_paths,
+                            skip_paths,
+                        )
+                    elif isinstance(item, str):
+                        if self._path_should_skip(
+                            item_path, skip_paths, allow_prefix=True
+                        ) or not self._path_is_included(
+                            item_path, include_paths, allow_prefix=True
+                        ):
+                            continue
+                        if item_path in translations:
+                            field_value[idx] = translations[item_path]
 
         return schema_instance
 
-    def translate_schema(self, schema_instance: T, use_batch: bool = True) -> T:
+    def translate_schema(
+        self,
+        schema_instance: T,
+        use_batch: bool = True,
+        include_paths: Optional[Iterable[str]] = None,
+        skip_paths: Optional[Iterable[str]] = None,
+    ) -> T:
         """
         Pydantic Schema의 str/text 타입 필드들을 번역하여 동일한 스키마로 반환합니다.
 
         Args:
             schema_instance: 번역할 Pydantic 모델 인스턴스
             use_batch: 배치 번역 사용 여부 (기본값: True, 토큰 절약)
+            include_paths: 번역을 수행할 필드 경로 집합 (예: {"report_summary", "items[0].title"})
+            skip_paths: 번역에서 제외할 필드 경로 집합
 
         Returns:
             번역된 필드들을 포함한 동일한 타입의 스키마 인스턴스
@@ -793,13 +907,19 @@ Translated JSON:"""
         try:
             # 원본 스키마를 딥 카피
             translated_data = schema_instance.model_copy(deep=True)
+            include_set = set(include_paths) if include_paths is not None else None
+            skip_set = set(skip_paths) if skip_paths is not None else None
 
             if use_batch:
                 # 배치 번역: 모든 텍스트를 수집 → 1번 API 호출 → 적용
                 logger.info(f"{type(schema_instance).__name__} 배치 번역 시작")
 
                 # 1. 번역 가능한 모든 텍스트 수집
-                texts_to_translate = self._collect_translatable_strings(translated_data)
+                texts_to_translate = self._collect_translatable_strings(
+                    translated_data,
+                    include_paths=include_set,
+                    skip_paths=skip_set,
+                )
                 logger.info(f"수집된 텍스트: {len(texts_to_translate)}개")
 
                 # 2. 한 번에 배치 번역
@@ -807,15 +927,25 @@ Translated JSON:"""
                     translations = self._translate_batch(texts_to_translate)
 
                     # 3. 번역 결과 적용
-                    self._apply_translations(translated_data, translations)
+                    self._apply_translations(
+                        translated_data,
+                        translations,
+                        include_paths=include_set,
+                        skip_paths=skip_set,
+                    )
 
-                logger.info(f"{type(schema_instance).__name__} 배치 번역 완료 (API 호출 1회)")
+                logger.info(
+                    f"{type(schema_instance).__name__} 배치 번역 완료 (API 호출 1회)"
+                )
             else:
                 # 기존 방식: 개별 번역 (토큰 낭비)
-                logger.warning(f"{type(schema_instance).__name__} 개별 번역 사용 (비권장)")
+                logger.warning(
+                    f"{type(schema_instance).__name__} 개별 번역 사용 (비권장)"
+                )
 
                 for field_name, field_info in schema_instance.model_fields.items():
                     field_value = getattr(schema_instance, field_name, None)
+                    current_path = field_name
 
                     if field_value is None:
                         continue
@@ -823,25 +953,86 @@ Translated JSON:"""
                     if self._is_string_field(field_info.annotation) and isinstance(
                         field_value, str
                     ):
-                        if field_value.strip() and not self._should_skip_translation(
-                            field_name, field_value
+                        if (
+                            not field_value.strip()
+                            or self._should_skip_translation(field_name, field_value)
+                            or self._path_should_skip(
+                                current_path, skip_set, allow_prefix=True
+                            )
+                            or not self._path_is_included(
+                                current_path, include_set, allow_prefix=True
+                            )
                         ):
-                            translated_value = self._translate_text_with_aws(field_value)
-                            setattr(translated_data, field_name, translated_value)
+                            continue
+                        translated_value = self._translate_text_with_aws(field_value)
+                        setattr(translated_data, field_name, translated_value)
 
                     elif hasattr(field_value, "model_fields") and isinstance(
                         field_value, BaseModel
                     ):
-                        translated_nested = self.translate_schema(field_value, use_batch=False)
+                        if self._path_should_skip(current_path, skip_set):
+                            continue
+                        if not self._path_has_included_descendant(
+                            current_path, include_set
+                        ):
+                            continue
+
+                        nested_include = self._relative_include_paths(
+                            include_set, current_path
+                        )
+                        nested_skip = self._relative_skip_paths(skip_set, current_path)
+
+                        translated_nested = self.translate_schema(
+                            field_value,
+                            use_batch=False,
+                            include_paths=nested_include,
+                            skip_paths=nested_skip,
+                        )
                         setattr(translated_data, field_name, translated_nested)
 
                     elif isinstance(field_value, list) and field_value:
+                        if self._path_should_skip(current_path, skip_set):
+                            continue
+                        if not self._path_has_included_descendant(
+                            current_path, include_set
+                        ):
+                            continue
+
                         translated_list = []
-                        for item in field_value:
+                        for idx, item in enumerate(field_value):
+                            item_path = f"{current_path}[{idx}]"
                             if isinstance(item, BaseModel):
-                                translated_list.append(self.translate_schema(item, use_batch=False))
-                            elif isinstance(item, str) and item.strip():
-                                translated_list.append(self._translate_text_with_aws(item))
+                                nested_include = self._relative_include_paths(
+                                    include_set, item_path
+                                )
+                                nested_skip = self._relative_skip_paths(
+                                    skip_set, item_path
+                                )
+
+                                translated_list.append(
+                                    self.translate_schema(
+                                        item,
+                                        use_batch=False,
+                                        include_paths=nested_include,
+                                        skip_paths=nested_skip,
+                                    )
+                                )
+                            elif isinstance(item, str):
+                                if (
+                                    not item.strip()
+                                    or self._should_skip_translation(field_name, item)
+                                    or self._path_should_skip(
+                                        item_path, skip_set, allow_prefix=True
+                                    )
+                                    or not self._path_is_included(
+                                        item_path, include_set, allow_prefix=True
+                                    )
+                                ):
+                                    translated_list.append(item)
+                                else:
+                                    translated_list.append(
+                                        self._translate_text_with_aws(item)
+                                    )
                             else:
                                 translated_list.append(item)
                         setattr(translated_data, field_name, translated_list)
@@ -874,3 +1065,128 @@ Translated JSON:"""
             return False
         except Exception:
             return False
+
+    def _path_should_skip(
+        self,
+        current_path: str,
+        skip_paths: Optional[set[str]],
+        allow_prefix: bool = False,
+    ) -> bool:
+        if not skip_paths or not current_path:
+            return False
+
+        if current_path in skip_paths:
+            return True
+
+        if allow_prefix:
+            for candidate in skip_paths:
+                if candidate and (
+                    current_path.startswith(f"{candidate}.")
+                    or current_path.startswith(f"{candidate}[")
+                ):
+                    return True
+
+        return False
+
+    def _path_is_included(
+        self,
+        current_path: str,
+        include_paths: Optional[set[str]],
+        allow_prefix: bool = False,
+    ) -> bool:
+        if include_paths is None:
+            return True
+        if not include_paths:
+            return False
+        if not current_path:
+            return True
+
+        if current_path in include_paths:
+            return True
+
+        if allow_prefix:
+            for candidate in include_paths:
+                if candidate and (
+                    current_path.startswith(f"{candidate}.")
+                    or current_path.startswith(f"{candidate}[")
+                ):
+                    return True
+
+        return False
+
+    def _path_has_included_descendant(
+        self,
+        current_path: str,
+        include_paths: Optional[set[str]],
+    ) -> bool:
+        if include_paths is None:
+            return True
+        if not include_paths:
+            return False
+        if not current_path:
+            return True
+
+        if current_path in include_paths:
+            return True
+
+        for candidate in include_paths:
+            if candidate.startswith(f"{current_path}.") or candidate.startswith(
+                f"{current_path}["
+            ):
+                return True
+
+        return False
+
+    def _relative_include_paths(
+        self,
+        include_paths: Optional[set[str]],
+        current_path: str,
+    ) -> Optional[set[str]]:
+        if include_paths is None:
+            return None
+        if not include_paths:
+            return set()
+        if not current_path:
+            return include_paths
+
+        if current_path in include_paths:
+            return None  # 전체 하위 경로 포함
+
+        prefix = f"{current_path}."
+        bracket_prefix = f"{current_path}["
+        relatives: set[str] = set()
+
+        for candidate in include_paths:
+            if candidate.startswith(prefix):
+                relatives.add(candidate[len(prefix) :])
+            elif candidate.startswith(bracket_prefix):
+                relatives.add(candidate[len(bracket_prefix) :])
+
+        return relatives
+
+    def _relative_skip_paths(
+        self,
+        skip_paths: Optional[set[str]],
+        current_path: str,
+    ) -> Optional[set[str]]:
+        if skip_paths is None:
+            return None
+        if not skip_paths:
+            return set()
+        if not current_path:
+            return skip_paths
+
+        if current_path in skip_paths:
+            return set()
+
+        prefix = f"{current_path}."
+        bracket_prefix = f"{current_path}["
+        relatives: set[str] = set()
+
+        for candidate in skip_paths:
+            if candidate.startswith(prefix):
+                relatives.add(candidate[len(prefix) :])
+            elif candidate.startswith(bracket_prefix):
+                relatives.add(candidate[len(bracket_prefix) :])
+
+        return relatives
