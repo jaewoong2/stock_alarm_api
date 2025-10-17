@@ -1,7 +1,8 @@
 import datetime
+import logging
 from typing import List, Literal, Optional, Any, Union
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, case
+from sqlalchemy import and_, func, case, text
 
 from myapi.domain.news.news_models import (
     MarketForecast,
@@ -14,6 +15,8 @@ from myapi.domain.news.news_schema import (
     MarketAnalysis,
     AiAnalysisVO,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class WebSearchResultRepository:
@@ -36,51 +39,88 @@ class WebSearchResultRepository:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> List[WebSearchResult]:
-        try:
-            query = self.db_session.query(WebSearchResult).filter(
-                WebSearchResult.result_type == result_type
-            )
+        import time
 
-            if ticker != "" and ticker is not None:
+        max_retries = 3
+        retry_delay = 1
 
-                tickers = ticker.split(",")
-
-                if tickers and len(tickers) > 1:
-                    query = query.filter(WebSearchResult.ticker.in_(tickers))
-                elif isinstance(ticker, str) and ticker.strip() != "":
-                    ticker = ticker.strip().upper()
-                    query = query.filter(WebSearchResult.ticker == ticker)
-
-            if start_date:
-                query = query.filter(WebSearchResult.created_at >= start_date)
-
-            if end_date:
-                query = query.filter(WebSearchResult.created_at < end_date)
-
-            query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
-
-            result = query.all()
-
-            if len(result) == 0:
-                if result_type == "ticker" and ticker:
-                    query = self.db_session.query(WebSearchResult).filter(
-                        WebSearchResult.result_type == result_type
+        for attempt in range(max_retries):
+            try:
+                # 연결 상태 확인
+                try:
+                    self.db_session.execute(text("SELECT 1"))
+                except Exception as conn_error:
+                    logger.warning(
+                        f"Database connection lost during get_search_results (attempt {attempt + 1}/{max_retries}): {conn_error}"
                     )
+                    self.db_session.rollback()
+                    self.db_session.close()
 
-                    if tickers and len(tickers) > 0:
+                query = self.db_session.query(WebSearchResult).filter(
+                    WebSearchResult.result_type == result_type
+                )
+
+                if ticker != "" and ticker is not None:
+
+                    tickers = ticker.split(",")
+
+                    if tickers and len(tickers) > 1:
                         query = query.filter(WebSearchResult.ticker.in_(tickers))
-                    else:
+                    elif isinstance(ticker, str) and ticker.strip() != "":
                         ticker = ticker.strip().upper()
                         query = query.filter(WebSearchResult.ticker == ticker)
 
-                    query = query.order_by(WebSearchResult.created_at.desc()).limit(30)
+                if start_date:
+                    query = query.filter(WebSearchResult.created_at >= start_date)
 
-                    result = query.all()
+                if end_date:
+                    query = query.filter(WebSearchResult.created_at < end_date)
 
-            return result
-        except Exception as e:
-            self.db_session.rollback()
-            raise e
+                query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
+
+                result = query.all()
+
+                if len(result) == 0:
+                    if result_type == "ticker" and ticker:
+                        query = self.db_session.query(WebSearchResult).filter(
+                            WebSearchResult.result_type == result_type
+                        )
+
+                        if tickers and len(tickers) > 0:
+                            query = query.filter(WebSearchResult.ticker.in_(tickers))
+                        else:
+                            ticker = ticker.strip().upper()
+                            query = query.filter(WebSearchResult.ticker == ticker)
+
+                        query = query.order_by(WebSearchResult.created_at.desc()).limit(
+                            30
+                        )
+
+                        result = query.all()
+
+                logger.info(
+                    f"Successfully retrieved search results (attempt {attempt + 1}/{max_retries})"
+                )
+                return result
+
+            except Exception as e:
+                self.db_session.rollback()
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Failed to get search results (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.error(
+                        f"Failed to get search results after {max_retries} attempts: {e}"
+                    )
+                    raise e
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        return []
 
     def get_ticker_counts_by_recommendation(
         self, recommendation: str, limit: int, date: Optional[datetime.date]
@@ -155,41 +195,77 @@ class WebSearchResultRepository:
         end_date_yyyymmdd: str,
         source: Literal["Major", "Minor"],
     ):
-        try:
-            response = (
-                self.db_session.query(MarketForecast)
-                .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
-                .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
-                .filter(MarketForecast.source == source)
-                .order_by(MarketForecast.date_yyyymmdd.asc())
-                .all()
-            )
+        import time
 
-            if not response:
-                return None
+        max_retries = 3
+        retry_delay = 1  # seconds
 
-            results = []
-
-            for result in response:
-                up_percentage = None
-
-                if result.up_percentage is not None:
-                    up_percentage = float(str(result.up_percentage))
-
-                results.append(
-                    MarketForecastSchema(
-                        created_at=result.created_at.isoformat(),
-                        date_yyyymmdd=str(result.date_yyyymmdd),
-                        outlook="UP" if str(result.outlook) == "UP" else "DOWN",
-                        reason=str(result.reason),
-                        up_percentage=up_percentage,
+        for attempt in range(max_retries):
+            try:
+                # 연결 상태 확인 및 재연결
+                try:
+                    self.db_session.execute(text("SELECT 1"))
+                except Exception as conn_error:
+                    logger.warning(
+                        f"Database connection lost during get_by_date (attempt {attempt + 1}/{max_retries}): {conn_error}"
                     )
-                )
-        except Exception as e:
-            self.db_session.rollback()
-            raise e
+                    self.db_session.rollback()
+                    self.db_session.close()
+                    # Session은 자동으로 재생성됨
 
-        return results
+                response = (
+                    self.db_session.query(MarketForecast)
+                    .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
+                    .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
+                    .filter(MarketForecast.source == source)
+                    .order_by(MarketForecast.date_yyyymmdd.asc())
+                    .all()
+                )
+
+                if not response:
+                    return None
+
+                results = []
+
+                for result in response:
+                    up_percentage = None
+
+                    if result.up_percentage is not None:
+                        up_percentage = float(str(result.up_percentage))
+
+                    results.append(
+                        MarketForecastSchema(
+                            created_at=result.created_at.isoformat(),
+                            date_yyyymmdd=str(result.date_yyyymmdd),
+                            outlook="UP" if str(result.outlook) == "UP" else "DOWN",
+                            reason=str(result.reason),
+                            up_percentage=up_percentage,
+                        )
+                    )
+
+                logger.info(
+                    f"Successfully retrieved market forecast data (attempt {attempt + 1}/{max_retries})"
+                )
+                return results
+
+            except Exception as e:
+                self.db_session.rollback()
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Failed to get market forecast (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(
+                        f"Failed to get market forecast after {max_retries} attempts: {e}"
+                    )
+                    raise e
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        return None
 
     def safe_convert(self, value: Any, target_type: type = int):
         """SQLAlchemy Column이나 다른 객체에서 안전하게 원하는 타입으로 변환합니다.
@@ -542,37 +618,71 @@ class WebSearchResultRepository:
             Pydantic schema used to validate the stored value. If ``None`` the
             raw JSON value is returned.
         """
+        import time
 
-        try:
-            result = (
-                self.db_session.query(AiAnalysisModel)
-                .filter(
-                    AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
-                    AiAnalysisModel.name == name,
-                )
-                .first()
-            )
+        max_retries = 3
+        retry_delay = 1
 
-            if not result:
-                return None
-
-            value = result.value
-            if schema is not None:
+        for attempt in range(max_retries):
+            try:
+                # 연결 상태 확인
                 try:
-                    value = schema.model_validate(value)
-                except Exception:
-                    # Fall back to raw value if validation fails
-                    value = result.value
+                    self.db_session.execute(text("SELECT 1"))
+                except Exception as conn_error:
+                    logger.warning(
+                        f"Database connection lost during get_analysis_by_date (attempt {attempt + 1}/{max_retries}): {conn_error}"
+                    )
+                    self.db_session.rollback()
+                    self.db_session.close()
 
-            return AiAnalysisVO(
-                id=self.safe_convert(result.id),
-                date=str(result.date),
-                name=str(result.name),
-                value=value,
-            )
-        except Exception as e:
-            self.db_session.rollback()
-            raise e
+                result = (
+                    self.db_session.query(AiAnalysisModel)
+                    .filter(
+                        AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                        AiAnalysisModel.name == name,
+                    )
+                    .first()
+                )
+
+                if not result:
+                    return None
+
+                value = result.value
+                if schema is not None:
+                    try:
+                        value = schema.model_validate(value)
+                    except Exception:
+                        # Fall back to raw value if validation fails
+                        value = result.value
+
+                logger.info(
+                    f"Successfully retrieved analysis by date (attempt {attempt + 1}/{max_retries})"
+                )
+                return AiAnalysisVO(
+                    id=self.safe_convert(result.id),
+                    date=str(result.date),
+                    name=str(result.name),
+                    value=value,
+                )
+
+            except Exception as e:
+                self.db_session.rollback()
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Failed to get analysis by date (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.error(
+                        f"Failed to get analysis by date after {max_retries} attempts: {e}"
+                    )
+                    raise e
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        return None
 
     def create_analysis(
         self,
@@ -590,9 +700,11 @@ class WebSearchResultRepository:
             try:
                 # 연결 상태 확인 및 재연결
                 try:
-                    self.db_session.execute("SELECT 1")
+                    self.db_session.execute(text("SELECT 1"))
                 except Exception:
-                    logger.warning("Database connection lost, attempting to reconnect...")
+                    logger.warning(
+                        "Database connection lost, attempting to reconnect..."
+                    )
                     self.db_session.rollback()
                     self.db_session.close()
                     # Session은 자동으로 재생성됨
@@ -607,7 +719,9 @@ class WebSearchResultRepository:
                 self.db_session.commit()
                 self.db_session.refresh(db_obj)
 
-                logger.info(f"Successfully stored {name} analysis (attempt {attempt + 1}/{max_retries})")
+                logger.info(
+                    f"Successfully stored {name} analysis (attempt {attempt + 1}/{max_retries})"
+                )
 
                 return AiAnalysisVO(
                     id=self.safe_convert(db_obj.id),
@@ -626,5 +740,10 @@ class WebSearchResultRepository:
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
-                    logger.error(f"Failed to store analysis after {max_retries} attempts: {e}")
+                    logger.error(
+                        f"Failed to store analysis after {max_retries} attempts: {e}"
+                    )
                     raise e
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        raise RuntimeError("Failed to create analysis after all retries")
