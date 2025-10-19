@@ -3,6 +3,7 @@ import logging
 from typing import List, Literal, Optional, Any, Union
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, case, text
+from sqlalchemy.exc import OperationalError
 
 from myapi.domain.news.news_models import (
     MarketForecast,
@@ -44,18 +45,10 @@ class WebSearchResultRepository:
         max_retries = 3
         retry_delay = 1
 
+        tickers: Optional[List[str]] = None
+
         for attempt in range(max_retries):
             try:
-                # 연결 상태 확인
-                try:
-                    self.db_session.execute(text("SELECT 1"))
-                except Exception as conn_error:
-                    logger.warning(
-                        f"Database connection lost during get_search_results (attempt {attempt + 1}/{max_retries}): {conn_error}"
-                    )
-                    self.db_session.rollback()
-                    self.db_session.close()
-
                 query = self.db_session.query(WebSearchResult).filter(
                     WebSearchResult.result_type == result_type
                 )
@@ -103,7 +96,7 @@ class WebSearchResultRepository:
                 )
                 return result
 
-            except Exception as e:
+            except OperationalError as e:
                 self.db_session.rollback()
 
                 if attempt < max_retries - 1:
@@ -118,6 +111,9 @@ class WebSearchResultRepository:
                         f"Failed to get search results after {max_retries} attempts: {e}"
                     )
                     raise e
+            except Exception:
+                self.db_session.rollback()
+                raise
 
         # This line should never be reached due to raise e above, but satisfies type checker
         return []
@@ -202,17 +198,6 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
-                # 연결 상태 확인 및 재연결
-                try:
-                    self.db_session.execute(text("SELECT 1"))
-                except Exception as conn_error:
-                    logger.warning(
-                        f"Database connection lost during get_by_date (attempt {attempt + 1}/{max_retries}): {conn_error}"
-                    )
-                    self.db_session.rollback()
-                    self.db_session.close()
-                    # Session은 자동으로 재생성됨
-
                 response = (
                     self.db_session.query(MarketForecast)
                     .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
@@ -248,7 +233,7 @@ class WebSearchResultRepository:
                 )
                 return results
 
-            except Exception as e:
+            except OperationalError as e:
                 self.db_session.rollback()
 
                 if attempt < max_retries - 1:
@@ -263,6 +248,9 @@ class WebSearchResultRepository:
                         f"Failed to get market forecast after {max_retries} attempts: {e}"
                     )
                     raise e
+            except Exception:
+                self.db_session.rollback()
+                raise
 
         # This line should never be reached due to raise e above, but satisfies type checker
         return None
@@ -625,16 +613,6 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
-                # 연결 상태 확인
-                try:
-                    self.db_session.execute(text("SELECT 1"))
-                except Exception as conn_error:
-                    logger.warning(
-                        f"Database connection lost during get_analysis_by_date (attempt {attempt + 1}/{max_retries}): {conn_error}"
-                    )
-                    self.db_session.rollback()
-                    self.db_session.close()
-
                 result = (
                     self.db_session.query(AiAnalysisModel)
                     .filter(
@@ -665,7 +643,7 @@ class WebSearchResultRepository:
                     value=value,
                 )
 
-            except Exception as e:
+            except OperationalError as e:
                 self.db_session.rollback()
 
                 if attempt < max_retries - 1:
@@ -680,6 +658,9 @@ class WebSearchResultRepository:
                         f"Failed to get analysis by date after {max_retries} attempts: {e}"
                     )
                     raise e
+            except Exception:
+                self.db_session.rollback()
+                raise
 
         # This line should never be reached due to raise e above, but satisfies type checker
         return None
@@ -698,17 +679,6 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
-                # 연결 상태 확인 및 재연결
-                try:
-                    self.db_session.execute(text("SELECT 1"))
-                except Exception:
-                    logger.warning(
-                        "Database connection lost, attempting to reconnect..."
-                    )
-                    self.db_session.rollback()
-                    self.db_session.close()
-                    # Session은 자동으로 재생성됨
-
                 db_obj = AiAnalysisModel(
                     date=analysis_date.strftime("%Y-%m-%d"),
                     name=name,
@@ -729,7 +699,7 @@ class WebSearchResultRepository:
                     name=str(db_obj.name),
                     value=analysis,
                 )
-            except Exception as e:
+            except OperationalError as e:
                 self.db_session.rollback()
 
                 if attempt < max_retries - 1:
@@ -744,6 +714,9 @@ class WebSearchResultRepository:
                         f"Failed to store analysis after {max_retries} attempts: {e}"
                     )
                     raise e
+            except Exception:
+                self.db_session.rollback()
+                raise
 
         # This line should never be reached due to raise e above, but satisfies type checker
         raise RuntimeError("Failed to create analysis after all retries")

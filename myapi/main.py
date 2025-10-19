@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from mangum import Mangum
 from starlette.middleware.cors import CORSMiddleware
+from dependency_injector import providers
 
 from myapi import containers
 from myapi.exceptions.index import ServiceException
@@ -18,6 +19,7 @@ from myapi.routers import (
     research_router,
 )
 from myapi.utils.config import init_logging
+from myapi.database import SessionLocal
 
 
 app = FastAPI()
@@ -62,6 +64,21 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.info(f"Response: {response.status_code}")
     return response
+
+
+@app.middleware("http")
+async def db_session_middleware(request: Request, call_next):
+    session = SessionLocal()
+    provider = providers.Object(session)
+    try:
+        with app.container.repositories.session.override(provider):
+            response = await call_next(request)
+        return response
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 # Exception handler for ServiceException

@@ -1,6 +1,5 @@
 from dependency_injector import containers, providers
-
-from myapi.database import get_db
+from sqlalchemy.orm import Session
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.ticker_reference_repository import TickerReferenceRepository
 from myapi.repositories.ticker_repository import TickerRepository
@@ -27,14 +26,14 @@ class ConfigModule(containers.DeclarativeContainer):
 class RepositoryModule(containers.DeclarativeContainer):
     """Database repositories"""
 
-    get_db = providers.Resource(get_db)
-    signals_repository = providers.Factory(SignalsRepository, db_session=get_db)
-    ticker_repository = providers.Factory(TickerRepository, db_session=get_db)
+    session = providers.Dependency(instance_of=Session)
+    signals_repository = providers.Factory(SignalsRepository, db_session=session)
+    ticker_repository = providers.Factory(TickerRepository, db_session=session)
     ticker_reference_repository = providers.Factory(
-        TickerReferenceRepository, db_session=get_db
+        TickerReferenceRepository, db_session=session
     )
     web_search_repository = providers.Factory(
-        WebSearchResultRepository, db_session=get_db
+        WebSearchResultRepository, db_session=session
     )
 
 
