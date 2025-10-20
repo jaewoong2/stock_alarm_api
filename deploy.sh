@@ -3,7 +3,7 @@
 # 필요한 변수 설정
 AWS_REGION="ap-northeast-2"  # 예: ap-northeast-2
 AWS_PROFILE="lime_admin"
-ECR_REPOSITORY="849441246713.dkr.ecr.ap-northeast-2.amazonaws.com/stock_alarm"  # 예: 373752144847.dkr.ecr.ap-northeast-2.amazonaws.com/knowlegebase-bedrock-test
+ECR_REPOSITORY="849441246713.dkr.ecr.ap-northeast-2.amazonaws.com/stock_alarm"  
 LAMBDA_FUNCTION_NAME="stock_alarm_lambda"
 # LAMBDA_FUNCTION_URL="https://guqx2yonk5wzcrkzlp2yfp77pm0rdmqx.lambda-url.ap-northeast-2.on.aws"
 
