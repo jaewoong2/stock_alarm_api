@@ -54,7 +54,7 @@ class ServiceModule(containers.DeclarativeContainer):
         ai_service=ai_service,
         settings=config.config,
     )
-    
+
     signal_service = providers.Factory(
         SignalService,
         signals_repository=repositories.signals_repository,
@@ -113,3 +113,14 @@ class Container(containers.DeclarativeContainer):
     services = providers.Container(
         ServiceModule, config=config, repositories=repositories
     )
+
+
+# Helper function to get services with a database session
+def get_services_with_session(db: Session):
+    """
+    Create a container with database session injected.
+    Use this in routers with: container = get_services_with_session(db)
+    """
+    container = Container()
+    container.repositories.session.override(providers.Object(db))
+    return container.services

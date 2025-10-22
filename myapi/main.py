@@ -19,7 +19,7 @@ from myapi.routers import (
     research_router,
 )
 from myapi.utils.config import init_logging
-from myapi.database import SessionLocal
+# SessionLocal import removed - using get_db() dependency injection instead
 
 
 app = FastAPI()
@@ -66,20 +66,8 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-@app.middleware("http")
-async def db_session_middleware(request: Request, call_next):
-    session = SessionLocal()
-    provider = providers.Object(session)
-    try:
-        with app.container.repositories.session.override(provider):
-            response = await call_next(request)
-        return response
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
+# Database session middleware removed - now using FastAPI dependency injection
+# Sessions are managed per-request via Depends(get_db) in routers
 
 # Exception handler for ServiceException
 @app.exception_handler(ServiceException)

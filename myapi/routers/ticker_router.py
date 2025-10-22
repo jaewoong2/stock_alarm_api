@@ -10,7 +10,9 @@ from myapi.utils.date_utils import validate_date, get_latest_market_date
 
 from dependency_injector.wiring import inject, Provide
 
-from myapi.containers import Container
+from myapi.containers import Container, get_services_with_session
+from myapi.database import get_db
+from sqlalchemy.orm import Session
 from myapi.domain.ticker.ticker_reference_schema import (
     TickerReferenceLookupResponse,
 )
@@ -362,23 +364,27 @@ def get_weekly_price_movement(
 
 
 @router.get("/order-by/date")
-@inject
 def get_tickers_ordered_by(
     target_date: Optional[dt.date] = dt.date.today(),
     direction: Literal["asc", "desc"] = "asc",
     field: Literal["close_change", "volume_change"] = "close_change",
     limit: int = 20,
-    ticker_service: TickerService = Depends(Provide[Container.services.ticker_service]),
+    db: Session = Depends(get_db),
 ):
     """
     티커를 심볼, 가격, 변화율에 따라 정렬하여 조회합니다.
     """
-
     target_date = validate_date(target_date) if target_date else dt.date.today()
     target_date_yesterday = get_prev_date(target_date)
 
+    # Create services with database session
+    services = get_services_with_session(db)
+    ticker_service: TickerService = services.ticker_service()
+
     response = ticker_service.get_ticker_orderby(
-        target_date_yesterday, TickerOrderBy(field=field, direction=direction), limit
+        target_date_yesterday,
+        TickerOrderBy(field=field, direction=direction),
+        limit,
     )
 
     return response

@@ -32,13 +32,12 @@ url = URL.create(
 SQLALCHEMY_DATABASE_URL = url.render_as_string(hide_password=False)
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
+    pool_size=20,  # Increased from 5 to 20 for better concurrency
+    max_overflow=10,  # Increased from 2 to 10 for additional connections
     pool_pre_ping=True,
     pool_recycle=1800,
-    # 추가적인 연결 안정성을 위한 설정
     echo=False,
-    pool_timeout=30,
+    pool_timeout=60,  # Increased from 30 to 60 seconds
     connect_args={"connect_timeout": 60, "application_name": "tqqq_api"},
 )
 
