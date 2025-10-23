@@ -10,9 +10,7 @@ from fastapi import APIRouter, Depends
 from myapi.utils.auth import verify_bearer_token
 from dependency_injector.wiring import inject, Provide
 
-from myapi.containers import Container, get_services_with_session
-from myapi.database import get_db
-from sqlalchemy.orm import Session
+from myapi.containers import Container
 from myapi.domain.news.news_schema import (
     MahaneyAnalysisRequest,
     MahaneyAnalysisGetRequest,
@@ -47,19 +45,16 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/")
+@inject
 def get_news(
     ticker: Optional[str] = "",
     news_type: Literal["ticker", "market"] = "market",
     news_date: Optional[dt.date] = dt.date.today(),
-    db: Session = Depends(get_db),
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
 ):
     """Get news with proper database session management"""
     today_str = validate_date(news_date if news_date else dt.date.today())
-    
-    # Create services with database session
-    services = get_services_with_session(db)
-    signal_service = services.signal_service()
-    
+
     result = signal_service.get_web_search_summary(
         type=news_type,
         ticker=ticker,

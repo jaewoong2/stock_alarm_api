@@ -1,10 +1,11 @@
 # services/ai_service.py
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, Dict, Literal, Optional, Type, TypeVar
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
 import openai
 import json
+import logging
 
 from pydantic import BaseModel
 
@@ -13,11 +14,17 @@ from myapi.utils.config import Settings
 from google import genai
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
+from myapi.repositories.api_key_repository import ApiKeyRepository
+
 T = TypeVar("T", bound=BaseModel)
+
+logger = logging.getLogger(__name__)
 
 
 class AIService:
-    def __init__(self, settings: Settings):
+    def __init__(
+        self, settings: Settings, api_key_repository: ApiKeyRepository
+    ) -> None:
         self.hyperbolic_api_key = settings.HYPERBOLIC_API_KEY
         self.open_api_key = settings.OPENAI_API_KEY
         self.gemini_api_key = settings.GEMINI_API_KEY
@@ -25,6 +32,61 @@ class AIService:
         self.perplexity_api_key = settings.PERPLEXITY_API_KEY
         self.bedrock_api_key = settings.BEDROCK_API_KEY
         self.bedrock_base_url = settings.BEDROCK_BASE_URL
+
+        # API key repository for DB-based key management
+        self.api_key_repository = api_key_repository
+        self.encryption = None
+
+        # Initialize encryption only if repository is available
+        if api_key_repository:
+            try:
+                from myapi.utils.encryption import KeyEncryption
+
+                self.encryption = KeyEncryption()
+            except Exception as e:
+                logger.warning(f"Failed to initialize encryption: {e}")
+
+    def _get_api_key_from_db(
+        self, provider: Literal["GEMINI", "OPENAI"]
+    ) -> tuple[Optional[str], Optional[int]]:
+        """
+        Get API key from database if available.
+        Falls back to environment variables if DB is not configured.
+
+        Args:
+            provider: Provider name ('GEMINI', 'OPENAI', etc.)
+
+        Returns:
+            Tuple of (api_key, key_id) or (None, None) if not found
+        """
+        if not self.api_key_repository or not self.encryption:
+            return (None, None)
+
+        try:
+            key_record = self.api_key_repository.get_available_key(provider)
+
+            if key_record:
+                decrypted = self.encryption.decrypt(str(key_record.api_key_encrypted))
+                return (decrypted, int(key_record.id.real))
+
+        except Exception as e:
+            logger.warning(f"Failed to get {provider} key from DB: {e}")
+
+        return (None, None)
+
+    def _track_usage(self, key_id: Optional[int]) -> None:
+        """
+        Track API usage in database.
+        Only tracks if key_id is provided and repository is available.
+
+        Args:
+            key_id: ID of the API key that was used
+        """
+        if key_id and self.api_key_repository:
+            try:
+                self.api_key_repository.increment_usage(key_id)
+            except Exception as e:
+                logger.error(f"Failed to track usage for key {key_id}: {e}")
 
     def perplexity_completion(
         self,
@@ -246,8 +308,12 @@ class AIService:
         prompt: str,
         schema: Type[T],
     ):
+        # Get API key from DB or fallback to environment variable
+        db_key, key_id = self._get_api_key_from_db("GEMINI")
+        api_key = db_key or self.gemini_api_key
+
         try:
-            client = genai.Client(api_key=self.gemini_api_key)
+            client = genai.Client(api_key=api_key)
 
             google_search_tool = Tool(google_search=GoogleSearch())
             response = client.models.generate_content(
@@ -258,6 +324,10 @@ class AIService:
                     response_modalities=["TEXT"],
                 ),
             )
+
+            # Track usage on success
+            self._track_usage(key_id)
+
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
 
@@ -293,11 +363,15 @@ class AIService:
         schema: Type[T],
     ):
         """
-        OpenAI API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
+        Gemini API를 이용해 시장 분석 후 매매 결정을 받아옵니다.
         결과는 아래 JSON 스키마 형식으로 반환됩니다:
         """
+        # Get API key from DB or fallback to environment variable
+        db_key, key_id = self._get_api_key_from_db("GEMINI")
+        api_key = db_key or self.gemini_api_key
+
         try:
-            client = genai.Client(api_key=self.gemini_api_key)
+            client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model="gemini-2.5-flash-preview-05-20",
                 contents=prompt,
@@ -306,6 +380,10 @@ class AIService:
                     "response_schema": schema,
                 },
             )
+
+            # Track usage on success
+            self._track_usage(key_id)
+
             return response.parsed
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini service error: {e}")
@@ -488,9 +566,12 @@ class AIService:
         """
         Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.
         """
+        # Get API key from DB or fallback to environment variable
+        db_key, key_id = self._get_api_key_from_db("OPENAI")
+        api_key = db_key or self.open_api_key
 
         client = openai.OpenAI(
-            api_key=self.open_api_key,
+            api_key=api_key,
         )
 
         user_content: Any = [
@@ -528,6 +609,9 @@ class AIService:
 
         if not result_str:
             raise ValueError("The response is empty. Please provide a valid response.")
+
+        # Track usage on success
+        self._track_usage(key_id)
 
         try:
             return result_str

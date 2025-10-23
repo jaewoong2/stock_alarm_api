@@ -1,5 +1,5 @@
 from dependency_injector import containers, providers
-from sqlalchemy.orm import Session
+from myapi.database import get_db
 from myapi.repositories.signals_repository import SignalsRepository
 from myapi.repositories.ticker_reference_repository import TickerReferenceRepository
 from myapi.repositories.ticker_repository import TickerRepository
@@ -15,6 +15,7 @@ from myapi.services.web_search_service import WebSearchService
 from myapi.services.translate_service import TranslateService
 from myapi.services.research_service import ResearchService
 from myapi.utils.config import Settings
+from myapi.repositories.api_key_repository import ApiKeyRepository
 
 
 class ConfigModule(containers.DeclarativeContainer):
@@ -26,7 +27,7 @@ class ConfigModule(containers.DeclarativeContainer):
 class RepositoryModule(containers.DeclarativeContainer):
     """Database repositories"""
 
-    session = providers.Dependency(instance_of=Session)
+    session = providers.Resource(get_db)
     signals_repository = providers.Factory(SignalsRepository, db_session=session)
     ticker_repository = providers.Factory(TickerRepository, db_session=session)
     ticker_reference_repository = providers.Factory(
@@ -36,6 +37,8 @@ class RepositoryModule(containers.DeclarativeContainer):
         WebSearchResultRepository, db_session=session
     )
 
+    api_key_repository = providers.Factory(ApiKeyRepository, db_session=session)
+
 
 class ServiceModule(containers.DeclarativeContainer):
     """Service layer dependencies"""
@@ -44,7 +47,11 @@ class ServiceModule(containers.DeclarativeContainer):
     repositories = providers.DependenciesContainer()
 
     aws_service = providers.Factory(AwsService, settings=config.config)
-    ai_service = providers.Factory(AIService, settings=config.config)
+    ai_service = providers.Factory(
+        AIService,
+        settings=config.config,
+        api_key_repository=repositories.api_key_repository,
+    )
     discord_service = providers.Factory(DiscordService, settings=config.config)
 
     translate_service = providers.Factory(
@@ -113,14 +120,3 @@ class Container(containers.DeclarativeContainer):
     services = providers.Container(
         ServiceModule, config=config, repositories=repositories
     )
-
-
-# Helper function to get services with a database session
-def get_services_with_session(db: Session):
-    """
-    Create a container with database session injected.
-    Use this in routers with: container = get_services_with_session(db)
-    """
-    container = Container()
-    container.repositories.session.override(providers.Object(db))
-    return container.services

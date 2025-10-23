@@ -1679,45 +1679,44 @@ OUTPUT: Return JSON matching FundamentalAnalysisResponse schema with ALL fields 
         cached_response: FundamentalAnalysisGetResponse | None = None
         cached_days_old: int | None = None
 
-        cached_analysis = self.websearch_repository.get_analysis_by_date(
-            target_date, name="fundamental_analysis", schema=None
+        cached_analysis = self.websearch_repository.get_analysis_by_date_and_ticker(
+            target_date, 
+            ticker=ticker,
+            name="fundamental_analysis", 
+            schema=FundamentalAnalysisResponse
         )
 
         if cached_analysis and cached_analysis.value:
             try:
                 cached_value = cached_analysis.value
-                cached_ticker = ""
+                
+                # Repository already filtered by ticker, so no need to check again
+                try:
+                    cached_date = date.fromisoformat(str(cached_analysis.date))
+                except Exception:
+                    cached_date = target_date
 
-                if isinstance(cached_value, dict):
-                    cached_ticker = cached_value.get("ticker", "").upper()
+                # cached_value is already validated as FundamentalAnalysisResponse by repository
+                if isinstance(cached_value, FundamentalAnalysisResponse):
+                    analysis_model = cached_value
+                elif isinstance(cached_value, dict):
+                    analysis_model = FundamentalAnalysisResponse.model_validate(cached_value)
+                else:
+                    raise ValueError(f"Unexpected cached value type: {type(cached_value)}")
 
-                if cached_ticker == ticker:
-                    try:
-                        cached_date = date.fromisoformat(str(cached_analysis.date))
-                    except Exception:
-                        cached_date = target_date
+                days_old = (target_date - cached_date).days
+                if days_old < 0:
+                    days_old = 0
 
-                    try:
-                        analysis_model = FundamentalAnalysisResponse.model_validate(
-                            cached_value
-                        )
-                        days_old = (target_date - cached_date).days
-                        if days_old < 0:
-                            days_old = 0
-
-                        cached_days_old = days_old
-                        cached_response = FundamentalAnalysisGetResponse(
-                            analysis=analysis_model,
-                            is_cached=True,
-                            cache_date=cached_date,
-                            days_until_expiry=max(0, 30 - days_old),
-                        )
-                    except Exception as parse_error:
-                        logger.warning(
-                            f"Failed to validate cached fundamental analysis for {ticker}: {parse_error}"
-                        )
+                cached_days_old = days_old
+                cached_response = FundamentalAnalysisGetResponse(
+                    analysis=analysis_model,
+                    is_cached=True,
+                    cache_date=cached_date,
+                    days_until_expiry=max(0, 30 - days_old),
+                )
             except Exception as e:
-                logger.warning(f"Failed to parse cached fundamental analysis: {e}")
+                logger.warning(f"Failed to parse cached fundamental analysis for {ticker}: {e}")
 
         if not analysis_request:
             if cached_response:

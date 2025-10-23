@@ -479,6 +479,7 @@ class SignalWithTicker(BaseModel):
 class SignalJoinTickerResponse(BaseModel):
     class Signal(BaseModel):
         ticker: str
+        name: Optional[str] = None  # Company name from ticker_references
         strategy: Optional[str] = None
         entry_price: Optional[float]
         stop_loss: Optional[float] = None

@@ -16,6 +16,7 @@ from myapi.domain.signal.signal_schema import (
     SignalValueObject,
 )
 from myapi.domain.ticker.ticker_model import Ticker
+from myapi.domain.ticker.ticker_reference_model import TickerReference
 from myapi.utils.date_utils import (
     get_current_kst_date,
     get_current_kst_datetime,
@@ -908,8 +909,15 @@ class SignalsRepository:
                 Ticker.updated_at,
             ]
 
-            # 쿼리 구성
-            query = self.db_session.query(*signal_columns, *ticker_columns).outerjoin(
+            # 쿼리 구성 (TickerReference의 회사명 포함)
+            query = self.db_session.query(
+                *signal_columns,
+                TickerReference.name.label('company_name'),
+                *ticker_columns
+            ).outerjoin(
+                TickerReference,
+                Signals.ticker == TickerReference.symbol
+            ).outerjoin(
                 Ticker,
                 and_(
                     Signals.ticker == Ticker.symbol,
@@ -952,6 +960,9 @@ class SignalsRepository:
                     field_name = column.key
                     signal_data[field_name] = row[i]
 
+                # 회사명 추가 (TickerReference에서 조인된 값)
+                signal_data['name'] = row[signal_field_count]
+
                 # symbols가 없을 때 민감한 필드들을 None으로 설정
                 if not symbols:
                     signal_data.update(
@@ -966,15 +977,17 @@ class SignalsRepository:
                     )
 
                 # Ticker 데이터 매핑 (첫 번째 ticker 필드가 None이 아닌 경우에만)
+                # company_name 컬럼이 추가되어 인덱스가 +1 증가
                 ticker_data = None
-                if row[signal_field_count] is not None:  # 첫 번째 ticker 필드 확인
+                ticker_start_index = signal_field_count + 1  # company_name 컬럼 다음부터
+                if row[ticker_start_index] is not None:  # 첫 번째 ticker 필드 확인
                     ticker_data = {}
                     for i, column in enumerate(ticker_columns):
                         field_name = column.key
                         if field_name == "date":
-                            ticker_data["ticker_date"] = row[signal_field_count + i]
+                            ticker_data["ticker_date"] = row[ticker_start_index + i]
                         else:
-                            ticker_data[field_name] = row[signal_field_count + i]
+                            ticker_data[field_name] = row[ticker_start_index + i]
 
                 response = {
                     "signal": signal_data,

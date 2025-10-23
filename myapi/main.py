@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from mangum import Mangum
 from starlette.middleware.cors import CORSMiddleware
-from dependency_injector import providers
 
 from myapi import containers
 from myapi.exceptions.index import ServiceException
@@ -19,6 +18,7 @@ from myapi.routers import (
     research_router,
 )
 from myapi.utils.config import init_logging
+
 # SessionLocal import removed - using get_db() dependency injection instead
 
 
@@ -68,6 +68,7 @@ async def log_requests(request: Request, call_next):
 
 # Database session middleware removed - now using FastAPI dependency injection
 # Sessions are managed per-request via Depends(get_db) in routers
+
 
 # Exception handler for ServiceException
 @app.exception_handler(ServiceException)

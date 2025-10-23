@@ -665,6 +665,88 @@ class WebSearchResultRepository:
         # This line should never be reached due to raise e above, but satisfies type checker
         return None
 
+    def get_analysis_by_date_and_ticker(
+        self,
+        analysis_date: datetime.date,
+        ticker: str,
+        name: str = "fundamental_analysis",
+        schema: type | None = None,
+    ) -> AiAnalysisVO | None:
+        """Fetch analysis data filtered by date, name, AND ticker from JSON field.
+
+        Parameters
+        ----------
+        analysis_date: datetime.date
+            Date of the analysis to retrieve.
+        ticker: str
+            Ticker symbol to filter from JSON value field (value->>'ticker').
+        name: str
+            Identifier of the analysis type. Defaults to ``"fundamental_analysis"``.
+        schema: Optional[type]
+            Pydantic schema used to validate the stored value. If ``None`` the
+            raw JSON value is returned.
+        """
+        import time
+        from sqlalchemy import text
+
+        max_retries = 3
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                result = (
+                    self.db_session.query(AiAnalysisModel)
+                    .filter(
+                        AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                        AiAnalysisModel.name == name,
+                        text("value->>'ticker' = :ticker").params(ticker=ticker.upper()),
+                    )
+                    .first()
+                )
+
+                if not result:
+                    return None
+
+                value = result.value
+                if schema is not None:
+                    try:
+                        value = schema.model_validate(value)
+                    except Exception:
+                        # Fall back to raw value if validation fails
+                        value = result.value
+
+                logger.info(
+                    f"Successfully retrieved analysis by date and ticker (attempt {attempt + 1}/{max_retries})"
+                )
+                return AiAnalysisVO(
+                    id=self.safe_convert(result.id),
+                    date=str(result.date),
+                    name=str(result.name),
+                    value=value,
+                )
+
+            except OperationalError as e:
+                self.db_session.rollback()
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Failed to get analysis by date and ticker (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.error(
+                        f"Failed to get analysis by date and ticker after {max_retries} attempts: {e}"
+                    )
+                    raise e
+            except Exception:
+                self.db_session.rollback()
+                raise
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        return None
+
     def create_analysis(
         self,
         analysis_date: datetime.date,
