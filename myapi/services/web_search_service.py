@@ -1647,11 +1647,17 @@ OUTPUT: Return JSON matching FundamentalAnalysisResponse schema with ALL fields 
 
             return translated_response
 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to create fundamental analysis for {ticker}: {e}")
+            error_text = str(e)
+            if "401" in error_text or "Unauthorized" in error_text:
+                user_message = "현재 사용 가능한 분석 쿼터가 없습니다. 다음달 1일 이후 다시 시도해 주세요."
+                raise HTTPException(status_code=503, detail=user_message)
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to create fundamental analysis: {str(e)}"
+                detail=f"Failed to create fundamental analysis: {error_text}"
             )
 
     async def get_fundamental_analysis(
