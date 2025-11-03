@@ -69,6 +69,9 @@ class DBSignalService:
         date: date,
         symbols: Optional[List[str]] = None,
         strategy_type: Optional[str] = None,
+        limit: Optional[int] = None,
+        order_by: Optional[Literal["probability"]] = None,
+        order_by_direction: Optional[Literal["asc", "desc"]] = "desc",
     ) -> List[SignalJoinTickerResponse]:
         """
         특정 날짜의 시그널 결과를 조회합니다.
@@ -81,7 +84,12 @@ class DBSignalService:
         try:
             # 통합된 리포지토리 메서드 사용
             signals = self.repository.get_signals_with_ticker(
-                date_value=date, symbols=symbols, strategy_filter=strategy_type
+                date_value=date,
+                symbols=symbols,
+                strategy_filter=strategy_type,
+                limit=limit,
+                order_by=order_by,
+                order_by_direction=order_by_direction,
             )
 
             if not signals or len(signals) == 0:

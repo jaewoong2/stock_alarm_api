@@ -540,6 +540,9 @@ async def get_signal_by_date(
     date: str,
     symbols: str = "",
     strategy_type: Optional[str] = None,
+    limit: Optional[int] = None,
+    order_by: Optional[Literal["probability"]] = None,
+    order_by_direction: Optional[Literal["asc", "desc"]] = "desc",
     db_signal_service: DBSignalService = Depends(
         Provide[Container.services.db_signal_service]
     ),
@@ -561,6 +564,9 @@ async def get_signal_by_date(
         date=date_value,
         symbols=symbol_list,
         strategy_type=strategy_type,
+        limit=limit,
+        order_by=order_by,
+        order_by_direction=order_by_direction,
     )
 
     return {"signals": response}
@@ -587,17 +593,15 @@ async def get_signals_by_only_ai(
 
         market_reference_date = get_latest_market_date()
         target_date = request.date or market_reference_date
-        
+
         # Convert target_date to date object if it's datetime
         if isinstance(target_date, dt.datetime):
             target_date = target_date.date()
-        
+
         target_date = validate_date(target_date)
         date_str = target_date.strftime("%Y-%m-%d")
 
-        logger.info(
-            f"Generating AI signals for {len(tickers)} tickers on {date_str}"
-        )
+        logger.info(f"Generating AI signals for {len(tickers)} tickers on {date_str}")
 
         # AI 모델을 사용하여 시그널 생성
         prompt = f"""

@@ -1,4 +1,3 @@
-from pyparsing import C
 import sqlalchemy
 from sqlalchemy.orm import Session
 from typing import Dict, List, Literal, Optional
@@ -844,6 +843,9 @@ class SignalsRepository:
         date_value: date,
         symbols: Optional[List[str]] = None,
         strategy_filter: Optional[str] = None,
+        limit: Optional[int] = None,
+        order_by: Optional[Literal["probability"]] = None,
+        order_by_direction: Optional[Literal["asc", "desc"]] = "desc",
     ) -> List[SignalJoinTickerResponse]:
         """
         특정 날짜 및 선택적 티커와 전략에 대한 시그널과 티커 정보를 조인하여 가져옵니다.
@@ -910,24 +912,25 @@ class SignalsRepository:
             ]
 
             # 쿼리 구성 (TickerReference의 회사명 포함)
-            query = self.db_session.query(
-                *signal_columns,
-                TickerReference.name.label('company_name'),
-                *ticker_columns
-            ).outerjoin(
-                TickerReference,
-                Signals.ticker == TickerReference.symbol
-            ).outerjoin(
-                Ticker,
-                and_(
-                    Signals.ticker == Ticker.symbol,
-                    Signals.action != "hold",
-                    Ticker.date >= func.cast(Signals.timestamp, sqlalchemy.Date),
-                    Ticker.date
-                    <= func.cast(
-                        Signals.timestamp + timedelta(days=5), sqlalchemy.Date
+            query = (
+                self.db_session.query(
+                    *signal_columns,
+                    TickerReference.name.label("company_name"),
+                    *ticker_columns,
+                )
+                .outerjoin(TickerReference, Signals.ticker == TickerReference.symbol)
+                .outerjoin(
+                    Ticker,
+                    and_(
+                        Signals.ticker == Ticker.symbol,
+                        Signals.action != "hold",
+                        Ticker.date >= func.cast(Signals.timestamp, sqlalchemy.Date),
+                        Ticker.date
+                        <= func.cast(
+                            Signals.timestamp + timedelta(days=5), sqlalchemy.Date
+                        ),
                     ),
-                ),
+                )
             )
 
             # 날짜 필터링
@@ -944,7 +947,22 @@ class SignalsRepository:
                 query = query.filter(Signals.strategy != "AI_GENERATED")
 
             # 정렬
-            query = query.order_by(Signals.timestamp.desc(), Ticker.date.asc())
+
+            if order_by == "probability":
+                query = query.order_by(
+                    (
+                        Signals.probability.desc()
+                        if order_by_direction == "desc"
+                        else Signals.probability.asc()
+                    ),
+                    Signals.timestamp.desc(),
+                    Ticker.date.asc(),
+                )
+            else:
+                query = query.order_by(Signals.timestamp.desc(), Ticker.date.asc())
+
+            if limit and limit > 0:
+                query = query.limit(limit)
 
             # 쿼리 실행
             results = query.all()
@@ -961,7 +979,7 @@ class SignalsRepository:
                     signal_data[field_name] = row[i]
 
                 # 회사명 추가 (TickerReference에서 조인된 값)
-                signal_data['name'] = row[signal_field_count]
+                signal_data["name"] = row[signal_field_count]
 
                 # symbols가 없을 때 민감한 필드들을 None으로 설정
                 if not symbols:
@@ -979,7 +997,9 @@ class SignalsRepository:
                 # Ticker 데이터 매핑 (첫 번째 ticker 필드가 None이 아닌 경우에만)
                 # company_name 컬럼이 추가되어 인덱스가 +1 증가
                 ticker_data = None
-                ticker_start_index = signal_field_count + 1  # company_name 컬럼 다음부터
+                ticker_start_index = (
+                    signal_field_count + 1
+                )  # company_name 컬럼 다음부터
                 if row[ticker_start_index] is not None:  # 첫 번째 ticker 필드 확인
                     ticker_data = {}
                     for i, column in enumerate(ticker_columns):
