@@ -20,9 +20,7 @@ class TickerReferenceRepository:
             .one_or_none()
         )
 
-    def search_by_symbol_prefix(
-        self, prefix: str, limit: int
-    ) -> List[TickerReference]:
+    def search_by_symbol_prefix(self, prefix: str, limit: int) -> List[TickerReference]:
         if not prefix:
             return []
         normalized = prefix.strip().upper()

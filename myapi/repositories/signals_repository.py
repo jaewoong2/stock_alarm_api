@@ -912,8 +912,10 @@ class SignalsRepository:
             ]
 
             # 쿼리 구성 (TickerReference의 회사명 포함)
+            # Signals.id를 SELECT에 추가하여 DISTINCT ON에서 사용
             query = (
                 self.db_session.query(
+                    Signals.id,  # DISTINCT ON을 위해 추가
                     *signal_columns,
                     TickerReference.name.label("company_name"),
                     *ticker_columns,
@@ -946,26 +948,41 @@ class SignalsRepository:
             else:
                 query = query.filter(Signals.strategy != "AI_GENERATED")
 
-            # 정렬
+            # DISTINCT ON을 사용하여 각 Signal당 하나의 행만 선택
+            # Ticker.date로 정렬하여 각 Signal의 가장 이른 날짜의 Ticker를 선택
+            query = query.order_by(
+                Signals.id,
+                Ticker.date.asc(),
+            ).distinct(Signals.id)
 
+            # DISTINCT ON 후 다시 정렬 (subquery 사용)
+            # 이렇게 하면 중복 제거 후 원하는 순서로 정렬 가능
+            from sqlalchemy import select
+
+            subquery = query.subquery()
+
+            # subquery에서 모든 컬럼 선택
+            final_query = self.db_session.query(subquery)
+
+            # 원하는 순서로 정렬 (컬럼 이름으로 접근)
             if order_by == "probability":
-                query = query.order_by(
+                final_query = final_query.order_by(
                     (
-                        Signals.probability.desc()
+                        subquery.c.probability.desc()
                         if order_by_direction == "desc"
-                        else Signals.probability.asc()
+                        else subquery.c.probability.asc()
                     ),
-                    Signals.timestamp.desc(),
-                    Ticker.date.asc(),
+                    subquery.c.timestamp.desc(),
                 )
             else:
-                query = query.order_by(Signals.timestamp.desc(), Ticker.date.asc())
+                final_query = final_query.order_by(subquery.c.timestamp.desc())
 
+            # LIMIT 적용
             if limit and limit > 0:
-                query = query.limit(limit)
+                final_query = final_query.limit(limit)
 
-            # 쿼리 실행
-            results = query.all()
+            # 쿼리 실행 (final_query 사용)
+            results = final_query.all()
 
             # 결과를 응답 모델로 변환
             response_list = []
@@ -973,13 +990,15 @@ class SignalsRepository:
 
             for row in results:
                 # Signal 데이터 매핑
+                # row[0]은 Signals.id이므로 건너뛰고, row[1]부터 signal_columns 매핑
                 signal_data = {}
                 for i, column in enumerate(signal_columns):
                     field_name = column.key
-                    signal_data[field_name] = row[i]
+                    signal_data[field_name] = row[i + 1]  # id를 건너뛰기 위해 +1
 
                 # 회사명 추가 (TickerReference에서 조인된 값)
-                signal_data["name"] = row[signal_field_count]
+                # id 추가로 인해 인덱스가 +1 증가
+                signal_data["name"] = row[signal_field_count + 1]
 
                 # symbols가 없을 때 민감한 필드들을 None으로 설정
                 if not symbols:
@@ -996,10 +1015,11 @@ class SignalsRepository:
 
                 # Ticker 데이터 매핑 (첫 번째 ticker 필드가 None이 아닌 경우에만)
                 # company_name 컬럼이 추가되어 인덱스가 +1 증가
+                # id 추가로 인해 다시 +1 증가
                 ticker_data = None
                 ticker_start_index = (
-                    signal_field_count + 1
-                )  # company_name 컬럼 다음부터
+                    signal_field_count + 2
+                )  # id(+1) + company_name(+1) 컬럼 다음부터
                 if row[ticker_start_index] is not None:  # 첫 번째 ticker 필드 확인
                     ticker_data = {}
                     for i, column in enumerate(ticker_columns):
