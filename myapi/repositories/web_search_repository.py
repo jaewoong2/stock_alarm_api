@@ -69,7 +69,9 @@ class WebSearchResultRepository:
                 if end_date:
                     query = query.filter(WebSearchResult.created_at < end_date)
 
-                query = query.order_by(WebSearchResult.date_yyyymmdd.desc())
+                query = query.distinct(WebSearchResult.id).order_by(
+                    WebSearchResult.id.desc(), WebSearchResult.date_yyyymmdd.desc()
+                )
 
                 result = query.all()
 
@@ -85,8 +87,13 @@ class WebSearchResultRepository:
                             ticker = ticker.strip().upper()
                             query = query.filter(WebSearchResult.ticker == ticker)
 
-                        query = query.order_by(WebSearchResult.created_at.desc()).limit(
-                            30
+                        query = (
+                            query.distinct(WebSearchResult.id)
+                            .order_by(
+                                WebSearchResult.id.desc(),
+                                WebSearchResult.created_at.desc(),
+                            )
+                            .limit(30)
                         )
 
                         result = query.all()
@@ -699,7 +706,9 @@ class WebSearchResultRepository:
                     .filter(
                         AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
                         AiAnalysisModel.name == name,
-                        text("value->>'ticker' = :ticker").params(ticker=ticker.upper()),
+                        text("value->>'ticker' = :ticker").params(
+                            ticker=ticker.upper()
+                        ),
                     )
                     .first()
                 )
