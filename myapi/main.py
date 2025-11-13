@@ -35,15 +35,15 @@ logger = logging.getLogger(__name__)
 is_dev = os.getenv("ENVIRONMENT", "dev").lower() == "dev"
 if is_dev:
     origins = [
-        "https://ai.bamtoly.com",
-        "https://stock.bamtoly.com",
+        "https://biizbiiz.com",
+        "https://stock.biizbiiz.com",
         "http://localhost:3000",
         "http://localhost:5174",
         "http://localhost:5173",
         "https://lqiqjbap36vcqands43tgqjz3e0buafo.lambda-url.ap-northeast-2.on.aws",
     ]
 else:
-    origins = ["https://stock.bamtoly.com", "https://ai.bamtoly.com"]
+    origins = ["https://stock.biizbiiz.com", "https://biizbiiz.com"]
 
 logger = logging.getLogger(__name__)
 

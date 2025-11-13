@@ -1,11 +1,11 @@
 # 기존 ACM 인증서 참조 (wildcard 인증서 사용)
 data "aws_acm_certificate" "fastapi" {
-  domain = "*.bamtoly.com"
+  domain = "*.biizbiiz.com"
 }
 
 # Route 53 Hosted Zone (기존 호스트 존 사용)
 data "aws_route53_zone" "main" {
-  name         = "bamtoly.com"
+  name         = "biizbiiz.com"
   private_zone = false
 }
 

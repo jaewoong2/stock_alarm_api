@@ -1,7 +1,7 @@
 # ECS Service Auto Scaling Target (비용 최적화)
 resource "aws_appautoscaling_target" "ecs_target" {
-  max_capacity       = 3  # 최대 3개로 제한 (비용 절약)
-  min_capacity       = 2  # 최소 2개 유지 (고가용성)
+  max_capacity       = 2  # 최대 3개로 제한 (비용 절약)
+  min_capacity       = 1  # 최소 2개 유지 (고가용성)
   resource_id        = "service/${aws_ecs_cluster.fastapi.name}/${aws_ecs_service.fastapi.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -52,11 +52,11 @@ resource "aws_appautoscaling_scheduled_action" "scale_out_business_hours" {
   service_namespace  = aws_appautoscaling_target.ecs_target.service_namespace
   resource_id        = aws_appautoscaling_target.ecs_target.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_target.scalable_dimension
-  schedule           = "cron(0 9 ? * MON-FRI *)"  # 평일 오전 9시 (day-of-month를 ?로 설정)
+  schedule           = "cron(0 9 ? * MON-FRI *)"  # 평일 오전 9시 UTC (EventBridge cron format)
 
   scalable_target_action {
-    min_capacity = 2  # 평일 업무시간에는 2개 유지
-    max_capacity = 3
+    min_capacity = 1  # 평일 업무시간에는 1개 유지
+    max_capacity = 2
   }
 }
 
@@ -65,10 +65,10 @@ resource "aws_appautoscaling_scheduled_action" "scale_in_off_hours" {
   service_namespace  = aws_appautoscaling_target.ecs_target.service_namespace
   resource_id        = aws_appautoscaling_target.ecs_target.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_target.scalable_dimension
-  schedule           = "cron(0 20 * * ? *)"  # 매일 오후 8시 (day-of-week를 ?로 설정)
+  schedule           = "cron(0 20 * * ? *)"  # 매일 오후 8시 UTC (EventBridge cron format)
 
   scalable_target_action {
     min_capacity = 1  # 야간/주말에는 1개로 축소 (비용 절약)
-    max_capacity = 3
+    max_capacity = 2
   }
 }

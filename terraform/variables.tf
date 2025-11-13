@@ -55,7 +55,7 @@ variable "security_group_id" {
 variable "domain_name" {
   description = "Domain name for the FastAPI application"
   type        = string
-  default     = "ai-api.bamtoly.com"
+  default     = "ai-api.biizbiiz.com"
 }
 
 variable "alert_email" {

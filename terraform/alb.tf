@@ -50,7 +50,7 @@ resource "aws_lb_listener_rule" "fastapi_api" {
 
   condition {
     host_header {
-      values = ["ai-api.bamtoly.com"]
+      values = ["ai-api.bamtoly.com", "ai-api.biizbiiz.com"]
     }
   }
 
@@ -74,7 +74,7 @@ resource "aws_lb_listener_rule" "fastapi_http_redirect" {
 
   condition {
     host_header {
-      values = ["ai-api.bamtoly.com"]
+      values = ["ai-api.bamtoly.com", "ai-api.biizbiiz.com"]
     }
   }
 
