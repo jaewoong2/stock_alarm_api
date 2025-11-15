@@ -255,6 +255,39 @@ class TickerReport(BaseModel):
     dataframe: str | None = None
 
 
+class VixData(BaseModel):
+    """Market volatility data from VIX and related indices"""
+
+    vix_level: float | None = None
+    vix_percentile: float | None = None
+    vix_9d: float | None = None
+    vix_3m: float | None = None
+    vxn: float | None = None
+    term_structure: str | None = None  # "normal", "inverted", "flat", "unknown"
+    fear_level: str | None = None  # "extreme_fear", "fear", "neutral", "greed", "unknown"
+
+
+class OptionsData(BaseModel):
+    """Options market sentiment data"""
+
+    spy_put_call_ratio: float | None = None
+    spy_put_call_avg_30d: float | None = None
+    qqq_put_call_ratio: float | None = None
+    qqq_put_call_avg_30d: float | None = None
+    sentiment: str | None = None  # "bearish", "neutral", "bullish"
+    iv_percentile: float | None = None
+
+
+class TrendContext(BaseModel):
+    """Trend analysis context for the ticker"""
+
+    short_term: str | None = None  # "strong_up", "weak_up", "sideways", "weak_down", "strong_down"
+    medium_term: str | None = None  # Same options as short_term
+    long_term: str | None = None  # Same options as short_term
+    relative_strength_trend: str | None = None  # "strengthening", "weakening", "neutral"
+    recommended_approach: str | None = None  # "trend_following", "mean_reversion"
+
+
 class SignalPromptData(BaseModel):
     """
     SignalPromptData는 SignalPassAI에 대한 쿼리 파라미터를 정의합니다.
@@ -270,6 +303,9 @@ class SignalPromptData(BaseModel):
     news: List[NewsHeadline] | None = None
     additional_info: str | None = None
     spy_description: str | None = None
+    vix_data: VixData | None = None
+    options_data: OptionsData | None = None
+    trend_context: TrendContext | None = None
 
 
 class AnalyticsReportPromptResponse(BaseModel):

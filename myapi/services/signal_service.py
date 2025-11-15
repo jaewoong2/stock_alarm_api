@@ -575,6 +575,455 @@ class SignalService:
         df = flatten_price_columns(df, ticker)
         return df
 
+    def fetch_market_volatility_data(self, days_back: int = 365) -> dict:
+        """
+        Fetch VIX and related volatility indices for market fear gauge.
+
+        Returns:
+            dict with keys:
+                - vix_level: Current VIX value
+                - vix_percentile: VIX percentile over past year (0-100)
+                - vix_9d: VIX 9-day value
+                - vix_3m: VIX 3-month value
+                - vxn: Nasdaq 100 Volatility Index
+                - term_structure: "normal", "inverted", or "flat"
+                - fear_level: "extreme_fear", "fear", "neutral", "greed"
+        """
+        try:
+            end_date = date.today()
+            start_date = end_date - timedelta(days=days_back)
+
+            # Fetch VIX data
+            vix_ticker = yf.Ticker("^VIX")
+            vix_df = vix_ticker.history(start=start_date, end=end_date)
+
+            if vix_df.empty:
+                logger.warning("Failed to fetch VIX data")
+                return self._get_default_vix_data()
+
+            # Current VIX level (most recent close)
+            vix_level = float(vix_df["Close"].iloc[-1])
+
+            # Calculate VIX percentile over past year
+            vix_min = vix_df["Close"].min()
+            vix_max = vix_df["Close"].max()
+            vix_percentile = ((vix_level - vix_min) / (vix_max - vix_min)) * 100 if vix_max != vix_min else 50.0
+
+            # Fetch VIX9D (9-day VIX) - short-term volatility expectation
+            vix_9d = None
+            try:
+                vix9d_ticker = yf.Ticker("^VIX9D")
+                vix9d_df = vix9d_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                if not vix9d_df.empty:
+                    vix_9d = float(vix9d_df["Close"].iloc[-1])
+            except Exception as e:
+                logger.warning(f"Failed to fetch VIX9D: {e}")
+
+            # Fetch VIX3M (3-month VIX) - longer-term volatility expectation
+            vix_3m = None
+            try:
+                vix3m_ticker = yf.Ticker("^VIX3M")
+                vix3m_df = vix3m_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                if not vix3m_df.empty:
+                    vix_3m = float(vix3m_df["Close"].iloc[-1])
+            except Exception as e:
+                logger.warning(f"Failed to fetch VIX3M: {e}")
+
+            # Fetch VXN (Nasdaq 100 Volatility)
+            vxn = None
+            try:
+                vxn_ticker = yf.Ticker("^VXN")
+                vxn_df = vxn_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                if not vxn_df.empty:
+                    vxn = float(vxn_df["Close"].iloc[-1])
+            except Exception as e:
+                logger.warning(f"Failed to fetch VXN: {e}")
+
+            # Determine term structure
+            term_structure = "flat"
+            if vix_3m and vix_level:
+                spread = vix_3m - vix_level
+                if spread > 2.0:
+                    term_structure = "normal"  # Contango - calm market
+                elif spread < -2.0:
+                    term_structure = "inverted"  # Backwardation - stressed market
+
+            # Determine fear level based on VIX thresholds
+            if vix_level > 30:
+                fear_level = "extreme_fear"
+            elif vix_level > 20:
+                fear_level = "fear"
+            elif vix_level < 12:
+                fear_level = "greed"
+            else:
+                fear_level = "neutral"
+
+            return {
+                "vix_level": round(vix_level, 2),
+                "vix_percentile": round(vix_percentile, 2),
+                "vix_9d": round(vix_9d, 2) if vix_9d else None,
+                "vix_3m": round(vix_3m, 2) if vix_3m else None,
+                "vxn": round(vxn, 2) if vxn else None,
+                "term_structure": term_structure,
+                "fear_level": fear_level,
+            }
+
+        except Exception as e:
+            logger.error(f"Error fetching market volatility data: {e}")
+            return self._get_default_vix_data()
+
+    def _get_default_vix_data(self) -> dict:
+        """Return default VIX data when fetch fails"""
+        return {
+            "vix_level": None,
+            "vix_percentile": None,
+            "vix_9d": None,
+            "vix_3m": None,
+            "vxn": None,
+            "term_structure": "unknown",
+            "fear_level": "unknown",
+        }
+
+    def fetch_index_options_data(self, symbol: str = "SPY") -> dict:
+        """
+        Fetch options market data for major indices (SPY or QQQ).
+
+        Args:
+            symbol: Index ETF symbol ("SPY" or "QQQ")
+
+        Returns:
+            dict with keys:
+                - put_call_ratio: Current Put/Call volume ratio
+                - put_call_ratio_oi: Put/Call open interest ratio
+                - put_call_avg_30d: 30-day average Put/Call ratio
+                - iv_current: At-the-money implied volatility
+                - iv_percentile: IV percentile over past 6 months
+                - unusual_activity: Description of unusual options activity
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+
+            # Get current stock price
+            current_price = None
+            try:
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    current_price = float(hist["Close"].iloc[-1])
+            except Exception as e:
+                logger.warning(f"Failed to get current price for {symbol}: {e}")
+
+            if not current_price:
+                logger.warning(f"Could not determine current price for {symbol}")
+                return self._get_default_options_data()
+
+            # Get available expiration dates
+            try:
+                expirations = ticker.options
+                if not expirations or len(expirations) == 0:
+                    logger.warning(f"No options data available for {symbol}")
+                    return self._get_default_options_data()
+
+                # Use the nearest expiration (typically weekly for SPY/QQQ)
+                nearest_exp = expirations[0]
+
+                # Get option chain
+                opt_chain = ticker.option_chain(nearest_exp)
+                calls = opt_chain.calls
+                puts = opt_chain.puts
+
+                if calls.empty or puts.empty:
+                    logger.warning(f"Empty option chain for {symbol}")
+                    return self._get_default_options_data()
+
+                # Calculate Put/Call ratio based on volume
+                total_call_volume = calls["volume"].sum()
+                total_put_volume = puts["volume"].sum()
+
+                put_call_ratio = None
+                if total_call_volume > 0:
+                    put_call_ratio = float(total_put_volume / total_call_volume)
+
+                # Calculate Put/Call ratio based on open interest
+                total_call_oi = calls["openInterest"].sum()
+                total_put_oi = puts["openInterest"].sum()
+
+                put_call_ratio_oi = None
+                if total_call_oi > 0:
+                    put_call_ratio_oi = float(total_put_oi / total_call_oi)
+
+                # Find ATM strike (closest to current price)
+                calls["strike_diff"] = (calls["strike"] - current_price).abs()
+                puts["strike_diff"] = (puts["strike"] - current_price).abs()
+
+                atm_call = calls.loc[calls["strike_diff"].idxmin()]
+                atm_put = puts.loc[puts["strike_diff"].idxmin()]
+
+                # Get ATM implied volatility (average of call and put)
+                iv_current = None
+                atm_call_iv = atm_call.get("impliedVolatility")
+                atm_put_iv = atm_put.get("impliedVolatility")
+
+                if pd.notna(atm_call_iv) and pd.notna(atm_put_iv):
+                    iv_current = float((atm_call_iv + atm_put_iv) / 2)
+                elif pd.notna(atm_call_iv):
+                    iv_current = float(atm_call_iv)
+                elif pd.notna(atm_put_iv):
+                    iv_current = float(atm_put_iv)
+
+                # Calculate IV percentile (simplified - would need historical IV data for accuracy)
+                # For now, we'll estimate based on VIX correlation
+                iv_percentile = None
+                if iv_current:
+                    # Rough estimate: SPY IV percentile correlates with VIX
+                    # This is a placeholder - ideally fetch historical IV data
+                    iv_percentile = 50.0  # Default to median
+
+                # Detect unusual activity
+                unusual_activity = self._detect_unusual_options_activity(calls, puts, symbol)
+
+                # Calculate 30-day average P/C ratio (simplified - using current as proxy)
+                # In production, you'd want to store historical P/C ratios
+                put_call_avg_30d = put_call_ratio if put_call_ratio else 1.0
+
+                return {
+                    "put_call_ratio": round(put_call_ratio, 3) if put_call_ratio else None,
+                    "put_call_ratio_oi": round(put_call_ratio_oi, 3) if put_call_ratio_oi else None,
+                    "put_call_avg_30d": round(put_call_avg_30d, 3) if put_call_avg_30d else None,
+                    "iv_current": round(iv_current * 100, 2) if iv_current else None,  # Convert to percentage
+                    "iv_percentile": round(iv_percentile, 2) if iv_percentile else None,
+                    "unusual_activity": unusual_activity,
+                }
+
+            except Exception as e:
+                logger.error(f"Error processing options chain for {symbol}: {e}")
+                return self._get_default_options_data()
+
+        except Exception as e:
+            logger.error(f"Error fetching options data for {symbol}: {e}")
+            return self._get_default_options_data()
+
+    def _detect_unusual_options_activity(
+        self, calls: pd.DataFrame, puts: pd.DataFrame, symbol: str
+    ) -> str:
+        """Detect unusual options activity patterns"""
+        try:
+            # Check for volume spikes in specific strikes
+            unusual_signals = []
+
+            # High volume in OTM puts (bearish)
+            if not puts.empty:
+                puts_sorted = puts.sort_values("volume", ascending=False).head(3)
+                top_put_volume = puts_sorted.iloc[0]["volume"] if len(puts_sorted) > 0 else 0
+                avg_put_volume = puts["volume"].mean()
+
+                if top_put_volume > avg_put_volume * 5:
+                    unusual_signals.append("Heavy put buying detected")
+
+            # High volume in OTM calls (bullish)
+            if not calls.empty:
+                calls_sorted = calls.sort_values("volume", ascending=False).head(3)
+                top_call_volume = calls_sorted.iloc[0]["volume"] if len(calls_sorted) > 0 else 0
+                avg_call_volume = calls["volume"].mean()
+
+                if top_call_volume > avg_call_volume * 5:
+                    unusual_signals.append("Heavy call buying detected")
+
+            # Large bid-ask spreads (low liquidity / uncertainty)
+            if not calls.empty and "bid" in calls.columns and "ask" in calls.columns:
+                calls["spread_pct"] = (calls["ask"] - calls["bid"]) / calls["bid"] * 100
+                avg_spread = calls["spread_pct"].mean()
+                if avg_spread > 10:
+                    unusual_signals.append("Wide bid-ask spreads (uncertainty)")
+
+            if unusual_signals:
+                return "; ".join(unusual_signals)
+            else:
+                return "Normal options activity"
+
+        except Exception as e:
+            logger.warning(f"Error detecting unusual activity for {symbol}: {e}")
+            return "Unable to assess unusual activity"
+
+    def _get_default_options_data(self) -> dict:
+        """Return default options data when fetch fails"""
+        return {
+            "put_call_ratio": None,
+            "put_call_ratio_oi": None,
+            "put_call_avg_30d": None,
+            "iv_current": None,
+            "iv_percentile": None,
+            "unusual_activity": "No data available",
+        }
+
+    def analyze_trend_context(self, df: pd.DataFrame, spy_df: pd.DataFrame) -> dict:
+        """
+        Analyze short-term, medium-term, and long-term trends for the ticker.
+
+        Args:
+            df: Ticker DataFrame with technical indicators
+            spy_df: SPY DataFrame for relative strength analysis
+
+        Returns:
+            dict with keys:
+                - short_term: "strong_up", "weak_up", "sideways", "weak_down", "strong_down"
+                - medium_term: Same as short_term
+                - long_term: Same as short_term
+                - relative_strength_trend: "strengthening", "weakening", "neutral"
+                - recommended_approach: "trend_following", "mean_reversion"
+        """
+        try:
+            if df.empty or len(df) < 200:
+                logger.warning("Insufficient data for trend analysis")
+                return self._get_default_trend_context()
+
+            # Get latest values
+            latest = df.iloc[-1]
+            close = latest["Close"]
+
+            # Short-term trend (5-20 day): SMA5 vs SMA20
+            sma5 = latest.get("SMA5")
+            sma20 = latest.get("SMA20")
+            sma50 = latest.get("SMA50")
+            sma200 = latest.get("SMA200")
+            rsi14 = latest.get("RSI14")
+
+            # Analyze short-term trend (5-20 days)
+            short_term = "sideways"
+            if sma5 and sma20:
+                sma5_vs_sma20_pct = ((sma5 - sma20) / sma20) * 100
+                if sma5_vs_sma20_pct > 2:
+                    short_term = "strong_up"
+                elif sma5_vs_sma20_pct > 0.5:
+                    short_term = "weak_up"
+                elif sma5_vs_sma20_pct < -2:
+                    short_term = "strong_down"
+                elif sma5_vs_sma20_pct < -0.5:
+                    short_term = "weak_down"
+
+            # Analyze medium-term trend (20-50 days)
+            medium_term = "sideways"
+            if sma20 and sma50:
+                sma20_vs_sma50_pct = ((sma20 - sma50) / sma50) * 100
+                if sma20_vs_sma50_pct > 2:
+                    medium_term = "strong_up"
+                elif sma20_vs_sma50_pct > 0.5:
+                    medium_term = "weak_up"
+                elif sma20_vs_sma50_pct < -2:
+                    medium_term = "strong_down"
+                elif sma20_vs_sma50_pct < -0.5:
+                    medium_term = "weak_down"
+
+            # Analyze long-term trend (50-200 days)
+            long_term = "sideways"
+            if sma50 and sma200:
+                sma50_vs_sma200_pct = ((sma50 - sma200) / sma200) * 100
+                if sma50_vs_sma200_pct > 2:
+                    long_term = "strong_up"
+                elif sma50_vs_sma200_pct > 0.5:
+                    long_term = "weak_up"
+                elif sma50_vs_sma200_pct < -2:
+                    long_term = "strong_down"
+                elif sma50_vs_sma200_pct < -0.5:
+                    long_term = "weak_down"
+
+            # Analyze relative strength trend
+            rs_short = latest.get("RS_SHORT")  # 20-day RS
+            rs_mid = latest.get("RS_MID")  # 60-day RS
+
+            relative_strength_trend = "neutral"
+            if rs_short is not None and rs_mid is not None:
+                if rs_short > 0 and rs_mid > 0 and rs_short > rs_mid:
+                    relative_strength_trend = "strengthening"
+                elif rs_short < 0 and rs_mid < 0 and rs_short < rs_mid:
+                    relative_strength_trend = "weakening"
+                elif rs_short > rs_mid:
+                    relative_strength_trend = "strengthening"
+                elif rs_short < rs_mid:
+                    relative_strength_trend = "weakening"
+
+            # Determine recommended trading approach
+            recommended_approach = self._determine_trade_approach(
+                short_term, medium_term, long_term, rsi14, close, sma50
+            )
+
+            return {
+                "short_term": short_term,
+                "medium_term": medium_term,
+                "long_term": long_term,
+                "relative_strength_trend": relative_strength_trend,
+                "recommended_approach": recommended_approach,
+            }
+
+        except Exception as e:
+            logger.error(f"Error analyzing trend context: {e}")
+            return self._get_default_trend_context()
+
+    def _determine_trade_approach(
+        self,
+        short_term: str,
+        medium_term: str,
+        long_term: str,
+        rsi14: float | None,
+        close: float,
+        sma50: float | None,
+    ) -> str:
+        """
+        Determine whether to use trend-following or mean-reversion strategy.
+
+        Trend-following conditions:
+        - Clear directional trend (strong_up or strong_down)
+        - Aligned short/medium/long trends
+        - RSI not in extreme territory (30-70)
+
+        Mean-reversion conditions:
+        - Sideways or weak trends
+        - RSI in extreme territory (< 30 or > 70)
+        - Price significantly deviated from SMA50
+        """
+        try:
+            # Count trend alignment
+            up_trends = [t for t in [short_term, medium_term, long_term] if "up" in t]
+            down_trends = [t for t in [short_term, medium_term, long_term] if "down" in t]
+
+            # Strong trend alignment -> Trend Following
+            if len(up_trends) >= 2 and "strong" in short_term:
+                return "trend_following"
+            if len(down_trends) >= 2 and "strong" in short_term:
+                return "trend_following"
+
+            # Oversold/Overbought + Weak/Sideways trend -> Mean Reversion
+            if rsi14:
+                if rsi14 < 30 or rsi14 > 70:
+                    if "weak" in short_term or short_term == "sideways":
+                        return "mean_reversion"
+
+            # Price far from SMA50 -> Mean Reversion
+            if sma50 and close:
+                deviation_pct = abs((close - sma50) / sma50) * 100
+                if deviation_pct > 5 and short_term == "sideways":
+                    return "mean_reversion"
+
+            # Default to trend following for moderate trends
+            if "up" in short_term or "down" in short_term:
+                return "trend_following"
+
+            # Sideways market -> Mean Reversion
+            return "mean_reversion"
+
+        except Exception as e:
+            logger.warning(f"Error determining trade approach: {e}")
+            return "trend_following"
+
+    def _get_default_trend_context(self) -> dict:
+        """Return default trend context when analysis fails"""
+        return {
+            "short_term": "unknown",
+            "medium_term": "unknown",
+            "long_term": "unknown",
+            "relative_strength_trend": "unknown",
+            "recommended_approach": "trend_following",
+        }
+
     def add_indicators(self, df: pd.DataFrame, spy_df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         close_series = cast(pd.Series, df["Close"])
@@ -1327,6 +1776,69 @@ class SignalService:
             - Input Data Importance: Stock's OHLCV DataFrame **** > Fundamental Data ** > News Headlines *
 
         
+        ### Market Context (Apply to All Analysis)
+
+        #### 📈 Trend Analysis for {data.ticker}
+        - **Short-term Trend (5-20 days)**: {data.trend_context.short_term if data.trend_context else 'unknown'}
+        - **Medium-term Trend (20-50 days)**: {data.trend_context.medium_term if data.trend_context else 'unknown'}
+        - **Long-term Trend (50-200 days)**: {data.trend_context.long_term if data.trend_context else 'unknown'}
+        - **Relative Strength Trend vs SPY**: {data.trend_context.relative_strength_trend if data.trend_context else 'unknown'}
+        - **Recommended Trading Approach**: {data.trend_context.recommended_approach if data.trend_context else 'trend_following'}
+          * **Trend Following**: Enter in trend direction, exit when trend breaks (use moving averages as trailing stops)
+          * **Mean Reversion**: Enter at oversold/overbought extremes, tight stops (2-3%), quick profit-taking
+
+        #### 🌡️ Market Volatility & Fear Gauge (VIX)
+        - **VIX Level**: {data.vix_data.vix_level if data.vix_data else 'N/A'} (Percentile: {data.vix_data.vix_percentile if data.vix_data else 'N/A'}%)
+        - **VIX 9-Day**: {data.vix_data.vix_9d if data.vix_data else 'N/A'} | **VIX 3-Month**: {data.vix_data.vix_3m if data.vix_data else 'N/A'}
+        - **VIX Term Structure**: {data.vix_data.term_structure if data.vix_data else 'unknown'}
+          * Normal (Contango): Calm market, low near-term fear
+          * Inverted (Backwardation): Stressed market, high near-term fear
+        - **Market Fear Level**: {data.vix_data.fear_level if data.vix_data else 'unknown'}
+          * Extreme Fear (VIX > 30): High volatility, reduce position size, tighten stops
+          * Fear (VIX 20-30): Elevated volatility, cautious positioning
+          * Neutral (VIX 15-20): Normal market conditions
+          * Greed (VIX < 15): Low volatility, trend-following preferred
+
+        #### 📊 Options Market Sentiment (SPY/QQQ)
+        - **SPY Put/Call Ratio**: {data.options_data.spy_put_call_ratio if data.options_data else 'N/A'} (30-day avg: {data.options_data.spy_put_call_avg_30d if data.options_data else 'N/A'})
+        - **QQQ Put/Call Ratio**: {data.options_data.qqq_put_call_ratio if data.options_data else 'N/A'} (30-day avg: {data.options_data.qqq_put_call_avg_30d if data.options_data else 'N/A'})
+        - **Options Sentiment**: {data.options_data.sentiment if data.options_data else 'neutral'}
+          * Bearish (P/C > 1.2): Heavy put buying, expect downside
+          * Neutral (P/C 0.8-1.2): Balanced sentiment
+          * Bullish (P/C < 0.8): Heavy call buying, expect upside
+        - **Implied Volatility Percentile**: {data.options_data.iv_percentile if data.options_data else 'N/A'}%
+
+        #### 🎯 Risk Adjustment Based on Market Context
+        **When VIX > 20 or Options Sentiment is Bearish:**
+        - Reduce position sizes by 30-50%
+        - Tighten stop-loss levels (closer to entry)
+        - Prefer shorter holding periods (intraday to 1 day)
+        - Avoid counter-trend trades
+
+        **When VIX < 15 and Options Sentiment is Bullish:**
+        - Normal position sizing
+        - Wider stops allowed (trend-following)
+        - Longer holding periods acceptable (1-3 days)
+        - Trend-following strategies preferred
+
+        #### 📋 Trading Strategy Selection Guide
+        **Use TREND FOLLOWING when:**
+        - Recommended approach is "trend_following"
+        - Multiple trends aligned (2+ of short/medium/long in same direction)
+        - VIX < 20 and stable term structure
+        - Enter in trend direction only
+        - Stops: Below key moving averages (SMA20, SMA50)
+        - Take-Profit: Next resistance level or technical target
+
+        **Use MEAN REVERSION when:**
+        - Recommended approach is "mean_reversion"
+        - RSI < 30 (oversold) or RSI > 70 (overbought)
+        - Price far from SMA50 (>5% deviation) in sideways trend
+        - VIX elevated (>20) and price at extremes
+        - Enter against short-term extreme moves
+        - Stops: Very tight (2-3% from entry)
+        - Take-Profit: Return to mean (SMA20, SMA50, or VWAP)
+
         ### Input Data
         Below is a JSON array of stocks/ETFs with their previous day's data. Each item includes:
         - `ticker`: Stock/ETF ticker symbol.
@@ -1341,7 +1853,7 @@ class SignalService:
         - `additional_info`: Any additional information or context.
         - `Stock's OHLCV DataFrame`: Stock's OHLCV DataFrame.
 
-        
+
         ```json
         - ticker: {data.ticker}
         - last_price: {data.last_price}

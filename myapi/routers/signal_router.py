@@ -26,13 +26,15 @@ from myapi.domain.signal.signal_schema import (
     GetSignalByOnlyAIPromptSchema,
     GetSignalByOnlyAIRequest,
     GetSignalRequest,
+    OptionsData,
     SignalBaseResponse,
-    SignalJoinTickerResponse,
     SignalPromptData,
     SignalPromptResponse,
     SignalRequest,
     TechnicalSignal,
     TickerReport,
+    TrendContext,
+    VixData,
     WebSearchTickerResponse,
 )
 from myapi.repositories.signals_repository import SignalsRepository
@@ -324,6 +326,25 @@ async def get_signals(
 
     spy_df = signal_service.fetch_ohlcv("SPY", start=start)
 
+    # Fetch market-wide volatility and options data (once for all tickers)
+    logger.info("Fetching VIX market volatility data...")
+    vix_data = signal_service.fetch_market_volatility_data()
+
+    logger.info("Fetching SPY options data...")
+    spy_options = signal_service.fetch_index_options_data("SPY")
+
+    logger.info("Fetching QQQ options data...")
+    qqq_options = signal_service.fetch_index_options_data("QQQ")
+
+    # Determine overall options sentiment
+    options_sentiment = "neutral"
+    if spy_options.get("put_call_ratio") and qqq_options.get("put_call_ratio"):
+        avg_pc_ratio = (spy_options["put_call_ratio"] + qqq_options["put_call_ratio"]) / 2
+        if avg_pc_ratio > 1.2:
+            options_sentiment = "bearish"
+        elif avg_pc_ratio < 0.8:
+            options_sentiment = "bullish"
+
     for t in tickers:
         df = signal_service.fetch_ohlcv(t, start=start)
 
@@ -390,6 +411,14 @@ async def get_signals(
             if signal.triggered
         }
 
+        # Analyze trend context for this ticker
+        ticker_df = signal_service.fetch_ohlcv(report.ticker, start=start)
+        if ticker_df is not None and not ticker_df.empty:
+            ticker_df = signal_service.add_indicators(ticker_df, spy_df)
+            trend_data = signal_service.analyze_trend_context(ticker_df, spy_df)
+        else:
+            trend_data = signal_service._get_default_trend_context()
+
         data = SignalPromptData(
             ticker=report.ticker,
             dataframe=report.dataframe,
@@ -405,6 +434,16 @@ async def get_signals(
                 else f"S&P500(SPY) is Below SMA20 below {round(spy_persentage_from_200ma, 3)}%"
             ),
             additional_info=None,
+            vix_data=VixData(**vix_data),
+            options_data=OptionsData(
+                spy_put_call_ratio=spy_options.get("put_call_ratio"),
+                spy_put_call_avg_30d=spy_options.get("put_call_avg_30d"),
+                qqq_put_call_ratio=qqq_options.get("put_call_ratio"),
+                qqq_put_call_avg_30d=qqq_options.get("put_call_avg_30d"),
+                sentiment=options_sentiment,
+                iv_percentile=spy_options.get("iv_percentile"),
+            ),
+            trend_context=TrendContext(**trend_data),
         )
 
         message = None
