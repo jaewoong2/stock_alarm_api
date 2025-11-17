@@ -2,7 +2,6 @@ from typing import Literal, Optional
 import datetime as dt
 import logging
 
-from myapi.domain.signal.signal_schema import DefaultTickers
 from myapi.services.translate_service import TranslateService
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
@@ -31,7 +30,6 @@ from myapi.domain.news.news_schema import (
     ETFWeeklyFlowResponse,
     LiquidityWeeklyResponse,
     MarketBreadthResponse,
-    FundamentalAnalysisGetRequest,
     FundamentalAnalysisGetResponse,
     FundamentalAnalysisResponse,
 )

@@ -68,29 +68,22 @@ def execute_batch_jobs(
         },
     ]
 
-    # 티커를 5개씩 분할하여 translate/signals 작업 추가
-    # ticker_chunks = [
-    #     DefaultTickers[i : i + 5] for i in range(0, len(DefaultTickers), 5)
-    # ]
+    # ETF signal pipelines we always want to refresh together with the rest of the jobs
+    etf_signal_pipeline_tickers = ["TQQQ"]
 
-    # for i, chunk in enumerate(ticker_chunks):
-    #     jobs.append(
-    #         {
-    #             "path": "translate/signals",
-    #             "method": "POST",
-    #             "body": {"tickers": chunk, "model": "OPENAI"},
-    #             "group_id": f"translate-{i}-OPENAI",
-    #         }
-    #     )
-
-    #     jobs.append(
-    #         {
-    #             "path": "translate/signals",
-    #             "method": "POST",
-    #             "body": {"tickers": chunk, "model": "GOOGLE"},
-    #             "group_id": f"translate-{i}-GOOGLE",
-    #         }
-    #     )
+    for etf_ticker in etf_signal_pipeline_tickers:
+        jobs.append(
+            {
+                "path": "news/etf/signal-pipeline",
+                "method": "POST",
+                "body": {},
+                "group_id": f"news-etf-signal-{etf_ticker.lower()}",
+                "query_string_parameters": {
+                    "etf_ticker": etf_ticker,
+                    "target_date": market_date_str,
+                },
+            }
+        )
 
     responses = []
     for job in jobs:
