@@ -317,7 +317,7 @@ class AIService:
 
             google_search_tool = Tool(google_search=GoogleSearch())
             response = client.models.generate_content(
-                model="gemini-2.5-flash-preview-05-20",
+                model="gemini-2.5-flash-preview-09-2025",
                 contents=prompt,
                 config=GenerateContentConfig(  # type: ignore[call-arg]
                     tools=[google_search_tool],
@@ -373,7 +373,7 @@ class AIService:
         try:
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
-                model="gemini-2.5-flash-preview-05-20",
+                model="gemini-2.5-flash-preview-09-2025",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
