@@ -2,7 +2,7 @@ import sqlalchemy
 from sqlalchemy.orm import Session
 from typing import Dict, List, Literal, Optional
 import logging
-from sqlalchemy.exc import PendingRollbackError
+from sqlalchemy.exc import PendingRollbackError, OperationalError, DisconnectionError
 from sqlalchemy import text, desc, func, and_
 from datetime import date, datetime, timedelta
 
@@ -21,6 +21,7 @@ from myapi.utils.date_utils import (
     get_current_kst_datetime,
     to_kst_naive,
 )
+from myapi.database import SessionLocal
 
 
 def _normalize_to_kst_naive(value: datetime) -> datetime:
@@ -38,21 +39,62 @@ class SignalsRepository:
     ):
         self.db_session = db_session
 
-    def _ensure_valid_session(self):
+    def _ensure_valid_session(self, max_retries: int = 3):
         """
-        세션이 유효한 상태인지 확인하고, 필요한 경우 복구합니다.
+        세션이 유효한 상태인지 확인하고, 필요한 경우 복구하거나 재연결합니다.
+        
+        Args:
+            max_retries: 재연결 시도 최대 횟수
         """
-        try:
-            # 간단한 쿼리를 실행하여 세션 상태 확인
-            self.db_session.execute(text("SELECT 1"))
-        except PendingRollbackError:
-            # 롤백이 필요한 경우 롤백 수행
-            logging.warning("PendingRollbackError detected. Rolling back transaction.")
-            self.db_session.rollback()
-        except Exception as e:
-            # 기타 예외 처리
-            logging.error(f"Session error: {e}")
-            self.db_session.rollback()
+        for attempt in range(max_retries):
+            try:
+                # 간단한 쿼리를 실행하여 세션 상태 확인
+                self.db_session.execute(text("SELECT 1"))
+                return  # 성공하면 종료
+            except PendingRollbackError:
+                # 롤백이 필요한 경우 롤백 수행
+                logging.warning("PendingRollbackError detected. Rolling back transaction.")
+                self.db_session.rollback()
+                return  # 롤백 후 정상 상태이므로 종료
+            except (OperationalError, DisconnectionError) as e:
+                # 연결이 끊어진 경우 세션 무효화 후 새 세션 생성
+                logging.warning(
+                    f"Database connection lost (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                try:
+                    # 기존 세션 정리
+                    self.db_session.rollback()
+                    self.db_session.close()
+                except Exception:
+                    pass  # 이미 끊어진 연결이므로 무시
+                
+                # 새 세션 생성
+                self.db_session = SessionLocal()
+                logging.info("Created new database session after connection loss.")
+                
+                if attempt == max_retries - 1:
+                    logging.error(
+                        f"Failed to reconnect after {max_retries} attempts. Last error: {e}"
+                    )
+                    raise
+            except Exception as e:
+                # 기타 예외 처리
+                logging.error(f"Session error: {e}")
+                try:
+                    self.db_session.rollback()
+                except Exception:
+                    pass
+                
+                # 연결 관련 에러일 수 있으므로 재연결 시도
+                if "closed" in str(e).lower() or "connection" in str(e).lower():
+                    try:
+                        self.db_session.close()
+                    except Exception:
+                        pass
+                    self.db_session = SessionLocal()
+                    logging.info("Created new database session after unknown connection error.")
+                else:
+                    return  # 연결 문제가 아니면 종료
 
     def create_signal_bulk(
         self, signals_vo_list: List[SignalValueObject]
