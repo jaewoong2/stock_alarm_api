@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, JSON
 from datetime import datetime
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import DateTime, Float, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column
+
 from myapi.database import Base
 
 
@@ -17,20 +21,22 @@ class Signals(Base):
     __tablename__ = "signals"
     __table_args__ = {"schema": "crypto"}  # 스키마 지정
 
-    id = Column(Integer, primary_key=True, index=True)
-    ticker = Column(String, index=True)
-    strategy = Column(String, nullable=True)  # JSON 형태로 저장할 수 있음
-    entry_price = Column(Float)
-    stop_loss = Column(Float, nullable=True)
-    take_profit = Column(Float, nullable=True)
-    close_price = Column(Float, nullable=True)  # 거래 종료 가격
-    action = Column(String)  # "buy" or "sell"
-    timestamp = Column(DateTime, default=_now_kst_naive)
-    probability = Column(String, nullable=True)  # 확률
-    result_description = Column(String, nullable=True)  # 결과 설명
-    report_summary = Column(String, nullable=True)  # 보고서 요약
-    ai_model = Column(String, nullable=True, default="OPENAI_O4MINI")  # AI 모델 이름
-    senario = Column(String, nullable=True)  # 시나리오 설명 250606 추가
-    good_things = Column(String, nullable=True)  # 좋은 점 250606 추가
-    bad_things = Column(String, nullable=True)  # 나쁜 점 250606 추가
-    chart_pattern = Column(JSON, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    strategy: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    entry_price: Mapped[float] = mapped_column(Float)
+    stop_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    action: Mapped[str] = mapped_column(String)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=_now_kst_naive)
+    probability: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    result_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    report_summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ai_model: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default="OPENAI_O4MINI"
+    )
+    senario: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    good_things: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    bad_things: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    chart_pattern: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)

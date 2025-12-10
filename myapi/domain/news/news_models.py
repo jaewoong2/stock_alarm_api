@@ -1,4 +1,8 @@
-from sqlalchemy import Column, Float, Integer, String, DateTime, Date, JSON, func
+from datetime import date, datetime
+from typing import Any, Optional
+
+from sqlalchemy import Date, DateTime, Float, Integer, JSON, String, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from myapi.database import Base
 
@@ -9,15 +13,17 @@ class WebSearchResult(Base):
     __tablename__ = "web_search_results"
     __table_args__ = {"schema": "crypto"}
 
-    id = Column(Integer, primary_key=True, index=True)
-    result_type = Column(String, nullable=False)  # e.g., 'market' or 'ticker'
-    ticker = Column(String, nullable=True)
-    date_yyyymmdd = Column(String, nullable=False)
-    headline = Column(String, nullable=True)
-    summary = Column(String, nullable=True)
-    detail_description = Column(String, nullable=True)
-    recommendation = Column(String, nullable=True)  # e.g., 'buy', 'sell', 'hold'
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    result_type: Mapped[str] = mapped_column(String, nullable=False)
+    ticker: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    date_yyyymmdd: Mapped[str] = mapped_column(String, nullable=False)
+    headline: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    detail_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    recommendation: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class MarketForecast(Base):
@@ -26,21 +32,25 @@ class MarketForecast(Base):
     __tablename__ = "market_forecasts"
     __table_args__ = {"schema": "crypto"}
 
-    id = Column(Integer, primary_key=True, index=True)
-    date_yyyymmdd = Column(String, nullable=False, index=True)
-    outlook = Column(String, nullable=False)
-    reason = Column(String, nullable=False)
-    up_percentage = Column(Float, nullable=True)  # e.g., '70'
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    source = Column(String, nullable=False)  # e.g., 'Major' or 'Minor'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    date_yyyymmdd: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    outlook: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    up_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    source: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class AiAnalysisModel(Base):
     __tablename__ = "ai_analysis"
     __table_args__ = {"schema": "crypto"}
 
-    id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, nullable=False)
-    name = Column(String, nullable=False, default="market_analysis")
-    value = Column(JSON, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False, default="market_analysis")
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
