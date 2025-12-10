@@ -34,12 +34,6 @@ def execute_batch_jobs(
     # 호출할 API 엔드포인트 목록
     jobs = [
         {
-            "path": "signals/signals/by-only-ai",
-            "method": "POST",
-            "body": {"ai_model": "ALL"},
-            "group_id": "signals",
-        },
-        {
             "path": "news/market-analysis",
             "method": "POST",
             "body": {},
@@ -60,30 +54,7 @@ def execute_batch_jobs(
             "query_string_parameters": {"source": "Minor"},
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
-        {
-            "path": "research/analysis",
-            "method": "POST",
-            "body": {},
-            "group_id": "research",
-        },
     ]
-
-    # ETF signal pipelines we always want to refresh together with the rest of the jobs
-    etf_signal_pipeline_tickers = ["TQQQ"]
-
-    for etf_ticker in etf_signal_pipeline_tickers:
-        jobs.append(
-            {
-                "path": "news/etf/signal-pipeline",
-                "method": "POST",
-                "body": {},
-                "group_id": f"news-etf-signal-{etf_ticker.lower()}",
-                "query_string_parameters": {
-                    "etf_ticker": etf_ticker,
-                    "target_date": market_date_str,
-                },
-            }
-        )
 
     responses = []
     for job in jobs:

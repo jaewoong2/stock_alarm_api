@@ -110,7 +110,49 @@ The application uses `dependency-injector` with three container modules:
 ## Database & Models
 
 - MUST: Use SQLAlchemy async for database operations
+- MUST: Use SQLAlchemy 2.0 style with `Mapped[]` type hints for all model columns
+- MUST: Use `mapped_column()` instead of `Column()` for typed attributes
 - MUST: Define separate Pydantic schemas for create/update/read operations
 - MUST: Use proper database migrations with Alembic
 - SHOULD: Use database transactions for data consistency
 - SHOULD: Implement proper database indexing
+
+### SQLAlchemy Model Definition Rules
+
+**MUST: Use Mapped[] Type Hints**
+```python
+# ✅ CORRECT - SQLAlchemy 2.0 style with type safety
+from datetime import datetime
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Integer, String, TIMESTAMP
+
+class MyModel(Base):
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+
+# ❌ WRONG - Old style without type hints (causes type checking errors)
+class MyModel(Base):
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    count = Column(Integer, default=0)
+    created_at = Column(TIMESTAMP)
+```
+
+**Type Mapping Guidelines**
+- `Integer` → `Mapped[int]`
+- `String` → `Mapped[str]`
+- `Boolean` → `Mapped[bool]`
+- `TIMESTAMP` / `DateTime` → `Mapped[datetime]`
+- `Date` → `Mapped[date]`
+- `Text` → `Mapped[str]`
+- `Float` / `Numeric` → `Mapped[float]`
+- Nullable columns → `Mapped[Optional[type]]` or `mapped_column(..., nullable=True)`
+
+**Benefits of Mapped[] Pattern**
+- Type-safe attribute access in repositories and services
+- IDE autocomplete and type checking support
+- Prevents runtime type errors and attribute access issues
+- Compatible with strict type checkers (mypy, pyright, basedpyright)
+- Aligns with SQLAlchemy 2.0+ best practices

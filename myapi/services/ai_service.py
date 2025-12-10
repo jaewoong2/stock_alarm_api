@@ -88,16 +88,20 @@ class AIService:
             except Exception as e:
                 logger.error(f"Failed to track usage for key {key_id}: {e}")
 
+        logger.debug("DEBUG: Tracked usage for key %s", key_id)
+
     def perplexity_completion(
-        self,
-        prompt: str,
-        schema: Type[T],
+        self, prompt: str, schema: Type[T], model: ChatModel | None = None
     ):
         client = openai.OpenAI(
             base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
         )
+
+        if model is None:
+            model = ChatModel.SONAR_PRO
+
         response = client.chat.completions.create(
-            model="sonar-pro",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
         )
 

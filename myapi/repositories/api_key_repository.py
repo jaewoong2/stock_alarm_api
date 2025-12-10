@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 import logging
 
@@ -86,18 +86,18 @@ class ApiKeyRepository:
             )
 
             if usage:
-                usage = APIKeyUsage(
-                    api_key_id=api_key_id,
-                    usage_date=today,
-                    request_count=usage.request_count + 1,
-                    last_request_at=func.now(),
+                # Update existing record directly
+                usage.request_count += 1
+                usage.last_request_at = datetime.now()
+                logger.debug(
+                    f"Incremented usage for key {api_key_id} to {usage.request_count}"
                 )
             else:
                 usage = APIKeyUsage(
                     api_key_id=api_key_id,
                     usage_date=today,
                     request_count=1,
-                    last_request_at=func.now(),
+                    last_request_at=datetime.now(),
                 )
                 self.db.add(usage)
                 logger.debug(f"Created new usage record for key {api_key_id}")

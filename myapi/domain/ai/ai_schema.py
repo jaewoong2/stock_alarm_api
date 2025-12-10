@@ -83,6 +83,9 @@ class ChatModel(str, Enum):
     O4_MINI_2024_11_20 = "o4-mini-2025-04-16"
     GPT_4_1_MINI = "gpt-4.1-mini"
 
+    SONAR = "sonar"
+    SONAR_PRO = "sonar-pro"
+
 
 class TextMessage(TypedDict):
     type: Literal["text"]

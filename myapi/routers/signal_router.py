@@ -183,11 +183,12 @@ def llm_query(
 
     try:
         today_YYYY_MM_DD = market_reference_date.strftime("%Y-%m-%d")
-        web_search_gemini_result = ai_service.gemini_search_grounding(
+        web_search_gemini_result = ai_service.perplexity_completion(
             prompt=signal_service.generate_web_search_prompt(
                 req.ticker, today_YYYY_MM_DD
             ),
             schema=WebSearchTickerResponse,
+            model=ChatModel.SONAR,
         )
 
         if not web_search_gemini_result:
@@ -339,7 +340,9 @@ async def get_signals(
     # Determine overall options sentiment
     options_sentiment = "neutral"
     if spy_options.get("put_call_ratio") and qqq_options.get("put_call_ratio"):
-        avg_pc_ratio = (spy_options["put_call_ratio"] + qqq_options["put_call_ratio"]) / 2
+        avg_pc_ratio = (
+            spy_options["put_call_ratio"] + qqq_options["put_call_ratio"]
+        ) / 2
         if avg_pc_ratio > 1.2:
             options_sentiment = "bearish"
         elif avg_pc_ratio < 0.8:

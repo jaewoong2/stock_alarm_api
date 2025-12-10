@@ -61,78 +61,124 @@ DefaultStrategies: List[Strategy] = [
 ]
 
 # Mapping used when we need the human readable name for a ticker symbol.
-DefaultTickerNames: Dict[str, str] = {
-    "CRWV": "CoreWeave, Inc.",
-    "AMAT": "Applied Materials, Inc.",
-    "AMD": "Advanced Micro Devices, Inc.",
-    "ANET": "Arista Networks, Inc.",
-    "ASML": "ASML Holding N.V.",
-    "AVGO": "Broadcom Inc.",
-    "COHR": "Coherent Corp.",
-    "MRVL": "Marvell Technology, Inc.",
-    "MU": "Micron Technology, Inc.",
-    "NVDA": "NVIDIA Corporation",
-    "ONTO": "Onto Innovation Inc.",
-    "SMCI": "Super Micro Computer, Inc.",
-    "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
-    "VRT": "Vertiv Holdings Co",
-    "AXON": "Axon Enterprise, Inc.",
-    "LMT": "Lockheed Martin Corporation",
-    "RCAT": "Red Cat Holdings, Inc.",
-    "AFRM": "Affirm Holdings, Inc.",
-    "APP": "AppLovin Corporation",
-    "COIN": "Coinbase Global, Inc.",
-    "HOOD": "Robinhood Markets, Inc.",
-    "IREN": "Iris Energy Limited",
-    "MSTR": "MicroStrategy Incorporated",
-    "SOFI": "SoFi Technologies, Inc.",
-    "CEG": "Constellation Energy Corporation",
-    "OKLO": "Oklo Inc.",
-    "PWR": "Quanta Services, Inc.",
-    "SMR": "NuScale Power Corporation",
-    "VST": "Vistra Corp.",
-    "CRWD": "CrowdStrike Holdings, Inc.",
-    "FTNT": "Fortinet, Inc.",
-    "NET": "Cloudflare, Inc.",
-    "PANW": "Palo Alto Networks, Inc.",
-    "S": "SentinelOne, Inc.",
-    "TENB": "Tenable Holdings, Inc.",
-    "ZS": "Zscaler, Inc.",
+# DefaultTickerNames: Dict[str, str] = {
+#     "CRWV": "CoreWeave, Inc.",
+#     "AMAT": "Applied Materials, Inc.",
+#     "AMD": "Advanced Micro Devices, Inc.",
+#     "ANET": "Arista Networks, Inc.",
+#     "ASML": "ASML Holding N.V.",
+#     "AVGO": "Broadcom Inc.",
+#     "COHR": "Coherent Corp.",
+#     "MRVL": "Marvell Technology, Inc.",
+#     "MU": "Micron Technology, Inc.",
+#     "NVDA": "NVIDIA Corporation",
+#     "ONTO": "Onto Innovation Inc.",
+#     "SMCI": "Super Micro Computer, Inc.",
+#     "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
+#     "VRT": "Vertiv Holdings Co",
+#     "AXON": "Axon Enterprise, Inc.",
+#     "LMT": "Lockheed Martin Corporation",
+#     "RCAT": "Red Cat Holdings, Inc.",
+#     "AFRM": "Affirm Holdings, Inc.",
+#     "APP": "AppLovin Corporation",
+#     "COIN": "Coinbase Global, Inc.",
+#     "HOOD": "Robinhood Markets, Inc.",
+#     "IREN": "Iris Energy Limited",
+#     "MSTR": "MicroStrategy Incorporated",
+#     "SOFI": "SoFi Technologies, Inc.",
+#     "CEG": "Constellation Energy Corporation",
+#     "OKLO": "Oklo Inc.",
+#     "PWR": "Quanta Services, Inc.",
+#     "SMR": "NuScale Power Corporation",
+#     "VST": "Vistra Corp.",
+#     "CRWD": "CrowdStrike Holdings, Inc.",
+#     "FTNT": "Fortinet, Inc.",
+#     "NET": "Cloudflare, Inc.",
+#     "PANW": "Palo Alto Networks, Inc.",
+#     "S": "SentinelOne, Inc.",
+#     "TENB": "Tenable Holdings, Inc.",
+#     "ZS": "Zscaler, Inc.",
+#     "AAPL": "Apple Inc.",
+#     "ADBE": "Adobe Inc.",
+#     "ADSK": "Autodesk, Inc.",
+#     "AI": "C3.ai, Inc.",
+#     "AMZN": "Amazon.com, Inc.",
+#     "CRM": "Salesforce, Inc.",
+#     "DDOG": "Datadog, Inc.",
+#     "GOOGL": "Alphabet Inc.",
+#     "META": "Meta Platforms, Inc.",
+#     "MSFT": "Microsoft Corporation",
+#     "NOW": "ServiceNow, Inc.",
+#     "PLTR": "Palantir Technologies Inc.",
+#     "SNOW": "Snowflake Inc.",
+#     "VEEV": "Veeva Systems Inc.",
+#     "IONQ": "IonQ, Inc.",
+#     "QBTS": "D-Wave Quantum Inc.",
+#     "RGTI": "Rigetti Computing, Inc.",
+#     "PL": "Planet Labs PBC",
+#     "RKLB": "Rocket Lab USA, Inc.",
+#     "LUNR": "Intuitive Machines, Inc.",
+#     "ACHR": "Archer Aviation Inc.",
+#     "ARBE": "Arbe Robotics Ltd.",
+#     "JOBY": "Joby Aviation, Inc.",
+#     "TSLA": "Tesla, Inc.",
+#     "UBER": "Uber Technologies, Inc.",
+#     "ORCL": "Oracle Corporation",
+#     "CFLT": "Confluent, Inc.",
+#     "INTU": "Intuit Inc.",
+#     "IOT": "Samsara Inc.",
+#     "NFLX": "Netflix, Inc.",
+#     "RBLX": "Roblox Corporation",
+#     "RDDT": "Reddit, Inc.",
+#     "SHOP": "Shopify Inc.",
+#     "SOUN": "SoundHound AI, Inc.",
+#     "PATH": "UiPath Inc.",
+# }
+
+# "AAPL",  # Apple
+# "MSFT",  # Microsoft
+# "GOOGL",  # Alphabet
+# "AMZN",  # Amazon
+# "NVDA",  # NVIDIA
+# "META",  # Meta
+# "TSLA",  # Tesla
+# "AVGO",  # Broadcom
+# "TSM",  # Taiwan Semiconductor
+# "ORCL",  # Oracle
+# "ASML",  # ASML
+# "CRM",  # Salesforce
+# "NFLX",  # Netflix
+# "AMD",  # AMD
+# "INTU",  # Intuit
+# "UBER",  # Uber
+# "IREN",  # Iren
+# "APP",  # S&P 500 ETF
+# "HOOD",  # Robinhood
+# "MSTR",  # Microstrategy
+# "PLTR",  # Palantir
+
+DefaultTickerNames = {
     "AAPL": "Apple Inc.",
-    "ADBE": "Adobe Inc.",
-    "ADSK": "Autodesk, Inc.",
-    "AI": "C3.ai, Inc.",
-    "AMZN": "Amazon.com, Inc.",
-    "CRM": "Salesforce, Inc.",
-    "DDOG": "Datadog, Inc.",
-    "GOOGL": "Alphabet Inc.",
-    "META": "Meta Platforms, Inc.",
     "MSFT": "Microsoft Corporation",
-    "NOW": "ServiceNow, Inc.",
-    "PLTR": "Palantir Technologies Inc.",
-    "SNOW": "Snowflake Inc.",
-    "VEEV": "Veeva Systems Inc.",
-    "IONQ": "IonQ, Inc.",
-    "QBTS": "D-Wave Quantum Inc.",
-    "RGTI": "Rigetti Computing, Inc.",
-    "PL": "Planet Labs PBC",
-    "RKLB": "Rocket Lab USA, Inc.",
-    "LUNR": "Intuitive Machines, Inc.",
-    "ACHR": "Archer Aviation Inc.",
-    "ARBE": "Arbe Robotics Ltd.",
-    "JOBY": "Joby Aviation, Inc.",
+    "GOOGL": "Alphabet Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "META": "Meta Platforms, Inc.",
     "TSLA": "Tesla, Inc.",
-    "UBER": "Uber Technologies, Inc.",
+    "AVGO": "Broadcom Inc.",
+    "TSM": "Taiwan Semiconductor Manufacturing Company Ltd.",
     "ORCL": "Oracle Corporation",
-    "CFLT": "Confluent, Inc.",
-    "INTU": "Intuit Inc.",
-    "IOT": "Samsara Inc.",
+    "ASML": "ASML Holding N.V.",
+    "CRM": "Salesforce, Inc.",
     "NFLX": "Netflix, Inc.",
-    "RBLX": "Roblox Corporation",
-    "RDDT": "Reddit, Inc.",
-    "SHOP": "Shopify Inc.",
-    "SOUN": "SoundHound AI, Inc.",
-    "PATH": "UiPath Inc.",
+    "AMD": "Advanced Micro Devices, Inc.",
+    "INTU": "Intuit Inc.",
+    "UBER": "Uber Technologies, Inc.",
+    "IREN": "Iren",
+    "APP": "AppLovin Corporation",
+    "HOOD": "Robinhood Markets, Inc.",
+    "MSTR": "Microstrategy Incorporated",
+    "PLTR": "Palantir Technologies Inc.",
 }
 
 DefaultTickers = list(DefaultTickerNames.keys())
@@ -264,7 +310,9 @@ class VixData(BaseModel):
     vix_3m: float | None = None
     vxn: float | None = None
     term_structure: str | None = None  # "normal", "inverted", "flat", "unknown"
-    fear_level: str | None = None  # "extreme_fear", "fear", "neutral", "greed", "unknown"
+    fear_level: str | None = (
+        None  # "extreme_fear", "fear", "neutral", "greed", "unknown"
+    )
 
 
 class OptionsData(BaseModel):
@@ -281,10 +329,14 @@ class OptionsData(BaseModel):
 class TrendContext(BaseModel):
     """Trend analysis context for the ticker"""
 
-    short_term: str | None = None  # "strong_up", "weak_up", "sideways", "weak_down", "strong_down"
+    short_term: str | None = (
+        None  # "strong_up", "weak_up", "sideways", "weak_down", "strong_down"
+    )
     medium_term: str | None = None  # Same options as short_term
     long_term: str | None = None  # Same options as short_term
-    relative_strength_trend: str | None = None  # "strengthening", "weakening", "neutral"
+    relative_strength_trend: str | None = (
+        None  # "strengthening", "weakening", "neutral"
+    )
     recommended_approach: str | None = None  # "trend_following", "mean_reversion"
 
 

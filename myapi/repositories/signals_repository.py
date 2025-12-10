@@ -42,7 +42,7 @@ class SignalsRepository:
     def _ensure_valid_session(self, max_retries: int = 3):
         """
         세션이 유효한 상태인지 확인하고, 필요한 경우 복구하거나 재연결합니다.
-        
+
         Args:
             max_retries: 재연결 시도 최대 횟수
         """
@@ -53,7 +53,9 @@ class SignalsRepository:
                 return  # 성공하면 종료
             except PendingRollbackError:
                 # 롤백이 필요한 경우 롤백 수행
-                logging.warning("PendingRollbackError detected. Rolling back transaction.")
+                logging.warning(
+                    "PendingRollbackError detected. Rolling back transaction."
+                )
                 self.db_session.rollback()
                 return  # 롤백 후 정상 상태이므로 종료
             except (OperationalError, DisconnectionError) as e:
@@ -67,11 +69,11 @@ class SignalsRepository:
                     self.db_session.close()
                 except Exception:
                     pass  # 이미 끊어진 연결이므로 무시
-                
+
                 # 새 세션 생성
                 self.db_session = SessionLocal()
                 logging.info("Created new database session after connection loss.")
-                
+
                 if attempt == max_retries - 1:
                     logging.error(
                         f"Failed to reconnect after {max_retries} attempts. Last error: {e}"
@@ -84,7 +86,7 @@ class SignalsRepository:
                     self.db_session.rollback()
                 except Exception:
                     pass
-                
+
                 # 연결 관련 에러일 수 있으므로 재연결 시도
                 if "closed" in str(e).lower() or "connection" in str(e).lower():
                     try:
@@ -92,7 +94,9 @@ class SignalsRepository:
                     except Exception:
                         pass
                     self.db_session = SessionLocal()
-                    logging.info("Created new database session after unknown connection error.")
+                    logging.info(
+                        "Created new database session after unknown connection error."
+                    )
                 else:
                     return  # 연결 문제가 아니면 종료
 
@@ -996,10 +1000,6 @@ class SignalsRepository:
                 Signals.id,
                 Ticker.date.asc(),
             ).distinct(Signals.id)
-
-            # DISTINCT ON 후 다시 정렬 (subquery 사용)
-            # 이렇게 하면 중복 제거 후 원하는 순서로 정렬 가능
-            from sqlalchemy import select
 
             subquery = query.subquery()
 

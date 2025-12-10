@@ -2,6 +2,7 @@ from typing import Literal, Optional
 import datetime as dt
 import logging
 
+from myapi.domain.ai.ai_schema import ChatModel
 from myapi.services.translate_service import TranslateService
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
@@ -95,9 +96,10 @@ def news_summary(
     today_str = dt.date.today().strftime("%Y-%m-%d")
     prompt = signal_service.generate_us_market_prompt(today_str)
 
-    result = ai_service.gemini_search_grounding(
+    result = ai_service.perplexity_completion(
         prompt=prompt,
         schema=WebSearchMarketResponse,
+        model=ChatModel.SONAR,
     )
 
     if isinstance(result, WebSearchMarketResponse):
@@ -632,7 +634,7 @@ async def create_etf_signal_pipeline(
             try:
                 # 웹서치를 통한 최신 뉴스/분석 수집
                 today_str = target_date.strftime("%Y-%m-%d")
-                web_search_result = ai_service.gemini_search_grounding(
+                web_search_result = ai_service.perplexity_completion(
                     prompt=signal_service.generate_web_search_prompt(ticker, today_str),
                     schema=WebSearchTickerResponse,
                 )
