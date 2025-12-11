@@ -419,8 +419,16 @@ async def get_signals(
         if ticker_df is not None and not ticker_df.empty:
             ticker_df = signal_service.add_indicators(ticker_df, spy_df)
             trend_data = signal_service.analyze_trend_context(ticker_df, spy_df)
+            
+            # ✅ Calculate intraday metrics
+            intraday_metrics = signal_service.calculate_intraday_metrics(ticker_df)
+            
+            # ✅ Calculate historical context
+            historical_context = signal_service.calculate_historical_context(ticker_df)
         else:
             trend_data = signal_service._get_default_trend_context()
+            intraday_metrics = None
+            historical_context = None
 
         data = SignalPromptData(
             ticker=report.ticker,
@@ -447,6 +455,8 @@ async def get_signals(
                 iv_percentile=spy_options.get("iv_percentile"),
             ),
             trend_context=TrendContext(**trend_data),
+            intraday_metrics=intraday_metrics,
+            historical_context=historical_context,
         )
 
         message = None

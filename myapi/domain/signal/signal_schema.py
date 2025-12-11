@@ -340,6 +340,36 @@ class TrendContext(BaseModel):
     recommended_approach: str | None = None  # "trend_following", "mean_reversion"
 
 
+class IntradayMetrics(BaseModel):
+    """장중/단기 모멘텀 지표"""
+
+    premarket_change_pct: float | None = None  # Pre-market 변화율
+    afterhours_change_pct: float | None = None  # After-hours 변화율
+    gap_pattern_3d: str | None = None  # 최근 3일 갭 패턴 ("up-up-down")
+    avg_gap_size_3d: float | None = None  # 3일 평균 갭 크기 (%)
+    vwap_distance_pct: float | None = None  # 현재가-VWAP 거리 (%)
+    intraday_range_avg_3d: float | None = None  # 3일 평균 등락폭 (%)
+    high_low_range_pct: float | None = None  # 당일 High-Low 범위 (%)
+
+
+class HistoricalContext(BaseModel):
+    """365일 데이터 요약 통계"""
+
+    year_high: float  # 52주 고점
+    year_low: float  # 52주 저점
+    current_price_percentile: float  # 현재가 백분위 (0-100)
+    distance_from_year_high_pct: float  # 고점 대비 거리 (%)
+    distance_from_year_low_pct: float  # 저점 대비 거리 (%)
+    avg_volume_30d: float  # 30일 평균 거래량
+    avg_volume_90d: float  # 90일 평균 거래량
+    avg_volume_365d: float  # 365일 평균 거래량
+    price_change_30d_pct: float  # 30일 수익률
+    price_change_90d_pct: float  # 90일 수익률
+    price_change_365d_pct: float  # 365일 수익률
+    volatility_30d: float  # 30일 변동성 (std)
+    consolidation_days: int | None = None  # 최근 횡보 기간
+
+
 class SignalPromptData(BaseModel):
     """
     SignalPromptData는 SignalPassAI에 대한 쿼리 파라미터를 정의합니다.
@@ -358,6 +388,8 @@ class SignalPromptData(BaseModel):
     vix_data: VixData | None = None
     options_data: OptionsData | None = None
     trend_context: TrendContext | None = None
+    intraday_metrics: IntradayMetrics | None = None
+    historical_context: HistoricalContext | None = None
 
 
 class AnalyticsReportPromptResponse(BaseModel):

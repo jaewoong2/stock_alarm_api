@@ -26,5 +26,9 @@ pandas_datareader==0.10.0
 cloudscraper==1.2.71
 pdfplumber==0.11.6
 google-genai
+# pycares 바이너리 호환성을 위한 명시적 버전
+aiodns==3.2.0
+pycares==4.4.0
+aiohttp==3.10.11
 PyJWT==2.8.0
 pandas_market_calendars==4.5.0

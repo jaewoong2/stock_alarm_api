@@ -42,6 +42,8 @@ from myapi.domain.signal.signal_schema import (
     FundamentalData,
     NewsHeadline,
     WebSearchTickerResult,
+    IntradayMetrics,
+    HistoricalContext,
 )
 from myapi.domain.news.news_schema import (
     WebSearchMarketItem,
@@ -607,13 +609,19 @@ class SignalService:
             # Calculate VIX percentile over past year
             vix_min = vix_df["Close"].min()
             vix_max = vix_df["Close"].max()
-            vix_percentile = ((vix_level - vix_min) / (vix_max - vix_min)) * 100 if vix_max != vix_min else 50.0
+            vix_percentile = (
+                ((vix_level - vix_min) / (vix_max - vix_min)) * 100
+                if vix_max != vix_min
+                else 50.0
+            )
 
             # Fetch VIX9D (9-day VIX) - short-term volatility expectation
             vix_9d = None
             try:
                 vix9d_ticker = yf.Ticker("^VIX9D")
-                vix9d_df = vix9d_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                vix9d_df = vix9d_ticker.history(
+                    start=end_date - timedelta(days=7), end=end_date
+                )
                 if not vix9d_df.empty:
                     vix_9d = float(vix9d_df["Close"].iloc[-1])
             except Exception as e:
@@ -623,7 +631,9 @@ class SignalService:
             vix_3m = None
             try:
                 vix3m_ticker = yf.Ticker("^VIX3M")
-                vix3m_df = vix3m_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                vix3m_df = vix3m_ticker.history(
+                    start=end_date - timedelta(days=7), end=end_date
+                )
                 if not vix3m_df.empty:
                     vix_3m = float(vix3m_df["Close"].iloc[-1])
             except Exception as e:
@@ -633,7 +643,9 @@ class SignalService:
             vxn = None
             try:
                 vxn_ticker = yf.Ticker("^VXN")
-                vxn_df = vxn_ticker.history(start=end_date - timedelta(days=7), end=end_date)
+                vxn_df = vxn_ticker.history(
+                    start=end_date - timedelta(days=7), end=end_date
+                )
                 if not vxn_df.empty:
                     vxn = float(vxn_df["Close"].iloc[-1])
             except Exception as e:
@@ -779,17 +791,27 @@ class SignalService:
                     iv_percentile = 50.0  # Default to median
 
                 # Detect unusual activity
-                unusual_activity = self._detect_unusual_options_activity(calls, puts, symbol)
+                unusual_activity = self._detect_unusual_options_activity(
+                    calls, puts, symbol
+                )
 
                 # Calculate 30-day average P/C ratio (simplified - using current as proxy)
                 # In production, you'd want to store historical P/C ratios
                 put_call_avg_30d = put_call_ratio if put_call_ratio else 1.0
 
                 return {
-                    "put_call_ratio": round(put_call_ratio, 3) if put_call_ratio else None,
-                    "put_call_ratio_oi": round(put_call_ratio_oi, 3) if put_call_ratio_oi else None,
-                    "put_call_avg_30d": round(put_call_avg_30d, 3) if put_call_avg_30d else None,
-                    "iv_current": round(iv_current * 100, 2) if iv_current else None,  # Convert to percentage
+                    "put_call_ratio": (
+                        round(put_call_ratio, 3) if put_call_ratio else None
+                    ),
+                    "put_call_ratio_oi": (
+                        round(put_call_ratio_oi, 3) if put_call_ratio_oi else None
+                    ),
+                    "put_call_avg_30d": (
+                        round(put_call_avg_30d, 3) if put_call_avg_30d else None
+                    ),
+                    "iv_current": (
+                        round(iv_current * 100, 2) if iv_current else None
+                    ),  # Convert to percentage
                     "iv_percentile": round(iv_percentile, 2) if iv_percentile else None,
                     "unusual_activity": unusual_activity,
                 }
@@ -813,7 +835,9 @@ class SignalService:
             # High volume in OTM puts (bearish)
             if not puts.empty:
                 puts_sorted = puts.sort_values("volume", ascending=False).head(3)
-                top_put_volume = puts_sorted.iloc[0]["volume"] if len(puts_sorted) > 0 else 0
+                top_put_volume = (
+                    puts_sorted.iloc[0]["volume"] if len(puts_sorted) > 0 else 0
+                )
                 avg_put_volume = puts["volume"].mean()
 
                 if top_put_volume > avg_put_volume * 5:
@@ -822,7 +846,9 @@ class SignalService:
             # High volume in OTM calls (bullish)
             if not calls.empty:
                 calls_sorted = calls.sort_values("volume", ascending=False).head(3)
-                top_call_volume = calls_sorted.iloc[0]["volume"] if len(calls_sorted) > 0 else 0
+                top_call_volume = (
+                    calls_sorted.iloc[0]["volume"] if len(calls_sorted) > 0 else 0
+                )
                 avg_call_volume = calls["volume"].mean()
 
                 if top_call_volume > avg_call_volume * 5:
@@ -983,7 +1009,9 @@ class SignalService:
         try:
             # Count trend alignment
             up_trends = [t for t in [short_term, medium_term, long_term] if "up" in t]
-            down_trends = [t for t in [short_term, medium_term, long_term] if "down" in t]
+            down_trends = [
+                t for t in [short_term, medium_term, long_term] if "down" in t
+            ]
 
             # Strong trend alignment -> Trend Following
             if len(up_trends) >= 2 and "strong" in short_term:
@@ -1013,6 +1041,133 @@ class SignalService:
         except Exception as e:
             logger.warning(f"Error determining trade approach: {e}")
             return "trend_following"
+
+    def calculate_intraday_metrics(self, df: pd.DataFrame) -> IntradayMetrics:
+        """
+        단기 모멘텀 지표 계산
+        - Pre-market: 현재는 불가능 (실시간 데이터 필요)
+        - 갭 패턴: Close[-1] vs Open[0] 비교
+        - VWAP: 이미 df에 존재
+        """
+        if df.empty or len(df) < 3:
+            return IntradayMetrics()
+
+        try:
+            # 갭 계산 (최근 3일)
+            gaps = []
+            gap_sizes = []
+            for i in range(-3, 0):
+                try:
+                    gap = (
+                        (df["Open"].iloc[i] - df["Close"].iloc[i - 1])
+                        / df["Close"].iloc[i - 1]
+                        * 100
+                    )
+                    gap_sizes.append(abs(gap))
+                    if gap > 0.5:
+                        gaps.append("up")
+                    elif gap < -0.5:
+                        gaps.append("down")
+                    else:
+                        gaps.append("flat")
+                except Exception:
+                    gaps.append("unknown")
+                    gap_sizes.append(0.0)
+
+            # VWAP 거리
+            current_price = df["Close"].iloc[-1]
+            vwap = df["VWAP"].iloc[-1] if "VWAP" in df.columns else current_price
+            vwap_dist = (current_price - vwap) / vwap * 100
+
+            # 등락폭 평균 (최근 3일)
+            recent_ranges = ((df["High"] - df["Low"]) / df["Low"] * 100).tail(3).mean()
+
+            # 당일 등락폭
+            high_low_range = (
+                (df["High"].iloc[-1] - df["Low"].iloc[-1]) / df["Low"].iloc[-1] * 100
+            )
+
+            return IntradayMetrics(
+                gap_pattern_3d="-".join(gaps),
+                avg_gap_size_3d=(
+                    round(sum(gap_sizes) / len(gap_sizes), 2) if gap_sizes else None
+                ),
+                vwap_distance_pct=round(vwap_dist, 2),
+                intraday_range_avg_3d=round(recent_ranges, 2),
+                high_low_range_pct=round(high_low_range, 2),
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate intraday metrics: {e}")
+            return IntradayMetrics()
+
+    def calculate_historical_context(
+        self, df: pd.DataFrame
+    ) -> HistoricalContext | None:
+        """
+        365일 데이터 요약 통계 생성
+        - df: 365일 전체 데이터
+        """
+        if df.empty:
+            logger.warning("DataFrame is empty, cannot calculate historical context")
+            return None
+
+        try:
+            current_price = float(df["Close"].iloc[-1])
+            year_high = float(df["High"].max())
+            year_low = float(df["Low"].min())
+
+            # 백분위 계산
+            percentile = float((df["Close"] < current_price).sum() / len(df) * 100)
+
+            # 거리 계산
+            dist_high = float((current_price - year_high) / year_high * 100)
+            dist_low = float((current_price - year_low) / year_low * 100)
+
+            # 변동성 (30일 표준편차)
+            volatility = float(df["Close"].tail(30).pct_change().std() * 100)
+
+            # 횡보 기간 (ATR 기반)
+            consolidation = 0
+            if "ATR_PCT" in df.columns:
+                recent_atr = df["ATR_PCT"].tail(20)
+                if not recent_atr.empty and float(recent_atr.mean()) > 0:
+                    consolidation = int((recent_atr < recent_atr.mean() * 0.8).sum())
+
+            # 기간별 수익률 (안전하게 처리)
+            def safe_return_calc(days: int) -> float:
+                if len(df) < days:
+                    return 0.0
+                try:
+                    return float(
+                        (df["Close"].iloc[-1] / df["Close"].iloc[-days] - 1) * 100
+                    )
+                except Exception:
+                    return 0.0
+
+            return HistoricalContext(
+                year_high=float(round(year_high, 2)),
+                year_low=float(round(year_low, 2)),
+                current_price_percentile=float(round(percentile, 1)),
+                distance_from_year_high_pct=float(round(dist_high, 2)),
+                distance_from_year_low_pct=float(round(dist_low, 2)),
+                avg_volume_30d=float(df["Volume"].tail(30).mean()),
+                avg_volume_90d=(
+                    float(df["Volume"].tail(90).mean())
+                    if len(df) >= 90
+                    else float(df["Volume"].mean())
+                ),
+                avg_volume_365d=float(df["Volume"].mean()),
+                price_change_30d_pct=float(round(safe_return_calc(30), 2)),
+                price_change_90d_pct=float(round(safe_return_calc(90), 2)),
+                price_change_365d_pct=float(round(safe_return_calc(len(df) - 1), 2)),
+                volatility_30d=float(round(volatility, 2)),
+                consolidation_days=consolidation,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to calculate historical context: {e}")
+            return None
 
     def _get_default_trend_context(self) -> dict:
         """Return default trend context when analysis fails"""
@@ -1864,7 +2019,14 @@ class SignalService:
         - report_summary: {report_summary}
         - S&P 500 Status: {data.spy_description}
         - additional_info: {data.additional_info}
-        - Stock's OHLCV DataFrame (Analyze Step By Step): {data.dataframe}
+
+        ### 📊 Historical Context (365-day Summary):
+        {data.historical_context.model_dump_json() if data.historical_context else "N/A"}
+
+        ### 🚀 Intraday Momentum (Short-term):
+        {data.intraday_metrics.model_dump_json() if data.intraday_metrics else "N/A"}
+
+        - Stock's OHLCV DataFrame (Last 100 days - Analyze Step By Step): {data.dataframe}
         ```
         """
 

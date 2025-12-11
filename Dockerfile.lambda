@@ -5,7 +5,7 @@ WORKDIR /var/task
 # 3) Python 래퍼 설치
 COPY requirements.txt .
 RUN pip install --upgrade pip \
-    && pip install -r requirements.txt \
+    && pip install --only-binary=:all: -r requirements.txt \
     && pip install yfinance --upgrade --no-cache-dir
 
 # 4) 애플리케이션 코드 복사 & Lambda 핸들러 지정
