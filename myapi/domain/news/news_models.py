@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date as d, datetime
 from typing import Any, Optional
 
 from sqlalchemy import Date, DateTime, Float, Integer, JSON, String, func
@@ -48,7 +48,7 @@ class AiAnalysisModel(Base):
     __table_args__ = {"schema": "crypto"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
+    date: Mapped[d] = mapped_column(Date, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False, default="market_analysis")
     value: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -260,6 +260,9 @@ class SignalService:
                                 'surprisePercent': 11.64}, ...]
         """
         try:
+            if tk.ticker is None or tk.ticker in ["QQQ", "SPY"]:
+                return None
+
             hist = tk.get_earnings_history()
             if isinstance(hist, pd.DataFrame):
                 if not hist.empty:
@@ -880,6 +883,204 @@ class SignalService:
             "iv_percentile": None,
             "unusual_activity": "No data available",
         }
+
+    def fetch_market_options_snapshot(self, days_back: int = 100) -> dict:
+        """
+        Comprehensive snapshot of QQQ/SPY/VIX options market.
+
+        Returns dict with keys: "qqq", "spy", "vix"
+        Each containing current options metrics + 100-day underlying OHLCV
+        """
+        try:
+            from datetime import timedelta
+
+            # Calculate date range
+            end_date = datetime.datetime.now()
+            start_date = end_date - timedelta(days=days_back + 50)
+
+            # Fetch QQQ data
+            qqq_ohlcv = self.fetch_ohlcv("QQQ", start=start_date, end=end_date)
+            qqq_options = self.fetch_index_options_data("QQQ")
+
+            # Fetch SPY data
+            spy_ohlcv = self.fetch_ohlcv("SPY", start=start_date, end=end_date)
+            spy_options = self.fetch_index_options_data("SPY")
+
+            # Fetch VIX data
+            vix_data = self.fetch_market_volatility_data(days_back=days_back)
+            vix_ohlcv = self.fetch_ohlcv("^VIX", start=start_date, end=end_date)
+
+            # Calculate 100-day metrics for each
+            qqq_snapshot = self._build_options_snapshot(
+                symbol="QQQ", ohlcv_df=qqq_ohlcv.tail(100), options_data=qqq_options
+            )
+
+            spy_snapshot = self._build_options_snapshot(
+                symbol="SPY", ohlcv_df=spy_ohlcv.tail(100), options_data=spy_options
+            )
+
+            vix_snapshot = self._build_vix_snapshot(
+                vix_df=vix_ohlcv.tail(100), vix_data=vix_data
+            )
+
+            return {
+                "qqq": qqq_snapshot,
+                "spy": spy_snapshot,
+                "vix": vix_snapshot,
+            }
+
+        except Exception as e:
+            logger.error(f"Error fetching market options snapshot: {e}")
+            raise
+
+    def _build_options_snapshot(
+        self, symbol: str, ohlcv_df: pd.DataFrame, options_data: dict
+    ) -> dict:
+        """Build OptionsMarketSnapshot from OHLCV + current options data"""
+        if ohlcv_df.empty:
+            raise ValueError(f"Empty OHLCV data for {symbol}")
+
+        latest_close = float(ohlcv_df["Close"].iloc[-1])
+        first_close = float(ohlcv_df["Close"].iloc[0])
+        return_100d = ((latest_close - first_close) / first_close) * 100
+
+        # Calculate IV rank (percentile)
+        iv_rank = 50.0
+        if options_data.get("iv_current"):
+            iv_rank = options_data.get("iv_percentile", 50.0)
+
+        return {
+            "symbol": symbol,
+            "underlying_close": latest_close,
+            "underlying_100d_return_pct": round(return_100d, 2),
+            "put_call_ratio": options_data.get("put_call_ratio"),
+            "put_call_ratio_oi": options_data.get("put_call_ratio_oi"),
+            "atm_put_iv": None,
+            "atm_call_iv": None,
+            "iv_rank_100d": iv_rank,
+            "skew": None,
+            "total_put_volume": None,
+            "total_call_volume": None,
+            "total_put_oi": None,
+            "total_call_oi": None,
+            "unusual_activity": options_data.get("unusual_activity", "None detected"),
+        }
+
+    def _build_vix_snapshot(self, vix_df: pd.DataFrame, vix_data: dict) -> dict:
+        """Build VixOptionsSnapshot from VIX OHLCV + volatility data"""
+        if vix_df.empty:
+            raise ValueError("Empty VIX data")
+
+        vix_100d_high = float(vix_df["High"].max())
+        vix_100d_low = float(vix_df["Low"].min())
+
+        return {
+            "vix_level": vix_data.get("vix_level"),
+            "vix_100d_percentile": vix_data.get("vix_percentile"),
+            "vix_100d_high": vix_100d_high,
+            "vix_100d_low": vix_100d_low,
+            "term_structure": vix_data.get("term_structure", "unknown"),
+            "fear_level": vix_data.get("fear_level", "unknown"),
+        }
+
+    def generate_options_analysis_prompt(self, data: dict, analysis_date: str) -> str:
+        """
+        Build LLM prompt for market direction analysis using options data.
+
+        Args:
+            data: Output from fetch_market_options_snapshot()
+            analysis_date: Date string for analysis
+
+        Returns:
+            Formatted prompt string
+        """
+        qqq = data["qqq"]
+        spy = data["spy"]
+        vix = data["vix"]
+
+        # Format optional values
+        qqq_pcr = f"{qqq['put_call_ratio']:.2f}" if qqq["put_call_ratio"] else "N/A"
+        qqq_pcr_oi = (
+            f"{qqq['put_call_ratio_oi']:.2f}" if qqq["put_call_ratio_oi"] else "N/A"
+        )
+        spy_pcr = f"{spy['put_call_ratio']:.2f}" if spy["put_call_ratio"] else "N/A"
+        spy_pcr_oi = (
+            f"{spy['put_call_ratio_oi']:.2f}" if spy["put_call_ratio_oi"] else "N/A"
+        )
+        vix_level = f"{vix['vix_level']:.2f}" if vix["vix_level"] else "N/A"
+
+        prompt = f"""You are an expert options flow analyst. Analyze next-day market direction based on options positioning.
+
+**Analysis Date**: {analysis_date}
+**Objective**: Predict whether the market (QQQ/SPY) will go UP, DOWN, or SIDEWAYS tomorrow.
+
+## Options Market Data
+
+### QQQ (Nasdaq-100 ETF) Options
+- **Current Price**: ${qqq['underlying_close']:.2f}
+- **100-Day Return**: {qqq['underlying_100d_return_pct']:+.2f}%
+- **Put/Call Ratio (Volume)**: {qqq_pcr}
+- **Put/Call Ratio (OI)**: {qqq_pcr_oi}
+- **IV Rank (100d)**: {qqq['iv_rank_100d']:.0f}th percentile
+- **Unusual Activity**: {qqq['unusual_activity']}
+
+### SPY (S&P 500 ETF) Options
+- **Current Price**: ${spy['underlying_close']:.2f}
+- **100-Day Return**: {spy['underlying_100d_return_pct']:+.2f}%
+- **Put/Call Ratio (Volume)**: {spy_pcr}
+- **Put/Call Ratio (OI)**: {spy_pcr_oi}
+- **IV Rank (100d)**: {spy['iv_rank_100d']:.0f}th percentile
+- **Unusual Activity**: {spy['unusual_activity']}
+
+### VIX (Volatility Index)
+- **Current Level**: {vix_level}
+- **100d Percentile**: {vix['vix_100d_percentile']:.0f}th
+- **100d Range**: {vix['vix_100d_low']:.1f} - {vix['vix_100d_high']:.1f}
+- **Term Structure**: {vix['term_structure']}
+- **Fear Level**: {vix['fear_level']}
+
+## Analysis Framework
+
+### 1. Put/Call Ratio Interpretation
+- **>1.2**: Bearish positioning (heavy put buying)
+- **0.8-1.2**: Neutral positioning
+- **<0.8**: Bullish positioning (heavy call buying)
+
+### 2. VIX Context
+- **>30**: Extreme fear (potential reversal)
+- **20-30**: Elevated fear
+- **12-20**: Neutral regime
+- **<12**: Complacency (risk of pullback)
+
+### 3. IV Rank
+- **>70**: Expensive options (reduce premium selling, increase buying)
+- **30-70**: Normal regime
+- **<30**: Cheap options (good for buying)
+
+### 4. Cross-Market Analysis
+- Compare QQQ vs SPY divergences (tech vs broad market)
+- Correlate with VIX regime
+- Identify dealer hedging implications
+
+## Output Requirements
+
+Provide analysis in **MarketDirectionAnalysis** schema format:
+- `overall_direction`: "bullish" | "bearish" | "neutral"
+- `confidence_score`: 0-100
+- `percentage`: `0-100` likelihood of predicted direction (0%, 10%, 20%, 30%, ..., 100%)
+- `tomorrow_bias`: "up" | "down" | "sideways"
+- `expected_volatility`: "low" | "moderate" | "high"
+- `qqq_sentiment`: 2-3 sentence interpretation
+- `spy_sentiment`: 2-3 sentence interpretation
+- `vix_signal`: 2-3 sentence interpretation
+- `key_observations`: 3-5 bullet points of critical findings
+- `risk_factors`: 3-5 identified risks
+- `reasoning`: Detailed analysis (200-300 words)
+
+**Focus on NEXT-DAY implications only** - not long-term forecasts.
+"""
+
+        return prompt
 
     def analyze_trend_context(self, df: pd.DataFrame, spy_df: pd.DataFrame) -> dict:
         """

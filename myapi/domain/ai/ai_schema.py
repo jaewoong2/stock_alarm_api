@@ -83,6 +83,9 @@ class ChatModel(str, Enum):
     O4_MINI_2024_11_20 = "o4-mini-2025-04-16"
     GPT_4_1_MINI = "gpt-4.1-mini"
 
+    GPT_5_MINI = "gpt-5-mini"
+    GPT_5_1 = "gpt-5.1"
+
     SONAR = "sonar"
     SONAR_PRO = "sonar-pro"
 

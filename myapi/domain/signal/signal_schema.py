@@ -158,6 +158,8 @@ DefaultStrategies: List[Strategy] = [
 # "PLTR",  # Palantir
 
 DefaultTickerNames = {
+    "QQQ": "Invesco QQQ Trust",
+    "SPY": "SPDR S&P 500 ETF Trust",
     "AAPL": "Apple Inc.",
     "MSFT": "Microsoft Corporation",
     "GOOGL": "Alphabet Inc.",
@@ -166,15 +168,12 @@ DefaultTickerNames = {
     "META": "Meta Platforms, Inc.",
     "TSLA": "Tesla, Inc.",
     "AVGO": "Broadcom Inc.",
-    "TSM": "Taiwan Semiconductor Manufacturing Company Ltd.",
     "ORCL": "Oracle Corporation",
     "ASML": "ASML Holding N.V.",
     "CRM": "Salesforce, Inc.",
     "NFLX": "Netflix, Inc.",
     "AMD": "Advanced Micro Devices, Inc.",
-    "INTU": "Intuit Inc.",
-    "UBER": "Uber Technologies, Inc.",
-    "IREN": "Iren",
+    "IREN": "Iris Energy Limited",
     "APP": "AppLovin Corporation",
     "HOOD": "Robinhood Markets, Inc.",
     "MSTR": "Microstrategy Incorporated",
@@ -324,6 +323,70 @@ class OptionsData(BaseModel):
     qqq_put_call_avg_30d: float | None = None
     sentiment: str | None = None  # "bearish", "neutral", "bullish"
     iv_percentile: float | None = None
+
+
+class OptionsMarketSnapshot(BaseModel):
+    """Current options market snapshot for one symbol"""
+
+    symbol: str
+    underlying_close: float
+    underlying_100d_return_pct: float
+
+    put_call_ratio: float | None = None
+    put_call_ratio_oi: float | None = None
+    atm_put_iv: float | None = None
+    atm_call_iv: float | None = None
+    iv_rank_100d: float | None = None
+    skew: float | None = None
+
+    total_put_volume: int | None = None
+    total_call_volume: int | None = None
+    total_put_oi: int | None = None
+    total_call_oi: int | None = None
+
+    unusual_activity: str
+
+
+class VixOptionsSnapshot(BaseModel):
+    """VIX-specific metrics"""
+
+    vix_level: float
+    vix_100d_percentile: float
+    vix_100d_high: float
+    vix_100d_low: float
+    term_structure: str
+    fear_level: str
+
+
+class OptionsAnalysisRequest(BaseModel):
+    """Request for market direction analysis"""
+
+    analysis_date: date | None = None
+    force_refresh: bool = False
+
+
+class MarketDirectionAnalysis(BaseModel):
+    """LLM output schema for market direction prediction"""
+
+    analysis_date: str
+
+    overall_direction: Literal["bullish", "bearish", "neutral"]
+    confidence_score: float
+    tomorrow_bias: Literal["up", "down", "sideways"]
+    expected_volatility: Literal["low", "moderate", "high"]
+    percentage: float
+
+    qqq_sentiment: str
+    spy_sentiment: str
+    vix_signal: str
+
+    key_observations: List[str]
+    risk_factors: List[str]
+    reasoning: str
+
+    qqq_data: OptionsMarketSnapshot
+    spy_data: OptionsMarketSnapshot
+    vix_data: VixOptionsSnapshot
 
 
 class TrendContext(BaseModel):

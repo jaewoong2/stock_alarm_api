@@ -442,9 +442,7 @@ class WebSearchResultRepository:
         if closest_date_str:
             if isinstance(closest_date_str, datetime.date):
                 return closest_date_str
-            return datetime.datetime.strptime(
-                str(closest_date_str), "%Y-%m-%d"
-            ).date()
+            return datetime.datetime.strptime(str(closest_date_str), "%Y-%m-%d").date()
 
         return None
 
@@ -767,6 +765,59 @@ class WebSearchResultRepository:
             except Exception:
                 self.db_session.rollback()
                 raise
+
+        # This line should never be reached due to raise e above, but satisfies type checker
+        return None
+
+    def get_anaylsis_by_name_latest(
+        self,
+        name: str,
+        schema: type | None = None,
+    ):
+        """Fetch analysis data for a given name.
+
+        Parameters
+        ----------
+        name: str
+            Identifier of the analysis type.
+        schema: Optional[type]
+            Pydantic schema used to validate the stored value. If ``None`` the
+            raw JSON value is returned.
+        """
+        try:
+            result = (
+                self.db_session.query(AiAnalysisModel)
+                .filter(
+                    AiAnalysisModel.name == name,
+                )
+                .order_by(AiAnalysisModel.created_at.desc())
+                .first()
+            )
+
+            if not result:
+                return None
+
+            value = result.value
+            if schema is not None:
+                try:
+                    value = schema.model_validate(value)
+                except Exception:
+                    value = result.value
+
+            logger.info(f"Successfully retrieved analysis by name")
+            return AiAnalysisVO(
+                id=self.safe_convert(result.id),
+                date=str(result.date),
+                name=str(result.name),
+                value=value,
+            )
+
+        except OperationalError as e:
+            self.db_session.rollback()
+
+        except Exception:
+            self.db_session.rollback()
+            raise
 
         # This line should never be reached due to raise e above, but satisfies type checker
         return None

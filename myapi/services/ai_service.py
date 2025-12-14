@@ -111,7 +111,7 @@ class AIService:
             prompt=f"{result.content}\n\nPlease return the result in JSON format.",
             schema=schema,
             system_prompt="You are a helpful assistant Return the result in JSON format.",
-            chat_model=ChatModel.GPT_4O_MINI,
+            chat_model=ChatModel.GPT_5_MINI,
             image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
         )
 
@@ -299,7 +299,7 @@ class AIService:
                 prompt=f"{completion_content}",
                 schema=schema,
                 system_prompt="You are a helpful assistant. Return the result in JSON format.",
-                chat_model=ChatModel.GPT_4O_MINI,
+                chat_model=ChatModel.GPT_5_MINI,
                 image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
             )
 
@@ -351,7 +351,7 @@ class AIService:
             prompt="" + result + "\n\nPlease return the result in JSON format.",
             schema=schema,
             system_prompt="You are a helpful assistant. Return the result in JSON format.",
-            chat_model=ChatModel.O4_MINI,
+            chat_model=ChatModel.GPT_5_MINI,
             image_url=None,  # 이미지 URL이 필요하지 않다면 None으로 설정
         )
 
@@ -565,7 +565,7 @@ class AIService:
         prompt: str,
         image_url: Optional[str],
         schema: Type[T],
-        chat_model: ChatModel = ChatModel.O3_MINI,
+        chat_model: ChatModel = ChatModel.O4_MINI,
     ) -> T:
         """
         Transforms a message from the OpenAI API into an instance of the specified BaseModel schema.

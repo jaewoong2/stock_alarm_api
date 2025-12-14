@@ -250,7 +250,7 @@ class TranslateService:
                 response = self.ai_service.completions_parse(
                     system_prompt="Translate to Korean",
                     image_url="",
-                    chat_model=ChatModel.GPT_4O_MINI,
+                    chat_model=ChatModel.GPT_5_MINI,
                     prompt=prompt,
                     schema=TranslationSchema,
                 )
@@ -762,8 +762,10 @@ Rules:
 - Keep numbers, percentages, dates unchanged
 - Keep ticker symbols (AAPL, TSLA, etc.) unchanged
 - Keep URLs unchanged
+- Keep Short Phrases (like "Buy", "Sell", "Hold") unchanged
 - Use professional financial Korean
 - Output ONLY the translated JSON, no explanations
+- If a value is already in Korean, return it unchanged
 
 Input JSON:
 {batch_json}
@@ -774,7 +776,7 @@ Translated JSON:"""
             response_text = self.ai_service.completion(
                 system_prompt="You are a professional translator. Translate JSON values to Korean.",
                 prompt=prompt,
-                chat_model=ChatModel.GPT_4O_MINI,
+                chat_model=ChatModel.GPT_5_MINI,
             )
 
             if response_text is None:

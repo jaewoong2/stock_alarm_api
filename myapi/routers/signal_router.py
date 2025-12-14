@@ -26,6 +26,8 @@ from myapi.domain.signal.signal_schema import (
     GetSignalByOnlyAIPromptSchema,
     GetSignalByOnlyAIRequest,
     GetSignalRequest,
+    MarketDirectionAnalysis,
+    OptionsAnalysisRequest,
     OptionsData,
     SignalBaseResponse,
     SignalPromptData,
@@ -38,6 +40,7 @@ from myapi.domain.signal.signal_schema import (
     WebSearchTickerResponse,
 )
 from myapi.repositories.signals_repository import SignalsRepository
+from myapi.repositories.web_search_repository import WebSearchResultRepository
 from myapi.services.ai_service import AIService
 from myapi.services.aws_service import AwsService
 from myapi.services.db_signal_service import DBSignalService
@@ -118,7 +121,7 @@ def generate_signal_result(
                 prompt=request.prompt,
                 image_url=None,
                 schema=SignalPromptResponse,
-                chat_model=ChatModel.O4_MINI,
+                chat_model=ChatModel.GPT_5_1,
             )
 
         if not isinstance(result, SignalPromptResponse):
@@ -188,7 +191,7 @@ def llm_query(
                 req.ticker, today_YYYY_MM_DD
             ),
             schema=WebSearchTickerResponse,
-            model=ChatModel.SONAR,
+            model=ChatModel.SONAR_PRO,
         )
 
         if not web_search_gemini_result:
@@ -419,10 +422,10 @@ async def get_signals(
         if ticker_df is not None and not ticker_df.empty:
             ticker_df = signal_service.add_indicators(ticker_df, spy_df)
             trend_data = signal_service.analyze_trend_context(ticker_df, spy_df)
-            
+
             # ✅ Calculate intraday metrics
             intraday_metrics = signal_service.calculate_intraday_metrics(ticker_df)
-            
+
             # ✅ Calculate historical context
             historical_context = signal_service.calculate_historical_context(ticker_df)
         else:
@@ -473,7 +476,7 @@ async def get_signals(
             logger.error(f"Error generating SQS message: {e}")
 
         try:
-            aws_service.send_sqs_fifo_message(
+            result = aws_service.send_sqs_fifo_message(
                 queue_url="https://sqs.ap-northeast-2.amazonaws.com/849441246713/crypto.fifo",
                 message_body=json.dumps(message),
                 message_group_id="signal",
@@ -481,6 +484,7 @@ async def get_signals(
                 + "signal"
                 + market_reference_date.isoformat(),
             )
+            logger.info(f"Sent SQS message successfully. {result}")
         except Exception as e:
             logger.error(f"Error Sending SQS message: {e}")
 
@@ -885,3 +889,133 @@ async def get_signals_stats(
     시그널 통계를 조회합니다.
     """
     return await db_signal_service.get_signals_stats(by_type=by_type)
+
+
+@router.post(
+    "/market-direction/analyze",
+    dependencies=[Depends(verify_bearer_token)],
+)
+@inject
+async def analyze_market_direction(
+    request: OptionsAnalysisRequest,
+    signal_service: SignalService = Depends(Provide[Container.services.signal_service]),
+    ai_service: AIService = Depends(Provide[Container.services.ai_service]),
+    web_search_repository: WebSearchResultRepository = Depends(
+        Provide[Container.repositories.web_search_repository]
+    ),
+    translate_service: TranslateService = Depends(
+        Provide[Container.services.translate_service]
+    ),
+):
+    """
+    Analyze next-day market direction using QQQ/SPY/VIX options data.
+    Stores result in ai_analysis table with name='options_analysis'.
+    """
+    market_date = request.analysis_date or get_latest_market_date()
+    date_str = market_date.strftime("%Y-%m-%d")
+
+    # Check cache
+    if not request.force_refresh:
+        cached = web_search_repository.get_analysis_by_date(
+            analysis_date=market_date,
+            name="options_analysis",
+            schema=MarketDirectionAnalysis,
+        )
+        if cached:
+            logger.info(f"Returning cached analysis for {date_str}")
+            return {"status": "cached", "analysis": cached.value}
+
+    # Fetch fresh options data
+    logger.info(f"Fetching market options snapshot for {date_str}")
+    options_data = signal_service.fetch_market_options_snapshot(days_back=100)
+
+    # Generate prompt
+    prompt = signal_service.generate_options_analysis_prompt(
+        data=options_data, analysis_date=date_str
+    )
+
+    # Call LLM (try Gemini first, fallback to OpenAI)
+    try:
+        logger.info("Calling Gemini for market direction analysis")
+        result = ai_service.completions_parse(
+            system_prompt="You are a market analyst specializing in options flow analysis.",
+            prompt=prompt,
+            image_url=None,
+            schema=MarketDirectionAnalysis,
+            chat_model=ChatModel.O4_MINI,
+        )
+
+        result = translate_service.translate_schema(result)
+    except Exception as e:
+        logger.warning(f"Gemini failed: {e}, falling back to OpenAI")
+        result = ai_service.gemini_completion(
+            prompt=prompt,
+            schema=MarketDirectionAnalysis,
+        )
+
+    if not isinstance(result, MarketDirectionAnalysis):
+        logger.error(f"Invalid analysis result type: {type(result)}")
+        return {"status": "error", "message": "Invalid analysis result format"}
+
+    web_search_repository.create_analysis(
+        analysis_date=market_date,
+        analysis=result.model_dump(),
+        name="options_analysis",
+    )
+
+    logger.info(f"Saved market direction analysis for {date_str}")
+    return {"status": "success", "analysis": result}
+
+
+@router.get("/market-direction/latest")
+@inject
+async def get_latest_market_direction(
+    web_search_repository: WebSearchResultRepository = Depends(
+        Provide[Container.repositories.web_search_repository]
+    ),
+):
+    """Get the most recent market direction analysis"""
+    result = web_search_repository.get_anaylsis_by_name_latest(
+        name="options_analysis",
+        schema=MarketDirectionAnalysis,
+    )
+
+    if not result:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=404, detail="No analysis found for latest market date"
+        )
+
+    return result.value
+
+
+@router.get("/market-direction/{date}")
+@inject
+async def get_market_direction_by_date(
+    date: str,
+    web_search_repository: WebSearchResultRepository = Depends(
+        Provide[Container.repositories.web_search_repository]
+    ),
+):
+    """Get market direction analysis for specific date"""
+    from datetime import datetime
+    from fastapi import HTTPException
+
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid date format. Use YYYY-MM-DD"
+        )
+
+    result = web_search_repository.get_analysis_by_date(
+        analysis_date=target_date,
+        name="options_analysis",
+        schema=MarketDirectionAnalysis,
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No analysis found for {date}")
+
+    return result.value

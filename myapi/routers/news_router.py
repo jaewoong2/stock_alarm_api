@@ -96,10 +96,9 @@ def news_summary(
     today_str = dt.date.today().strftime("%Y-%m-%d")
     prompt = signal_service.generate_us_market_prompt(today_str)
 
-    result = ai_service.perplexity_completion(
+    result = ai_service.gemini_search_grounding(
         prompt=prompt,
         schema=WebSearchMarketResponse,
-        model=ChatModel.SONAR,
     )
 
     if isinstance(result, WebSearchMarketResponse):

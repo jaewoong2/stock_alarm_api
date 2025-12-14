@@ -54,6 +54,12 @@ def execute_batch_jobs(
             "query_string_parameters": {"source": "Minor"},
         },
         {"path": "news/summary", "method": "GET", "body": {}, "group_id": "news"},
+        {
+            "path": "signals/market-direction/analyze",
+            "method": "POST",
+            "body": {"analysis_date": None, "force_refresh": False},
+            "group_id": "market-direction",
+        },
     ]
 
     responses = []
