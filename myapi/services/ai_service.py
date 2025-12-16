@@ -491,10 +491,9 @@ class AIService:
         )
 
         response = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format=schema,
-            temperature=0.2,
             top_p=1.0,
             max_tokens=1024,
             frequency_penalty=0.0,
@@ -647,7 +646,6 @@ class AIService:
                     "content": prompt,
                 },
             ],
-            temperature=0.2,
             top_p=1.0,
         )
 

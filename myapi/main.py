@@ -19,8 +19,6 @@ from myapi.routers import (
 )
 from myapi.utils.config import init_logging
 
-# SessionLocal import removed - using get_db() dependency injection instead
-
 
 app = FastAPI()
 load_dotenv("myapi/.env")
@@ -64,10 +62,6 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.info(f"Response: {response.status_code}")
     return response
-
-
-# Database session middleware removed - now using FastAPI dependency injection
-# Sessions are managed per-request via Depends(get_db) in routers
 
 
 # Exception handler for ServiceException

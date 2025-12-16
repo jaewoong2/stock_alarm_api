@@ -38,7 +38,7 @@ engine = create_engine(
     pool_recycle=1800,
     echo=False,
     pool_timeout=60,  # Increased from 30 to 60 seconds
-    connect_args={"connect_timeout": 60, "application_name": "tqqq_api"},
+    connect_args={"connect_timeout": 60, "options": "-c application_name=tqqq_api"},
 )
 
 SessionLocal = sessionmaker(

@@ -110,6 +110,8 @@ docker build -t stock-alarm-lambda -f Dockerfile.lambda .
 `myapi/utils/config.py`의 `Settings` 클래스를 기준으로 주요 항목이 정의되어 있습니다.
 
 - **데이터베이스**: `database_engine`, `database_username`, `database_password`, `database_host`, `database_port`, `database_dbname`, `database_schema`, `database_pool_size`, `database_max_overflow`
+  - `database_engine`: SQLAlchemy 드라이버 문자열 (예: `postgresql+psycopg` - psycopg3 사용)
+  - 기존 `postgresql+psycopg2`에서 `postgresql+psycopg`로 변경됨 (psycopg3)
 - **JWT & 인증**: `AUTH_USERNAME`, `AUTH_PASSWORD`, `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_EXPIRE_MINUTES`, `auth_token`
 - **AI 서비스 키**: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `BEDROCK_API_KEY`, `BEDROCK_BASE_URL`, `HYPERBOLIC_API_KEY`, `HUGGINGFACE_API_KEY`
 - **AWS**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_S3_*` (Translate/S3용), `KAKAO_*` (카카오 OAuth)
