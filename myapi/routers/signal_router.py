@@ -942,7 +942,7 @@ async def analyze_market_direction(
             prompt=prompt,
             image_url=None,
             schema=MarketDirectionAnalysis,
-            chat_model=ChatModel.O4_MINI,
+            chat_model=ChatModel.GPT_5_1,
         )
 
         result = translate_service.translate_schema(result)
@@ -958,7 +958,7 @@ async def analyze_market_direction(
         return {"status": "error", "message": "Invalid analysis result format"}
 
     web_search_repository.create_analysis(
-        analysis_date=market_date,
+        analysis_date=market_date + timedelta(days=1),
         analysis=result.model_dump(),
         name="options_analysis",
     )
