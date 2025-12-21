@@ -1,8 +1,8 @@
 import datetime
 import logging
-from typing import List, Literal, Optional, Any, Union
+from typing import List, Literal, Optional, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, case, text
+from sqlalchemy import and_, func, case, text, cast, String
 from sqlalchemy.exc import OperationalError
 
 from myapi.domain.news.news_models import (
@@ -37,8 +37,8 @@ class WebSearchResultRepository:
         self,
         result_type: str,
         ticker: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: Optional[datetime.datetime] = None,
+        end_date: Optional[datetime.datetime] = None,
     ) -> List[WebSearchResult]:
         import time
 
@@ -63,11 +63,41 @@ class WebSearchResultRepository:
                         ticker = ticker.strip().upper()
                         query = query.filter(WebSearchResult.ticker == ticker)
 
-                if start_date:
-                    query = query.filter(WebSearchResult.created_at >= start_date)
+                if start_date is not None:
+                    if isinstance(start_date, datetime.date) and not isinstance(
+                        start_date, datetime.datetime
+                    ):
+                        start_boundary = datetime.datetime.combine(
+                            start_date,
+                            datetime.time.min,
+                        )
+                    else:
+                        start_boundary = start_date
 
-                if end_date:
-                    query = query.filter(WebSearchResult.created_at < end_date)
+                    if start_boundary.tzinfo is None:
+                        start_boundary = start_boundary.replace(
+                            tzinfo=datetime.timezone.utc
+                        )
+
+                    query = query.filter(
+                        WebSearchResult.created_at >= start_boundary
+                    )
+
+                if end_date is not None:
+                    if isinstance(end_date, datetime.date) and not isinstance(
+                        end_date, datetime.datetime
+                    ):
+                        end_boundary = datetime.datetime.combine(
+                            end_date,
+                            datetime.time.min,
+                        )
+                    else:
+                        end_boundary = end_date
+
+                    if end_boundary.tzinfo is None:
+                        end_boundary = end_boundary.replace(tzinfo=datetime.timezone.utc)
+
+                    query = query.filter(WebSearchResult.created_at < end_boundary)
 
                 query = query.distinct(WebSearchResult.id).order_by(
                     WebSearchResult.id.desc(), WebSearchResult.date_yyyymmdd.desc()
@@ -154,13 +184,24 @@ class WebSearchResultRepository:
 
             score = func.sum(score_expression).label("score")
 
+            if isinstance(current_date, datetime.datetime):
+                start_of_day = current_date
+            else:
+                start_of_day = datetime.datetime.combine(
+                    current_date,
+                    datetime.time.min,
+                )
+
+            if start_of_day.tzinfo is None:
+                start_of_day = start_of_day.replace(tzinfo=datetime.timezone.utc)
+
             query = (
                 self.db_session.query(
                     WebSearchResult.ticker,
                     score,
                 )
                 .filter(WebSearchResult.result_type == "ticker")
-                .filter(WebSearchResult.created_at >= current_date.strftime("%Y-%m-%d"))
+                .filter(WebSearchResult.created_at >= start_of_day)
                 .group_by(WebSearchResult.ticker)
                 .order_by(score.desc())
                 .limit(limit)
@@ -209,7 +250,7 @@ class WebSearchResultRepository:
                     self.db_session.query(MarketForecast)
                     .filter(MarketForecast.date_yyyymmdd >= start_date_yyyymmdd)
                     .filter(MarketForecast.date_yyyymmdd <= end_date_yyyymmdd)
-                    .filter(MarketForecast.source == source)
+                    .filter(cast(MarketForecast.source, String) == source)
                     .order_by(MarketForecast.date_yyyymmdd.asc())
                     .all()
                 )
@@ -351,9 +392,12 @@ class WebSearchResultRepository:
                     ).params(strategy="AI_GENERATED")
 
             if target_date:
-                query = query.filter(
-                    and_(AiAnalysisModel.date == target_date.strftime("%Y-%m-%d"))
-                )
+                if isinstance(target_date, datetime.datetime):
+                    normalized_target = target_date.date()
+                else:
+                    normalized_target = target_date
+
+                query = query.filter(and_(AiAnalysisModel.date == normalized_target))
 
             results = query.all()
 
@@ -468,16 +512,21 @@ class WebSearchResultRepository:
             - Whether it's an exact match to target_date
         """
         # Check if exact date exists
+        if isinstance(target_date, datetime.datetime):
+            normalized_target = target_date.date()
+        else:
+            normalized_target = target_date
+
         exact_date_query = base_query.filter(
-            AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
+            AiAnalysisModel.date == normalized_target
         )
         exact_date_exists = exact_date_query.first() is not None
 
         if exact_date_exists:
-            return target_date, True
+            return normalized_target, True
 
         # Find closest date
-        closest_date = self._find_closest_available_date(target_date)
+        closest_date = self._find_closest_available_date(normalized_target)
         if closest_date:
             return closest_date, False
 
@@ -595,9 +644,7 @@ class WebSearchResultRepository:
                 return [], target_date, False
 
             # Apply date filter
-            query = base_query.filter(
-                AiAnalysisModel.date == actual_date.strftime("%Y-%m-%d")
-            )
+            query = base_query.filter(AiAnalysisModel.date == actual_date)
 
             # Apply ticker/recommendation filters
             query = self._apply_filters(query, tickers, recommendation)
@@ -646,9 +693,11 @@ class WebSearchResultRepository:
             )
 
             if target_date:
-                query = query.filter(
-                    AiAnalysisModel.date == target_date.strftime("%Y-%m-%d")
-                )
+                if isinstance(target_date, datetime.datetime):
+                    normalized_target = target_date.date()
+                else:
+                    normalized_target = target_date
+                query = query.filter(AiAnalysisModel.date == normalized_target)
 
             # JSON 필드에서 ticker로 필터링 (PostgreSQL의 경우)
             query = query.filter(text("value->>'ticker' = :ticker")).params(
@@ -717,10 +766,15 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
+                normalized_date = (
+                    analysis_date.date()
+                    if isinstance(analysis_date, datetime.datetime)
+                    else analysis_date
+                )
                 result = (
                     self.db_session.query(AiAnalysisModel)
                     .filter(
-                        AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                        AiAnalysisModel.date == normalized_date,
                         AiAnalysisModel.name == name,
                     )
                     .first()
@@ -851,10 +905,15 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
+                normalized_date = (
+                    analysis_date.date()
+                    if isinstance(analysis_date, datetime.datetime)
+                    else analysis_date
+                )
                 result = (
                     self.db_session.query(AiAnalysisModel)
                     .filter(
-                        AiAnalysisModel.date == analysis_date.strftime("%Y-%m-%d"),
+                        AiAnalysisModel.date == normalized_date,
                         AiAnalysisModel.name == name,
                         text("value->>'ticker' = :ticker").params(
                             ticker=ticker.upper()
@@ -920,8 +979,13 @@ class WebSearchResultRepository:
 
         for attempt in range(max_retries):
             try:
+                normalized_date = (
+                    analysis_date.date()
+                    if isinstance(analysis_date, datetime.datetime)
+                    else analysis_date
+                )
                 db_obj = AiAnalysisModel(
-                    date=analysis_date.strftime("%Y-%m-%d"),
+                    date=normalized_date,
                     name=name,
                     value=analysis,
                 )

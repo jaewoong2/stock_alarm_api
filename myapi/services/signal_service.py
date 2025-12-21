@@ -2425,8 +2425,14 @@ Provide analysis in **MarketDirectionAnalysis** schema format:
         Generate a summary of web search results for the given stock ticker and date.
         """
         # start_date = date - 1day, end_date = date
-        start_date = (date - dt.timedelta(days=1)).strftime("%Y-%m-%d")
-        end_date = (date + dt.timedelta(days=2)).strftime("%Y-%m-%d")
+        start_date = dt.datetime.combine(
+            date - dt.timedelta(days=1),
+            dt.time.min,
+        ).replace(tzinfo=timezone.utc)
+        end_date = dt.datetime.combine(
+            date + dt.timedelta(days=2),
+            dt.time.min,
+        ).replace(tzinfo=timezone.utc)
 
         results = self.web_search_repository.get_search_results(
             result_type=type,
