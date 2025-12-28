@@ -1112,49 +1112,165 @@ class WebSearchService:
 
     # ---------------------- ETF Weekly Flows ----------------------
     def generate_etf_weekly_flows_prompt(
-        self, universe: list[str] | None, target_date: str, provider: str | None = None
+        self, universe: list[str] | None, target_date: str
     ) -> str:
         uni = (
             ", ".join(sorted(set([t.upper() for t in universe]))) if universe else "ALL"
         )
         return f"""
         Today is {target_date}.
-        Task: Provide weekly ETF flows summary for [{uni}] including top net inflow/outflow, volume change leaders, and sector/theme grouping.
-        If data provider is specified use it as primary reference: {provider or "AUTO"}.
-        RULES:
-        - STRICT JSON ONLY. Use exact keys as below.
-        - Include sector_inferred/evidence when sector is inferred by LLM.
-        - Provide source_details with confidence for each item.
-        JSON format:
+
+        You are an institutional ETF research analyst with deep expertise in market flows, investor behavior, and macro analysis.
+
+        **TASK**: Provide comprehensive weekly ETF flow analysis for [{uni}] with deep insights into WHY flows are happening and WHAT it means for markets.
+
+        **ANALYSIS REQUIREMENTS**:
+
+        1. **Flow Data Collection** (Last 7 Days from {target_date}):
+           - Net inflows/outflows (in USD)
+           - 1-week flow totals
+           - Volume changes vs 30-day average
+           - Assets Under Management (AUM) and AUM changes
+           - Average daily volume
+           - Expense ratio
+
+        2. **Performance Analysis**:
+           - 1-week, 1-month, YTD performance
+           - Performance vs relevant benchmark (SPY, QQQ, etc.)
+           - Correlation with flow direction
+
+        3. **Flow Trend Analysis**:
+           - Rank ETFs by net inflow (1 = highest inflow, negative ranks for outflows)
+           - Flow percentile vs all ETFs in category
+           - Flow trend: "Accelerating", "Steady", "Decelerating", or "Reversing"
+           - Compare to 4-week and 12-week historical averages
+
+        4. **Market Context & Catalysts**:
+           - Why are investors rotating into/out of this ETF?
+           - What specific market events, earnings, economic data, or geopolitical factors drove flows?
+           - What macro themes are driving behavior? (Fed policy, recession fears, AI boom, etc.)
+           - Investor behavior: "Risk-on", "Risk-off", "Sector Rotation", "Flight to Quality", etc.
+           - Institutional vs Retail flow composition (if available)
+
+        5. **Sector/Theme Classification**:
+           - Primary sector exposure
+           - Key investment themes (AI, Clean Energy, Megacap Growth, Value, etc.)
+           - Mark sector_inferred=true if LLM inferred, false if from ETF prospectus
+
+        6. **Market Sentiment Analysis**:
+           - Overall sentiment: "Very Bullish", "Bullish", "Neutral", "Bearish", "Very Bearish"
+           - Key catalysts driving sentiment (list 3-5 specific events/factors)
+           - What this ETF's flows tell us about broader market positioning
+
+        7. **Forward-Looking Analysis**:
+           - What do these flows signal for upcoming market trends?
+           - What to watch next (earnings, Fed meetings, economic data)?
+           - Risk factors to monitor (3-5 specific risks)
+           - Opportunities created by these flows (2-4 actionable insights)
+
+        8. **Detailed Rationale**:
+           - flow_rationale: 2-3 sentences explaining WHY investors are buying/selling
+           - macro_context: How macro factors (Fed, economy, geopolitics) affect this ETF
+           - forward_outlook: What to expect in next 1-4 weeks
+
+        **CRITICAL RULES**:
+        - Use REAL, CURRENT data from {target_date} and the last 7 days
+        - Cite at least 2-3 credible sources per ETF (ETF.com, Bloomberg, provider websites, etc.)
+        - Focus on ACTIONABLE INSIGHTS, not generic commentary
+        - Explain complex institutional flows in accessible terms
+        - If specific data unavailable, use null (don't make up numbers)
+        - STRICT JSON ONLY - use exact schema below
+
+        **OUTPUT JSON SCHEMA**:
         {{
-          "items": [{{
-            "ticker": "QQQ",
-            "name": "Invesco QQQ Trust",
-            "net_flow": 1500000000.0,
-            "flow_1w": 2200000000.0,
-            "volume_change": 0.35,
-            "sector": "Technology",
-            "themes": ["AI", "Megacap Growth"],
-            "sector_inferred": false,
-            "evidence": null,
-            "source": "ProviderX",
-            "source_details": [{{"name": "ProviderX", "url": "https://...", "date": "{target_date}", "confidence": 0.9}}]
-          }}],
+          "items": [
+            {{
+              "ticker": "QQQ",
+              "name": "Invesco QQQ Trust",
+
+              // Flow metrics
+              "net_flow": 1500000000.0,
+              "flow_1w": 2200000000.0,
+              "volume_change": 0.35,
+              "aum": 280000000000.0,
+              "aum_change_1w": 0.54,
+              "avg_daily_volume": 45000000.0,
+              "expense_ratio": 0.20,
+
+              // Classification
+              "sector": "Technology",
+              "themes": ["AI", "Megacap Growth", "NASDAQ 100"],
+              "sector_inferred": false,
+              "evidence": "Official ETF prospectus",
+
+              // Flow analysis
+              "flow_rank": 1,
+              "flow_percentile": 98.5,
+              "flow_trend": "Accelerating",
+              "historical_flow_comparison": "150% above 4-week avg, 200% above 12-week avg",
+
+              // Market context
+              "market_sentiment": "Very Bullish",
+              "key_catalysts": [
+                "NVIDIA Q4 earnings beat drove AI optimism",
+                "Fed pivot expectations strengthened after CPI data",
+                "Big Tech guidance raised on AI monetization"
+              ],
+              "investor_behavior": "Risk-on with tech concentration",
+              "institutional_vs_retail": "Institutional buying 70%, retail FOMO 30%",
+
+              // Performance
+              "performance_1w": 5.2,
+              "performance_1m": 8.7,
+              "performance_ytd": 12.3,
+              "vs_benchmark": 2.1,
+
+              // Rationale
+              "flow_rationale": "Massive inflows driven by AI euphoria following NVIDIA earnings beat and raised guidance from Microsoft, Google on AI revenue acceleration. Institutions rotating from bonds back to tech growth.",
+              "macro_context": "Fed pivot narrative strengthening after softer CPI. Tech valuations supported by falling yields and AI monetization visibility improving.",
+              "forward_outlook": "Expect continued inflows if megacap tech earnings maintain momentum. Watch for profit-taking if Nasdaq reaches resistance at 18,500. Fed meeting in 2 weeks is key catalyst.",
+
+              // Risk and opportunity
+              "risk_factors": [
+                "Valuation risk: QQQ trading at 30x forward P/E, above 10-year average",
+                "Concentration risk: Top 10 holdings = 55% of portfolio",
+                "Fed hawkish surprise could trigger sharp reversal"
+              ],
+              "opportunities": [
+                "AI theme has multi-year runway based on enterprise adoption curves",
+                "Buyback activity from megacaps provides downside support",
+                "Options flow shows put-selling support at $450 level"
+              ],
+
+              // Sources
+              "source": "ETF.com, Bloomberg, Invesco",
+              "source_details": [
+                {{"name": "ETF.com Daily Flow Report", "url": "https://etf.com/...", "date": "{target_date}", "confidence": 0.95}},
+                {{"name": "Bloomberg ETF Analytics", "url": "https://bloomberg.com/...", "date": "{target_date}", "confidence": 0.90}},
+                {{"name": "Invesco QQQ Holdings", "url": "https://invesco.com/...", "date": "{target_date}", "confidence": 0.95}}
+              ]
+            }}
+          ],
           "window": "YYYY-MM-DD~YYYY-MM-DD"
         }}
+
+        **FOCUS AREAS**:
+        - Top 10-15 ETFs by absolute flow magnitude (both inflows AND outflows)
+        - Include mix of: sector ETFs, thematic ETFs, broad market, fixed income
+        - Highlight contrarian plays (outflows in strong performers, inflows in beaten-down sectors)
+        - Identify sector rotation patterns (what's being sold vs bought)
         """
 
     async def create_etf_weekly_flows(
         self,
         universe: list[str] | None,
         target_date: date = date.today(),
-        provider: str | None = None,
         llm_policy: Literal[
             "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
         ] = "AUTO",
     ) -> ETFWeeklyFlowResponse:
         prompt = self.generate_etf_weekly_flows_prompt(
-            universe, target_date.strftime("%Y-%m-%d"), provider
+            universe, target_date.strftime("%Y-%m-%d")
         )
         results, resolved_policy, provenance = self.run_llm(
             llm_policy, prompt, ETFWeeklyFlowResponse
@@ -1173,7 +1289,6 @@ class WebSearchService:
                         "prompt_hash": self._hash_prompt(prompt),
                         "provenance": provenance,
                         "window": window,
-                        "provider": provider,
                         "ticker": item.ticker.upper() if item.ticker else None,
                         "item": item.model_dump(),
                     }
@@ -1213,7 +1328,6 @@ class WebSearchService:
                 "prompt_hash": self._hash_prompt(prompt),
                 "provenance": provenance,
                 "window": window,
-                "provider": provider,
                 "ticker": item.ticker.upper() if item.ticker else None,
                 "item": item.model_dump(),
             }
@@ -1271,134 +1385,6 @@ class WebSearchService:
             is_exact_date_match=True,
             request_params=request,
         )
-
-    # ---------------------- Liquidity Weekly ----------------------
-    def generate_liquidity_weekly_prompt(self, target_date: str) -> str:
-        return f"""
-        Today is {target_date}.
-        Summarize US liquidity weekly with M2 and Reverse Repo (RRP) time series for recent 4-8 weeks and concise commentary.
-        RULES: STRICT JSON ONLY. Use primary sources (FRED/NYFRB) and include sources list with confidence.
-        JSON:
-        {{
-          "series_m2": [{{"date": "YYYY-MM-DD", "m2": 0}}],
-          "series_rrp": [{{"date": "YYYY-MM-DD", "rrp": 0}}],
-          "commentary": "",
-          "window": "YYYY-MM-DD~YYYY-MM-DD",
-          "sources": [{{"name": "FRED", "url": "https://fred.stlouisfed.org/...", "date": "{target_date}", "confidence": 0.95}}]
-        }}
-        """
-
-    async def create_liquidity_weekly(
-        self,
-        target_date: date = date.today(),
-        llm_policy: Literal[
-            "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
-        ] = "AUTO",
-    ) -> LiquidityWeeklyResponse:
-        prompt = self.generate_liquidity_weekly_prompt(target_date.strftime("%Y-%m-%d"))
-        results, resolved_policy, provenance = self.run_llm(
-            llm_policy, prompt, LiquidityWeeklyResponse
-        )
-
-        if not results or not isinstance(results[0], LiquidityWeeklyResponse):
-            raise ValueError("Invalid response format from AI service")
-
-        response: LiquidityWeeklyResponse = (
-            self._merge_results(LiquidityWeeklyResponse, results)
-            if llm_policy == "HYBRID" and len(results) >= 1
-            else results[0]
-        )
-        if self.translate_service:
-            try:
-                response = self.translate_service.translate_schema(response)
-            except Exception as e:
-                logger.warning(f"Failed to translate liquidity weekly: {e}")
-
-        # Store as a single snapshot for the day
-        self.websearch_repository.create_analysis(
-            analysis_date=target_date,
-            analysis=response.model_dump(),
-            name="us_liquidity_weekly",
-        )
-
-        return response
-
-    def get_liquidity_weekly(
-        self, target_date: date = date.today()
-    ) -> LiquidityWeeklyResponse:
-        cached = self.websearch_repository.get_analysis_by_date(
-            target_date, name="us_liquidity_weekly", schema=None
-        )
-        if cached and cached.value:
-            try:
-                return LiquidityWeeklyResponse.model_validate(cached.value)
-            except Exception:
-                pass
-        return LiquidityWeeklyResponse(series_m2=[], series_rrp=[], commentary=None)
-
-    # ---------------------- Market Breadth Daily ----------------------
-    def generate_market_breadth_prompt(self, target_date: str) -> str:
-        return f"""
-        Today is {target_date}.
-        Provide daily market breadth core metrics (VIX, advancers/decliners, new highs/lows, TRIN) and short commentary.
-        RULES: STRICT JSON ONLY. Include sources with confidence.
-        JSON:
-        {{
-          "series": [{{
-             "date": "YYYY-MM-DD", "vix": 0, "advancers": 0, "decliners": 0, "new_highs": 0, "new_lows": 0, "trin": 0
-          }}],
-          "commentary": "",
-          "sources": [{{"name": "CBOE", "url": "https://...", "date": "{target_date}", "confidence": 0.9}}]
-        }}
-        """
-
-    async def create_market_breadth_daily(
-        self,
-        target_date: date = date.today(),
-        llm_policy: Literal[
-            "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
-        ] = "AUTO",
-    ) -> MarketBreadthResponse:
-        prompt = self.generate_market_breadth_prompt(target_date.strftime("%Y-%m-%d"))
-        results, resolved_policy, provenance = self.run_llm(
-            llm_policy, prompt, MarketBreadthResponse
-        )
-
-        if not results or not isinstance(results[0], MarketBreadthResponse):
-            raise ValueError("Invalid response format from AI service")
-
-        response: MarketBreadthResponse = (
-            self._merge_results(MarketBreadthResponse, results)
-            if llm_policy == "HYBRID" and len(results) >= 1
-            else results[0]
-        )
-
-        if self.translate_service:
-            try:
-                response = self.translate_service.translate_schema(response)
-            except Exception as e:
-                logger.warning(f"Failed to translate market breadth: {e}")
-
-        self.websearch_repository.create_analysis(
-            analysis_date=target_date,
-            analysis=response.model_dump(),
-            name="market_breadth_daily",
-        )
-
-        return response
-
-    def get_market_breadth(
-        self, target_date: date = date.today()
-    ) -> MarketBreadthResponse:
-        cached = self.websearch_repository.get_analysis_by_date(
-            target_date, name="market_breadth_daily", schema=None
-        )
-        if cached and cached.value:
-            try:
-                return MarketBreadthResponse.model_validate(cached.value)
-            except Exception:
-                pass
-        return MarketBreadthResponse(series=[], commentary=None)
 
     async def get_etf_analysis(
         self, target_date: date = date.today(), etf_tickers: Optional[list[str]] = None
@@ -1488,7 +1474,6 @@ class WebSearchService:
 
         prompt = f"""
             Today is **{target_date}**.
-            
             You are a senior equity research analyst specializing in institutional portfolio analysis and market strategy.
             
             **CONTEXT**: 
@@ -1597,7 +1582,6 @@ class WebSearchService:
         if self.translate_service:
             try:
                 translated_response = self.translate_service.translate_schema(response)
-                # Keep the original ETF ticker uppercase
                 translated_response.etf_ticker = etf_portfolio_data.etf_ticker.upper()
             except Exception as e:
                 logger.warning(f"Failed to translate ETF analyst summary: {e}")

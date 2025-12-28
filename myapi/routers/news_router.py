@@ -2,7 +2,6 @@ from typing import Literal, Optional
 import datetime as dt
 import logging
 
-from myapi.domain.ai.ai_schema import ChatModel
 from myapi.services.translate_service import TranslateService
 from myapi.utils.date_utils import validate_date
 from fastapi import APIRouter, Depends
@@ -447,7 +446,6 @@ async def get_etf_flows(
 @inject
 async def create_etf_flows(
     universe: Optional[list[str]] = None,
-    provider: Optional[str] = None,
     target_date: Optional[dt.date] = dt.date.today(),
     llm_policy: Literal[
         "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
@@ -460,73 +458,8 @@ async def create_etf_flows(
     return await websearch_service.create_etf_weekly_flows(
         universe=universe,
         target_date=target_date,
-        provider=provider,
         llm_policy=llm_policy,
     )
-
-
-# Liquidity Weekly
-@router.get("/liquidity", response_model=LiquidityWeeklyResponse)
-@inject
-def get_liquidity(
-    target_date: Optional[dt.date] = dt.date.today(),
-    websearch_service: WebSearchService = Depends(
-        Provide[Container.services.websearch_service]
-    ),
-):
-    target_date = validate_date(target_date if target_date else dt.date.today())
-    return websearch_service.get_liquidity_weekly(target_date)
-
-
-@router.post(
-    "/liquidity",
-    dependencies=[Depends(verify_bearer_token)],
-    response_model=LiquidityWeeklyResponse,
-)
-@inject
-async def create_liquidity(
-    target_date: Optional[dt.date] = dt.date.today(),
-    llm_policy: Literal[
-        "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
-    ] = "AUTO",
-    websearch_service: WebSearchService = Depends(
-        Provide[Container.services.websearch_service]
-    ),
-):
-    target_date = validate_date(target_date if target_date else dt.date.today())
-    return await websearch_service.create_liquidity_weekly(target_date, llm_policy)
-
-
-# Market Breadth Daily
-@router.get("/market-breadth", response_model=MarketBreadthResponse)
-@inject
-def get_market_breadth_route(
-    target_date: Optional[dt.date] = dt.date.today(),
-    websearch_service: WebSearchService = Depends(
-        Provide[Container.services.websearch_service]
-    ),
-):
-    target_date = validate_date(target_date if target_date else dt.date.today())
-    return websearch_service.get_market_breadth(target_date)
-
-
-@router.post(
-    "/market-breadth",
-    dependencies=[Depends(verify_bearer_token)],
-    response_model=MarketBreadthResponse,
-)
-@inject
-async def create_market_breadth_route(
-    target_date: Optional[dt.date] = dt.date.today(),
-    llm_policy: Literal[
-        "AUTO", "GEMINI", "PERPLEXITY", "BOTH", "FALLBACK", "HYBRID"
-    ] = "AUTO",
-    websearch_service: WebSearchService = Depends(
-        Provide[Container.services.websearch_service]
-    ),
-):
-    target_date = validate_date(target_date if target_date else dt.date.today())
-    return await websearch_service.create_market_breadth_daily(target_date, llm_policy)
 
 
 @router.post(

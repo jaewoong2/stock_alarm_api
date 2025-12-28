@@ -386,10 +386,45 @@ class ETFFlowItem(BaseModel):
     net_flow: Optional[float] = None
     flow_1w: Optional[float] = None
     volume_change: Optional[float] = None
+    aum: Optional[float] = None  # Assets Under Management
+    aum_change_1w: Optional[float] = None  # 1-week AUM change percentage
+    avg_daily_volume: Optional[float] = None
+    expense_ratio: Optional[float] = None
+
+    # Sector and theme classification
     sector: Optional[str] = None
     themes: List[str] = []
     sector_inferred: Optional[bool] = None
     evidence: Optional[str] = None
+
+    # Flow analysis
+    flow_rank: Optional[int] = None  # Rank by net inflow (1 = highest inflow)
+    flow_percentile: Optional[float] = None  # Percentile among all ETFs (0-100)
+    flow_trend: Optional[str] = None  # "Accelerating", "Steady", "Decelerating", "Reversing"
+    historical_flow_comparison: Optional[str] = None  # Comparison to 4-week, 12-week averages
+
+    # Market context and analysis
+    market_sentiment: Optional[str] = None  # "Very Bullish", "Bullish", "Neutral", "Bearish", "Very Bearish"
+    key_catalysts: List[str] = []  # Key reasons driving flows
+    investor_behavior: Optional[str] = None  # "Risk-on", "Risk-off", "Rotation", "Flight to quality"
+    institutional_vs_retail: Optional[str] = None  # Flow composition analysis
+
+    # Performance metrics
+    performance_1w: Optional[float] = None  # 1-week return %
+    performance_1m: Optional[float] = None  # 1-month return %
+    performance_ytd: Optional[float] = None  # Year-to-date return %
+    vs_benchmark: Optional[float] = None  # Performance vs benchmark (e.g., SPY for equity ETFs)
+
+    # Detailed rationale
+    flow_rationale: Optional[str] = None  # Why investors are buying/selling
+    macro_context: Optional[str] = None  # Macro factors affecting flows
+    forward_outlook: Optional[str] = None  # What to expect next
+
+    # Risk and opportunity
+    risk_factors: List[str] = []  # Key risks to monitor
+    opportunities: List[str] = []  # Potential opportunities
+
+    # Sources
     source: Optional[str] = None
     source_details: List[SourceRef] = []
 

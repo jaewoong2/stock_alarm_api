@@ -91,7 +91,11 @@ class AIService:
         logger.debug("DEBUG: Tracked usage for key %s", key_id)
 
     def perplexity_completion(
-        self, prompt: str, schema: Type[T], model: ChatModel | None = None
+        self,
+        prompt: str,
+        schema: Type[T],
+        model: ChatModel | None = None,
+        max_tokens: int | None = 1024,
     ):
         client = openai.OpenAI(
             base_url="https://api.perplexity.ai", api_key=self.perplexity_api_key
@@ -100,10 +104,14 @@ class AIService:
         if model is None:
             model = ChatModel.SONAR_PRO
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        create_kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if max_tokens is not None:
+            create_kwargs["max_tokens"] = max_tokens
+
+        response = client.chat.completions.create(**create_kwargs)
 
         result = response.choices[0].message
 
