@@ -277,7 +277,7 @@ class WebSearchService:
             if cached:
                 return cached
 
-            raise HTTPException(status_code=404, detail="Forecast not found")
+            return []
         except HTTPException:
             # HTTPException은 다시 raise
             raise

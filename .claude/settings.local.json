@@ -16,7 +16,8 @@
       "Bash(lsof:*)",
       "Bash(chmod +x /Users/macbook/Desktop/Development/STUDY/tqqq/migration/fix_export_data_v2.sh /Users/macbook/Desktop/Development/STUDY/tqqq/migration/fix_import_data_v2.sh)",
       "Bash(python -c \"from myapi.main import app; print(''✅ Application imports successfully'')\")",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(grep:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
